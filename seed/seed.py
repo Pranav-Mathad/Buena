@@ -196,7 +196,12 @@ def _upsert_event(
     property_id: str,
     event: EventSeed,
 ) -> str:
-    """Insert an event keyed by (source, source_ref); return UUID as string."""
+    """Insert an event keyed by (source, source_ref); return UUID as string.
+
+    Seed events are stamped ``processed_at = received_at`` because their facts
+    were authored by hand — we don't want the live pipeline to re-extract them
+    on startup and produce noisy rule-based duplicates.
+    """
     cur.execute(
         "SELECT id FROM events WHERE source = %s AND source_ref = %s",
         (event.source, event.key),
@@ -206,8 +211,9 @@ def _upsert_event(
         return cast(str, row[0])
     cur.execute(
         """
-        INSERT INTO events (source, source_ref, property_id, raw_content, metadata, received_at)
-        VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+        INSERT INTO events (source, source_ref, property_id, raw_content,
+                            metadata, received_at, processed_at)
+        VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
         RETURNING id
         """,
         (
@@ -216,6 +222,7 @@ def _upsert_event(
             property_id,
             event.raw_content,
             json.dumps(event.metadata),
+            event.received_at,
             event.received_at,
         ),
     )
