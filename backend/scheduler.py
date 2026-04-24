@@ -16,7 +16,8 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from backend.pipeline.worker import process_batch
-from backend.services.imap_poller import poll_once
+from backend.services.erp_poller import poll_once as erp_poll_once
+from backend.services.imap_poller import poll_once as imap_poll_once
 
 log = structlog.get_logger(__name__)
 
@@ -35,10 +36,19 @@ def build_scheduler() -> AsyncIOScheduler:
         next_run_time=None,
     )
     scheduler.add_job(
-        poll_once,
+        imap_poll_once,
         "interval",
         seconds=10,
         id="imap_poll",
+        coalesce=True,
+        max_instances=1,
+        next_run_time=None,
+    )
+    scheduler.add_job(
+        erp_poll_once,
+        "interval",
+        seconds=30,
+        id="erp_poll",
         coalesce=True,
         max_instances=1,
         next_run_time=None,
