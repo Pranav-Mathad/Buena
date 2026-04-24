@@ -60,6 +60,7 @@ class FactRow:
     value: str
     source_event_id: UUID | None
     confidence: float
+    source: str | None
 
 
 async def _fetch_header(session: AsyncSession, property_id: UUID) -> PropertyHeader | None:
@@ -80,11 +81,13 @@ async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list
     result = await session.execute(
         text(
             """
-            SELECT section, field, value, source_event_id, confidence, created_at
-            FROM facts
-            WHERE property_id = :pid
-              AND superseded_by IS NULL
-            ORDER BY section, created_at ASC, field ASC
+            SELECT f.section, f.field, f.value, f.source_event_id, f.confidence,
+                   f.created_at, e.source AS source
+            FROM facts f
+            LEFT JOIN events e ON e.id = f.source_event_id
+            WHERE f.property_id = :pid
+              AND f.superseded_by IS NULL
+            ORDER BY f.section, f.created_at ASC, f.field ASC
             """
         ),
         {"pid": property_id},
@@ -96,6 +99,7 @@ async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list
             value=row.value,
             source_event_id=row.source_event_id,
             confidence=float(row.confidence),
+            source=row.source,
         )
         for row in result.all()
     ]
@@ -107,15 +111,20 @@ def _format_field(field: str) -> str:
 
 
 def _format_fact_line(fact: FactRow) -> str:
-    """Render a single fact as a bullet with an inline source link."""
+    """Render a single fact as a bullet with inline source + optional web badge."""
     source = (
         f"[source: {fact.source_event_id}](#event-{fact.source_event_id})"
         if fact.source_event_id is not None
         else "[source: unknown]"
     )
+    badge = (
+        " 🌐 _Updated from web sources_"
+        if (fact.source or "").lower() == "web"
+        else ""
+    )
     return (
         f"- **{_format_field(fact.field)}:** {fact.value} "
-        f"_(confidence {fact.confidence:.2f})_ {source}"
+        f"_(confidence {fact.confidence:.2f})_ {source}{badge}"
     )
 
 

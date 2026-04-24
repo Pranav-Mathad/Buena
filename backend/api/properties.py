@@ -1,4 +1,4 @@
-"""Properties API — listing, rendered markdown, and activity feed."""
+"""Properties API — listing, creation (with Tavily enrichment), markdown, activity."""
 
 from __future__ import annotations
 
@@ -8,12 +8,13 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
 from backend.pipeline.renderer import render_markdown
+from backend.services.tavily import enrich_property
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 log = structlog.get_logger(__name__)
@@ -27,6 +28,33 @@ class PropertySummary(BaseModel):
     address: str
     owner_name: str | None = None
     building_year_built: int | None = None
+
+
+class PropertyCreateRequest(BaseModel):
+    """Payload for POST /properties."""
+
+    name: str = Field(..., min_length=1)
+    address: str = Field(..., min_length=1)
+    aliases: list[str] = Field(default_factory=list)
+    owner_id: UUID | None = None
+    building_id: UUID | None = None
+
+
+class PropertyCreateResponse(BaseModel):
+    """Response for POST /properties."""
+
+    id: UUID
+    name: str
+    address: str
+    tavily_event_id: UUID | None
+
+
+class EnrichmentResponse(BaseModel):
+    """Response for POST /properties/{id}/enrich."""
+
+    property_id: UUID
+    tavily_event_id: UUID | None
+    already_enriched: bool
 
 
 @router.get("", response_model=list[PropertySummary])
@@ -59,6 +87,82 @@ async def list_properties(
     ]
     log.info("properties.list", count=len(properties))
     return properties
+
+
+@router.post("", response_model=PropertyCreateResponse, status_code=201)
+async def create_property(
+    payload: PropertyCreateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> PropertyCreateResponse:
+    """Create a property and kick off Tavily enrichment (runs once, per Part IV)."""
+    result = await session.execute(
+        text(
+            """
+            INSERT INTO properties (name, address, aliases, owner_id, building_id)
+            VALUES (:name, :addr, :aliases, :owner, :building)
+            RETURNING id
+            """
+        ),
+        {
+            "name": payload.name,
+            "addr": payload.address,
+            "aliases": payload.aliases,
+            "owner": payload.owner_id,
+            "building": payload.building_id,
+        },
+    )
+    property_id: UUID = result.scalar_one()
+    await session.commit()
+    log.info("properties.create", property_id=str(property_id), name=payload.name)
+
+    tavily_event_id = await enrich_property(property_id, payload.name, payload.address)
+    return PropertyCreateResponse(
+        id=property_id,
+        name=payload.name,
+        address=payload.address,
+        tavily_event_id=tavily_event_id,
+    )
+
+
+@router.post("/{property_id}/enrich", response_model=EnrichmentResponse)
+async def enrich_existing_property(
+    property_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> EnrichmentResponse:
+    """Re-run Tavily enrichment for an existing (seeded) property.
+
+    Idempotent — a second call is a no-op. Intended as an admin utility so
+    the seeded portfolio can show the "Updated from web sources" badge
+    without requiring a reseed.
+    """
+    row = (
+        await session.execute(
+            text("SELECT name, address FROM properties WHERE id = :pid"),
+            {"pid": property_id},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="property not found")
+    before_count = (
+        await session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM events
+                WHERE property_id = :pid AND source = 'web'
+                  AND source_ref LIKE 'tavily:%'
+                """
+            ),
+            {"pid": property_id},
+        )
+    ).scalar_one()
+
+    event_id = await enrich_property(property_id, row.name, row.address)
+    return EnrichmentResponse(
+        property_id=property_id,
+        tavily_event_id=event_id,
+        already_enriched=event_id is None and int(before_count or 0) > 0,
+    )
 
 
 @router.get("/{property_id}/markdown", response_class=PlainTextResponse)
