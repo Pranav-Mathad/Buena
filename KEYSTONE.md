@@ -661,8 +661,8 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 3 — Intelligence + Approval (**local exit criterion met**). Next: Phase 4 (MCP server + Claude Desktop config + context graph endpoint + portfolio banner).
-**Next deliverable:** Phase 4 — MCP server with the Part VIII tool set, Claude Desktop JSON config block, `GET /properties/{id}/graph`, portfolio banner endpoint.
+**Current phase:** Phase 4 — MCP + Portfolio Intelligence (**local exit criterion met**). Next: Phase 5 (regulation watcher, Aikido badge, Pioneer learning dashboard, Lovable UI polish).
+**Next deliverable:** Phase 5 — Tavily regulation cron + `regulation_change` signal rule, Aikido scan badge, Pioneer approval-rate dashboard.
 **Blockers:** None locally.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
@@ -701,6 +701,13 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 - `backend/services/entire.py` ships a `runtime_checkable Protocol` + `LocalEntireBroker` that writes outbox rows. `get_broker/set_broker` let the real Entire SDK drop in without touching the signals API.
 - `backend/api/signals.py` exposes `GET /signals`, `GET /signals/{id}`, `POST /signals/evaluate`, `POST /signals/{id}/approve|reject|edit`. Approve routes through `get_broker()`, writes `outbox` + `approval_log` (decision=`approved`), and flips status to `resolved`. Edit persists the subject/body diff into `approval_log` (decision=`edited`) for Pioneer's learning stats later.
 - Phase-3 self-verify: evaluator fires 3 signals (recurring_maintenance × 2 + shared-boiler cross), repeat calls create 0 (dedupe OK), approve → outbox row + `approval_log` entry + `signals.status='resolved'`, reject writes log + status='rejected', edit writes `approval_log(decision='edited')` with before/after diff. Phase 1 integration test still green.
+
+**Phase 4 session notes:**
+- Backend gained three new endpoints: `GET /properties/search?q=…` (multi-term weighted keyword search), `GET /properties/{id}/graph` (nodes + edges — owner, building, tenants, contractors), `GET /portfolio/banner` + `GET /portfolio/summary` (dashboard header + top-priority portfolio signal), and `POST /signals/propose` (external AI entry point that always writes `status='pending'` — humans approve in the inbox).
+- `mcp_server/tools.py` wraps `httpx.AsyncClient` and pokes the REST backend (overridable via `KEYSTONE_BASE_URL`). Zero DB imports — Part V's "thin adapter" rule upheld.
+- `mcp_server/main.py` registers the five canonical Part VIII tools (`get_property_context`, `search_properties`, `list_signals`, `get_activity`, `propose_action`) on a `FastMCP` instance. `python -m mcp_server.main` speaks the MCP stdio protocol.
+- `mcp_server/README.md` ships a copy-pasteable Claude Desktop `claude_desktop_config.json` snippet + a smoke-test recipe.
+- Phase 4 self-verify: all five MCP tools succeed end-to-end against a running backend, including a real stdio `initialize` → `list_tools` → `call_tool` handshake. Portfolio banner returns the shared-boiler cross-property signal. Search + graph endpoints return expected shapes. `POST /signals/propose` appears in the inbox tagged as AI-authored.
 
 ---
 

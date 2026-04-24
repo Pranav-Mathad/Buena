@@ -44,6 +44,24 @@ Decision: `seed/seed.py` now writes `processed_at = received_at` for every seede
 Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
 Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
 
+## 2026-04-24 — Phase 4: MCP server is a thin REST adapter, not a database client
+Context: Part V says "MCP server is a thin adapter. All tools call the backend REST API." An alternative would be sharing SQLAlchemy sessions / pgvector access across both surfaces for speed.
+Decision: `mcp_server/tools.py` wraps `httpx.AsyncClient` and hits the same REST endpoints the UI uses. Zero DB imports. Every schema change lands in exactly one place (the REST layer), and the MCP server can be pointed at a remote Keystone by flipping `KEYSTONE_BASE_URL`.
+Reason: Matches the constitution, keeps the MCP surface under one pane of review, and means judges can reason about the MCP tools the same way they reason about the UI.
+Revisit if: We later need streaming tool results (e.g., large markdown) where an HTTP round-trip is the bottleneck — then add an in-process shortcut, keeping the REST adapter as the fallback.
+
+## 2026-04-24 — Phase 4: Multi-term keyword search (no embeddings yet)
+Context: Part VIII calls `search_properties` "semantic search". The schema has `vector(768)` columns on facts + events, but embedding generation hasn't been wired into the worker yet.
+Decision: Ship a per-term LIKE search with weighted scoring (name/alias > address > fact-value, hit-count boost) and split the query on whitespace so `"heating Berlin"` still finds useful hits. Label the tool `search_properties` — not `semantic_search` — to stay honest.
+Reason: Keeps the MCP surface working today without a Gemini round-trip per query, and aligns with the "reliability > sophistication" rule. Embedding-based search can slot in behind the same endpoint in Phase 5.
+Revisit if: We ship the Gemini embedding pipeline — swap the SQL out for `ORDER BY embedding <=> :query_vec LIMIT :k` without changing the endpoint shape.
+
+## 2026-04-24 — Phase 4: `propose_action` writes a pending signal, never dispatches
+Context: MCP tools can run without human approval. Part I Principle 3 ("System proposes. Human approves.") forbids letting an external AI close the loop end-to-end.
+Decision: `POST /signals/propose` inserts a `status='pending'` signal tagged `payload.proposed_by='external_ai'`; approval still flows through `/signals/{id}/approve` and the Entire-compatible broker.
+Reason: Keeps the human-in-the-loop invariant intact for MCP-originated actions and gives us an audit trail (the inbox shows "proposed by Claude Desktop").
+Revisit if: We later want first-class AI-co-signed actions — add a separate `ai_authorized` pathway rather than loosening this.
+
 ## 2026-04-24 — Phase 3: portfolio-level signals use `property_id = NULL`
 Context: `cross_property_pattern` fires across a building or an entire portfolio cohort; there's no single property to attach it to.
 Decision: Persist those signals with `property_id = NULL`. The inbox filter `?property_id=X` still works for per-property signals; portfolio-level ones appear in the unfiltered listing and (Phase 4) will surface on the portfolio dashboard banner.
