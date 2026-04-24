@@ -14,6 +14,7 @@ import structlog
 from fastapi import FastAPI
 
 from backend.api.events import router as events_router
+from backend.api.portfolio import router as portfolio_router
 from backend.api.properties import router as properties_router
 from backend.api.signals import router as signals_router
 from backend.api.sse import router as sse_router
@@ -53,6 +54,7 @@ app.include_router(events_router)
 app.include_router(uploads_router)
 app.include_router(webhooks_router)
 app.include_router(signals_router)
+app.include_router(portfolio_router)
 
 
 @app.get("/health", tags=["system"])
