@@ -661,8 +661,8 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 2 — Sources + Enrichment (**local exit criterion met**). Next: Phase 3 (signal rules + approval inbox + Entire-compatible broker + outbox).
-**Next deliverable:** Phase 3 — `recurring_maintenance`, `lease_expiring`, `cross_property_pattern` signal rules; Gemini Pro drafter; `EntireBroker` approval inbox; outbox writes on approve.
+**Current phase:** Phase 3 — Intelligence + Approval (**local exit criterion met**). Next: Phase 4 (MCP server + Claude Desktop config + context graph endpoint + portfolio banner).
+**Next deliverable:** Phase 4 — MCP server with the Part VIII tool set, Claude Desktop JSON config block, `GET /properties/{id}/graph`, portfolio banner endpoint.
 **Blockers:** None locally.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
@@ -690,6 +690,17 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 - `backend/pipeline/renderer.py` joins facts with events to surface `source` and appends a 🌐 _Updated from web sources_ badge next to every web-sourced fact.
 - `backend/scheduler.py` now runs three jobs: worker (2s), IMAP poll (10s), ERP poll (30s).
 - Phase-2 self-verify: all four sources (email, Slack, PDF, ERP) land in the pipeline and show up in the activity feed for Apt 4B; every property has ≥2 web-badged facts after enrichment; Slack webhook 401s on bad signature; PDF upload turns into a fact within ~100ms; Phase 1 regression test still passes.
+
+**Phase 3 session notes:**
+- `backend/signals/types.py` defines `SignalCandidate` (rule output) and `ProposedAction` (persisted JSONB on `signals.proposed_action`).
+- `backend/signals/rules/recurring_maintenance.py` fires `urgent` per-property signals when ≥3 maintenance facts match `heat|boiler|water|leak|electric` keywords within 120 days.
+- `backend/signals/rules/lease_expiring.py` parses `lease.end_date` values and fires `medium/high` signals when the end date is within 60 days (threshold constant so demo can widen it).
+- `backend/signals/rules/cross_property_pattern.py` implements both demo beats: shared-building boiler signal (beat 1:00 "wow") and building-year-cohort portfolio signal (beat 1:45). Portfolio signals use `property_id=NULL`.
+- `backend/signals/evaluator.py` runs every rule, dedupes against already-pending signals keyed on `(property_id, type, payload.hint.{topic|subtype})`, asks the drafter for a `ProposedAction`, and inserts into `signals`. Scheduler runs it every 30s; `POST /signals/evaluate` fires it on demand for demo determinism.
+- `backend/services/gemini.py` gained a Pro `draft_action_message` path with 2x retries; `backend/signals/drafter.py` prefers it and falls back to a four-part template (observation → risk → concrete next step → deadline) so the Signal Quality Bar holds without Gemini.
+- `backend/services/entire.py` ships a `runtime_checkable Protocol` + `LocalEntireBroker` that writes outbox rows. `get_broker/set_broker` let the real Entire SDK drop in without touching the signals API.
+- `backend/api/signals.py` exposes `GET /signals`, `GET /signals/{id}`, `POST /signals/evaluate`, `POST /signals/{id}/approve|reject|edit`. Approve routes through `get_broker()`, writes `outbox` + `approval_log` (decision=`approved`), and flips status to `resolved`. Edit persists the subject/body diff into `approval_log` (decision=`edited`) for Pioneer's learning stats later.
+- Phase-3 self-verify: evaluator fires 3 signals (recurring_maintenance × 2 + shared-boiler cross), repeat calls create 0 (dedupe OK), approve → outbox row + `approval_log` entry + `signals.status='resolved'`, reject writes log + status='rejected', edit writes `approval_log(decision='edited')` with before/after diff. Phase 1 integration test still green.
 
 ---
 

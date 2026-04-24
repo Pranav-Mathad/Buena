@@ -44,6 +44,30 @@ Decision: `seed/seed.py` now writes `processed_at = received_at` for every seede
 Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
 Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
 
+## 2026-04-24 — Phase 3: portfolio-level signals use `property_id = NULL`
+Context: `cross_property_pattern` fires across a building or an entire portfolio cohort; there's no single property to attach it to.
+Decision: Persist those signals with `property_id = NULL`. The inbox filter `?property_id=X` still works for per-property signals; portfolio-level ones appear in the unfiltered listing and (Phase 4) will surface on the portfolio dashboard banner.
+Reason: Keeps the schema as-is (Part VI). A synthetic "portfolio" property would distort every per-property query.
+Revisit if: Portfolio UI needs more than one dimension of grouping — then add a `scope` column instead of overloading NULL.
+
+## 2026-04-24 — Phase 3: dedupe signals on `(property_id, type, payload.hint.{topic|subtype})`
+Context: The evaluator runs every 30s; without dedupe it would insert a fresh pending signal for every pattern on every tick, flooding the inbox.
+Decision: `_already_open` in `backend/signals/evaluator.py` checks for an existing `status='pending'` signal with the same `(property_id, type)` **and** matching `proposed_action.payload.hint.topic|subtype` — so `recurring_maintenance:heating` and `recurring_maintenance:water` on the same property remain distinct.
+Reason: Matches the way rules author their output (each rule sets `action_hint.topic` or `subtype`), preserves re-fire on the next tick if a human approves/rejects/lets the signal resolve, and avoids a separate dedupe table.
+Revisit if: A rule starts producing signals with the same `(property, type, topic)` but legitimately different evidence (e.g. a second-level failure after the first is resolved) — promote topic to a fact-level timestamp tiebreaker.
+
+## 2026-04-24 — Phase 3: Gemini Pro drafter with a four-part template fallback
+Context: KEYSTONE's Signal Quality Bar ("expert speaking, not database emitting rows") is load-bearing for the demo. Gemini Pro produces that quality when available; a generic fallback must not embarrass us when it isn't.
+Decision: `backend/signals/drafter.py` calls Gemini Pro when `GEMINI_API_KEY` is set, otherwise picks a deterministic template keyed on `candidate.type` and fills in action-hint values. Every template follows the **observation → risk → concrete next step → deadline** structure.
+Reason: Keeps the demo honest without a Gemini dependency, and the structure is what the bar actually measures.
+Revisit if: Template copy drifts out of date for a new rule — add a test asserting each template mentions a deadline and a concrete action.
+
+## 2026-04-24 — Phase 3: Entire-compatible broker via Protocol + local impl
+Context: Part IV says "if their SDK isn't available in time, build the approval inbox natively with an EntireBroker interface that's easy to swap."
+Decision: `backend/services/entire.py` defines a `runtime_checkable Protocol` and ships `LocalEntireBroker` that writes outbox rows. A `set_broker()` hook lets tests / the real SDK drop in without touching callers.
+Reason: Honors the pitch line ("Entire-compatible approval layer") without overclaiming, and keeps the swap to one file.
+Revisit if: Entire SDK lands — replace `LocalEntireBroker` with an adapter that delegates dispatch while still writing the outbox row for auditability.
+
 ## 2026-04-24 — Phase 2: Tavily enrichment writes facts directly (not via worker)
 Context: Phase 2 exit criterion requires "At least one fact on each property has a visible Tavily badge." Letting the worker extract facts from a generic "web enrichment" event would produce unreliable output (the rule-based extractor might route it to `compliance.note` or nothing, and real Gemini quality varies).
 Decision: `enrich_property` in `backend/services/tavily.py` inserts the event **and** two seed facts (`overview.market_snapshot`, `compliance.regulation_watch`) in the same transaction, then stamps `processed_at` so the worker skips re-extraction. Idempotent — a second call returns `None` if any Tavily event already exists for the property.
