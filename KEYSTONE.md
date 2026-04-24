@@ -661,9 +661,9 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 4 — MCP + Portfolio Intelligence (**local exit criterion met**). Next: Phase 5 (regulation watcher, Aikido badge, Pioneer learning dashboard, Lovable UI polish).
-**Next deliverable:** Phase 5 — Tavily regulation cron + `regulation_change` signal rule, Aikido scan badge, Pioneer approval-rate dashboard.
-**Blockers:** None locally.
+**Current phase:** Phase 5 — Polish + Sponsor Visibility (**backend exit criterion met**). Next: Lovable UI polish (outside this repo) + Phase 6 demo lock.
+**Next deliverable:** Phase 6 — 10 consecutive demo runs, backup video, rehearsal, partner-visibility audit.
+**Blockers:** Lovable UI work is out-of-repo (Part IV); all backend surfaces are ready for it.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
 - `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).
@@ -708,6 +708,16 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 - `mcp_server/main.py` registers the five canonical Part VIII tools (`get_property_context`, `search_properties`, `list_signals`, `get_activity`, `propose_action`) on a `FastMCP` instance. `python -m mcp_server.main` speaks the MCP stdio protocol.
 - `mcp_server/README.md` ships a copy-pasteable Claude Desktop `claude_desktop_config.json` snippet + a smoke-test recipe.
 - Phase 4 self-verify: all five MCP tools succeed end-to-end against a running backend, including a real stdio `initialize` → `list_tools` → `call_tool` handshake. Portfolio banner returns the shared-boiler cross-property signal. Search + graph endpoints return expected shapes. `POST /signals/propose` appears in the inbox tagged as AI-authored.
+
+**Phase 5 session notes:**
+- `backend/services/tavily.py` gained `watch_regulations()` — polls Tavily for five rent-regulation queries when `TAVILY_API_KEY` is live, otherwise seeds three clearly-labelled offline headlines. Every event stamped `processed_at` so the extractor worker skips it; idempotent via `source_ref = tavily-reg:{query}:{hour}`.
+- `backend/signals/rules/regulation_change.py` is rule #4. Portfolio-level (`property_id=NULL`), `medium` severity, reads `web` events tagged `metadata.regulation=true` inside a 14-day window.
+- Evaluator + drafter + subject-line picker updated to recognize the new type; dedupe keys on `payload.hint.subtype = source_ref` so each distinct headline fires at most one pending signal.
+- `backend/services/aikido.py` ships `get_badge()` — live Aikido REST when keyed, otherwise a `local_snapshot` badge carrying the current git SHA from `git rev-parse --short HEAD`. Response discloses `source` so the UI can honestly distinguish live vs fallback.
+- `backend/services/pioneer.py` ships `compute_learning()` — reads `approval_log`, derives per-signal-type approval rates (edits = 0.8 × approved), maps to `[0.5, 1.5]` priority weights with sample-size shrinkage, emits a trend-line sentence suitable for the Settings > Learning panel.
+- `backend/api/settings.py` exposes `GET /settings/security`, `GET /settings/learning`, and `POST /settings/regulation_watch` (manual trigger that runs the watcher + evaluator inline so fresh signals show up in the inbox immediately).
+- `backend/scheduler.py` adds the `regulation_watch` job at 60-minute cadence; `backend/main.py` mounts the settings router.
+- Phase 5 self-verify: `POST /settings/regulation_watch` → 3 events ingested + 3 regulation_change signals created; repeat calls → 0/0 (dedupe OK); `/settings/security` returns `passing` with commit SHA; `/settings/learning` produces a rich snapshot with trend line "Keystone is prioritizing **cross property pattern** based on your approval behavior (100% approved over 2 proposals)" after a mix of approve/edit/reject decisions. Phase 1 regression test still green.
 
 ---
 
