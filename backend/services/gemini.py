@@ -247,3 +247,104 @@ async def extract_facts(
     raise GeminiUnavailable(
         f"extract_facts failed after {max_attempts} attempts: {last_error!r}"
     )
+
+
+# -----------------------------------------------------------------------------
+# Drafting (Pro path)
+# -----------------------------------------------------------------------------
+
+
+DRAFT_PROMPT_TEMPLATE = """You are drafting an operational message for a property manager.
+
+Tone: crisp, specific, expert. Avoid vague softeners like 'maybe', 'might'.
+Open with the observation and the risk. End with a concrete next step and a
+deadline. 4-6 sentences, no signature block, no greetings.
+
+Signal type: {signal_type}
+Severity: {severity}
+Property context:
+{context}
+
+Evidence summary:
+{evidence_summary}
+
+Write the message body now."""
+
+
+async def draft_action_message(
+    *,
+    signal_type: str,
+    severity: str,
+    context: str,
+    evidence_summary: str,
+    model_name: str | None = None,
+    max_attempts: int = 2,
+) -> str:
+    """Ask Gemini Pro to write a ``proposed_action.drafted_message``.
+
+    Returns the drafted text. Raises :class:`GeminiUnavailable` when the API
+    is not configured or every attempt fails — callers should fall back to a
+    deterministic template.
+    """
+    settings = get_settings()
+    model = model_name or settings.gemini_pro_model
+    prompt = DRAFT_PROMPT_TEMPLATE.format(
+        signal_type=signal_type,
+        severity=severity,
+        context=context or "(no prior context)",
+        evidence_summary=evidence_summary or "(no evidence)",
+    )
+    digest = _prompt_hash(prompt)
+    log.info(
+        "gemini.draft.start",
+        model=model,
+        prompt_hash=digest,
+        signal_type=signal_type,
+    )
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        start = time.perf_counter()
+        try:
+            genai = _configure_client()
+            gen_model = genai.GenerativeModel(model)
+            response = await asyncio.to_thread(
+                gen_model.generate_content,
+                prompt,
+                generation_config={"temperature": 0.3},
+            )
+            latency_ms = (time.perf_counter() - start) * 1000
+            text = (response.text or "").strip()
+            usage = getattr(response, "usage_metadata", None)
+            log.info(
+                "gemini.draft.ok",
+                model=model,
+                prompt_hash=digest,
+                attempt=attempt,
+                latency_ms=round(latency_ms, 1),
+                prompt_tokens=getattr(usage, "prompt_token_count", None),
+                completion_tokens=getattr(usage, "candidates_token_count", None),
+                chars=len(text),
+            )
+            if text:
+                return text
+            last_error = RuntimeError("empty response")
+        except GeminiUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001 — broad retry policy for drafting
+            last_error = exc
+            latency_ms = (time.perf_counter() - start) * 1000
+            log.warning(
+                "gemini.draft.retry",
+                model=model,
+                prompt_hash=digest,
+                attempt=attempt,
+                latency_ms=round(latency_ms, 1),
+                error=str(exc),
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(0.4 * attempt)
+
+    raise GeminiUnavailable(
+        f"draft_action_message failed after {max_attempts} attempts: {last_error!r}"
+    )
