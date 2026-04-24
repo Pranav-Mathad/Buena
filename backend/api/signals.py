@@ -87,6 +87,24 @@ class EvaluateResponse(BaseModel):
     created: int
 
 
+class ProposeRequest(BaseModel):
+    """Payload for ``POST /signals/propose`` — MCP / external-AI entry point."""
+
+    property_id: UUID | None = None
+    type: str = Field(..., min_length=1)
+    severity: str = Field(default="medium")
+    message: str = Field(..., min_length=1)
+    action: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProposeResponse(BaseModel):
+    """Response for ``POST /signals/propose``."""
+
+    signal_id: UUID
+    status: str
+
+
 def _row_to_detail(row: Any) -> SignalDetail:
     """Shared mapper for the single-signal queries."""
     proposed = row.proposed_action or {}
@@ -151,6 +169,58 @@ async def list_signals(
     """
     result = await session.execute(text(query), params)
     return [SignalSummary(**row._mapping) for row in result.all()]
+
+
+@router.post("/propose", response_model=ProposeResponse, status_code=201)
+async def propose_signal(
+    payload: ProposeRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ProposeResponse:
+    """Insert a pending signal authored by an external AI (Claude via MCP).
+
+    The human always approves before any outbox side effect — this endpoint
+    deliberately does not dispatch.
+    """
+    severity = payload.severity if payload.severity in {"low", "medium", "high", "urgent"} else "medium"
+    action: dict[str, Any] = dict(payload.action)
+    action.setdefault("type", "owner_notification")
+    action.setdefault("channel", "email")
+    action.setdefault("recipient", "owner@keystone.demo")
+    action.setdefault("subject", "[Proposed] " + payload.message[:60])
+    action.setdefault("drafted_message", payload.message)
+    action.setdefault("payload", {})
+    action["payload"]["proposed_by"] = "external_ai"
+
+    result = await session.execute(
+        text(
+            """
+            INSERT INTO signals
+                (property_id, type, severity, message, evidence,
+                 proposed_action, status, created_at)
+            VALUES
+                (:pid, :type, :sev, :msg, CAST(:evd AS JSONB),
+                 CAST(:act AS JSONB), 'pending', now())
+            RETURNING id
+            """
+        ),
+        {
+            "pid": payload.property_id,
+            "type": payload.type,
+            "sev": severity,
+            "msg": payload.message,
+            "evd": json.dumps(payload.evidence),
+            "act": json.dumps(action),
+        },
+    )
+    signal_id: UUID = result.scalar_one()
+    await session.commit()
+    log.info(
+        "signals.propose",
+        signal_id=str(signal_id),
+        type=payload.type,
+        source="external_ai",
+    )
+    return ProposeResponse(signal_id=signal_id, status="pending")
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
