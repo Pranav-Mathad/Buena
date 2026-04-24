@@ -13,6 +13,7 @@ this is the Part XII fallback for flaky venue wifi.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -207,3 +208,134 @@ def _offline_snapshot_summary() -> str:
         "Regional rent index within Mietspiegel bounds; Mietpreisbremse "
         "remains in force in this market (offline snapshot, 2026 Q1)."
     )
+
+
+# -----------------------------------------------------------------------------
+# Regulation watcher (Phase 5 cron)
+# -----------------------------------------------------------------------------
+
+REGULATION_QUERIES: list[str] = [
+    "Berlin Mietpreisbremse 2026 update",
+    "Germany Mietspiegel adjustment 2026",
+    "Berlin rent cap decision 2026",
+    "Hamburg Bezirksamt facade inspection rules 2026",
+    "Munich Mietpreisbremse extension 2026",
+]
+
+OFFLINE_REGULATION_HEADLINES: list[tuple[str, str]] = [
+    (
+        "Mietpreisbremse extended through 2029 — federal cabinet",
+        "Bundesregierung confirms Mietpreisbremse extension through 2029; "
+        "existing local enforcement zones unchanged. Owners should budget "
+        "rent adjustments within CPI + 1.5% for pre-1990 stock.",
+    ),
+    (
+        "Berlin Mietspiegel 2026 Q2 refresh scheduled",
+        "Berlin housing authority publishes Mietspiegel 2026 Q2 tables on "
+        "May 12. Wilmersdorf median 2BR cold rent expected to tick up ~1.8%.",
+    ),
+    (
+        "Hamburg Altona facade inspection cadence revised",
+        "Bezirksamt Altona revises facade inspection guidance: waterfront "
+        "properties now inspected every 24 months (down from 36). Budget "
+        "any overdue inspections for the May inspection window.",
+    ),
+]
+
+
+async def watch_regulations() -> int:
+    """Poll Tavily for rent-regulation signals and persist new ``web`` events.
+
+    Called by the scheduler once an hour (per KEYSTONE Part IV). Returns the
+    number of newly inserted events; repeat runs within the same hour are
+    idempotent thanks to the ``(source, source_ref)`` unique constraint.
+    """
+    from sqlalchemy import text  # noqa: PLC0415 — local import
+
+    factory = get_sessionmaker()
+    now_key = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")  # hourly bucket
+    inserted = 0
+
+    if _available():
+        for query in REGULATION_QUERIES:
+            hits = await _search(query, max_results=3)
+            if not hits:
+                continue
+            title = hits[0].title[:160] or query
+            body_lines = [
+                "Regulation watch — Tavily snapshot",
+                f"Query: {query}",
+                "",
+            ]
+            for hit in hits:
+                body_lines.append(
+                    f"- {hit.title}: {hit.content[:320]} [{hit.url}]"
+                )
+            raw_content = "\n".join(body_lines)
+            source_ref = f"tavily-reg:{query}:{now_key}"
+            metadata = {
+                "tavily": True,
+                "regulation": True,
+                "query": query,
+                "headline": title,
+                "hits": [{"title": h.title, "url": h.url} for h in hits],
+            }
+            async with factory() as session:
+                _, new = await insert_event(
+                    session,
+                    source="web",
+                    source_ref=source_ref,
+                    raw_content=raw_content,
+                    metadata=metadata,
+                )
+                if new:
+                    inserted += 1
+                    # Stamp processed so the extractor worker leaves it alone.
+                    await session.execute(
+                        text(
+                            "UPDATE events SET processed_at = now() "
+                            "WHERE source = 'web' AND source_ref = :ref"
+                        ),
+                        {"ref": source_ref},
+                    )
+                await session.commit()
+    else:
+        # Offline path: insert a clearly-labelled canned headline so the
+        # demo still shows a regulation signal on a fresh DB.
+        for title, body in OFFLINE_REGULATION_HEADLINES:
+            source_ref = f"tavily-reg:offline:{title}"
+            metadata = {
+                "tavily": False,
+                "offline": True,
+                "regulation": True,
+                "headline": title,
+            }
+            async with factory() as session:
+                _, new = await insert_event(
+                    session,
+                    source="web",
+                    source_ref=source_ref,
+                    raw_content=(
+                        "Regulation watch (offline snapshot)\n"
+                        f"Headline: {title}\n\n{body}"
+                    ),
+                    metadata=metadata,
+                )
+                if new:
+                    inserted += 1
+                    await session.execute(
+                        text(
+                            "UPDATE events SET processed_at = now() "
+                            "WHERE source = 'web' AND source_ref = :ref"
+                        ),
+                        {"ref": source_ref},
+                    )
+                await session.commit()
+
+    log.info(
+        "tavily.regulation_watch",
+        inserted=inserted,
+        live=_available(),
+        queries=len(REGULATION_QUERIES) if _available() else 0,
+    )
+    return inserted

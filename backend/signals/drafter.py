@@ -72,6 +72,9 @@ def _subject(candidate: SignalCandidate) -> str:
         if sub == "year_cohort":
             return "[Portfolio] Heating pattern in building cohort — inspection proposal"
         return "[Portfolio] Cross-property pattern detected"
+    if candidate.type == "regulation_change":
+        headline = candidate.action_hint.get("headline", "regulation update")
+        return f"[Regulation] {headline[:80]}"
     return f"[Keystone] {candidate.type} signal"
 
 
@@ -114,6 +117,15 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
             "unit-level failures. Recommend a portfolio-wide boiler inspection "
             "within two weeks and budgeting for any units at end-of-life. Approve "
             "to line up contractors across the cohort."
+        )
+    if candidate.type == "regulation_change":
+        headline = hint.get("headline", "a regulatory update")
+        return (
+            f"Tavily flagged a regulatory change: \"{headline}\". The update is "
+            "likely to touch rent adjustments, inspection cadence, or compliance "
+            "filings across the portfolio — we should review exposure inside the "
+            "next seven days and queue any tenant communications that fall out of "
+            "the change. Approve to circulate a short impact brief."
         )
     return (
         f"{owner_name}, Keystone has flagged a {candidate.type} pattern requiring "
