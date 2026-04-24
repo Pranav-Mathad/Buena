@@ -661,23 +661,24 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 0 — Setup (**local exit criterion met**). Next: Railway deploy + Phase 1 kickoff.
-**Next deliverable:** Deploy the current Phase 0 stack to Railway; then start Phase 1 (IMAP poller + worker + SSE live markdown).
-**Blockers:** None locally. Railway deploy still pending.
-**Last session notes:**
-- Scaffolded the full Part V tree (empty placeholders for later phases).
-- Wrote `pyproject.toml` (py311+, full dep matrix, ruff E/F/I/N/UP/B @100, `mypy --strict`).
-- `.env.example` covers every Part IV key plus DB + IMAP/Slack/ERP.
-- `docker-compose.yml` runs pgvector pg15; **host port remapped to 5433** to avoid clashing with a local Homebrew Postgres on :5432 (see `DECISIONS.md`). `.env` DSNs updated in lockstep.
-- `backend/db/schema.sql` is verbatim from Part VI.
-- `backend/config.py` (pydantic-settings, cached), `backend/db/session.py` (async SQLAlchemy), `backend/logging.py` (structlog dev/JSON), `backend/main.py` (lifespan + `/health`) all in place.
-- `backend/pipeline/renderer.py` groups current facts (`superseded_by IS NULL`) by section and emits markdown with inline `[source: <event_id>]` links.
-- `backend/api/properties.py` exposes `GET /properties` + `GET /properties/{id}/markdown`.
-- `seed/realistic_data.py` hand-crafted: 4 properties (Berliner 4B + 2A share Maria Schmidt / Bob's Plumbing / pre-1990 building, Hamburg Elbchaussee 88, Munich Leopoldstrasse 45), 29 events spread across 6 months (≥3 heating events per Berliner unit), 62 facts linked via `source_event_id`.
-- `seed/seed.py` applies schema if absent and upserts everything idempotently by natural key. Re-runnable with no duplicates.
-- Self-verified locally: `docker compose up -d` → `python -m seed.seed` → `uvicorn backend.main:app` → `curl /properties` returns 4 rows; `curl /properties/{id}/markdown` returns rich sourced markdown for each of the four.
-- Docs: `README.md` with 5-step setup; `DECISIONS.md` logs Phase 0 calls; `.gitignore` extended.
-- Git state: committing Phase 0 atomically per the Git Hygiene section before starting Phase 1.
+**Current phase:** Phase 1 — Demo Spine (**local exit criterion met**). Next: Phase 2 sources (Slack webhook, PDF upload, mock ERP, Tavily enrichment) + Railway deploy.
+**Next deliverable:** Phase 2 — wire Slack/PDF/ERP sources into the same pipeline, add Tavily enrichment on property creation, show the "Updated from web sources" badge.
+**Blockers:** None locally.
+**Last session notes (Phase 1):**
+- `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
+- `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).
+- `backend/pipeline/router.py` resolves events to properties via alias substring match first (longest wins) and token-overlap fallback. Unrouted events are parked with `processing_error='unrouted'`.
+- `backend/pipeline/differ.py` enforces source precedence (pdf > erp > email > slack > web > debug), confidence, and recency before returning a `DiffPlan`.
+- `backend/pipeline/applier.py` writes new fact rows and stamps `superseded_by` on displaced predecessors.
+- `backend/pipeline/events.py` owns idempotent event insertion (ON CONFLICT on `(source, source_ref)`) plus an in-process `EventBus` for SSE fan-out.
+- `backend/pipeline/worker.py` uses `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` per tick, then routes → extracts → diffs → applies → stamps `processed_at` → publishes to the event bus. Errors are isolated in a fresh session so the lock is released cleanly.
+- `backend/scheduler.py` runs the worker every 2s and IMAP poll every 10s via APScheduler, started in the FastAPI lifespan.
+- `backend/services/imap_poller.py` polls unread messages and ingests each as an event (idempotent via RFC822 Message-ID). No-ops cleanly when `IMAP_PASSWORD` is the placeholder.
+- `backend/api/events.py` exposes `POST /debug/trigger_event` as the demo-resilience path — inserts the event and drains the worker inline so `curl` POSTs return with updated markdown visible. Idempotent on `source_ref`.
+- `backend/api/sse.py` exposes `GET /properties/{id}/events` with `text/event-stream` and a 15s heartbeat; `backend/api/properties.py` adds `GET /properties/{id}/activity`.
+- `backend/tests/test_pipeline_happy_path.py` ingests an email event, runs the worker, asserts a sourced fact was written and shows up in the rendered markdown. Protects the demo.
+- `seed/seed.py` now stamps `processed_at = received_at` on seeded events so the worker doesn't re-extract the hand-crafted dataset on boot.
+- Local self-verify: `/health` → `/debug/trigger_event` → markdown update in **~25ms** (target 10 s). 10 consecutive trigger runs all under 25ms. SSE stream delivers a `fact_update` payload when a new event is processed. Integration test passes (`pytest backend/tests/test_pipeline_happy_path.py`).
 
 ---
 
