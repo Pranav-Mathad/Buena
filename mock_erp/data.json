@@ -1,1 +1,52 @@
-{}
+{
+  "payments": [
+    {
+      "payment_id": "PAY-2026-04-001",
+      "account": "BER-4B",
+      "property_hint": "Berliner Strasse 12 Apt 4B",
+      "amount_eur": 1200,
+      "currency": "EUR",
+      "kind": "rent",
+      "period": "2026-04",
+      "posted_at": "2026-04-02T09:15:00+00:00",
+      "late_days": 0,
+      "notes": "Monthly rent, SEPA direct debit"
+    },
+    {
+      "payment_id": "PAY-2026-04-002",
+      "account": "BER-2A",
+      "property_hint": "Berliner Strasse 12 Apt 2A",
+      "amount_eur": 1050,
+      "currency": "EUR",
+      "kind": "rent",
+      "period": "2026-04",
+      "posted_at": "2026-04-01T08:00:00+00:00",
+      "late_days": 0,
+      "notes": "Monthly rent, SEPA direct debit"
+    },
+    {
+      "payment_id": "PAY-2026-04-003",
+      "account": "HAM-88",
+      "property_hint": "Elbchaussee 88 Hamburg",
+      "amount_eur": 1650,
+      "currency": "EUR",
+      "kind": "rent",
+      "period": "2026-04",
+      "posted_at": "2026-04-03T11:10:00+00:00",
+      "late_days": 0,
+      "notes": "Monthly rent, SEPA direct debit"
+    },
+    {
+      "payment_id": "PAY-2026-04-004",
+      "account": "MUC-45",
+      "property_hint": "Leopoldstrasse 45 Munich",
+      "amount_eur": 1850,
+      "currency": "EUR",
+      "kind": "rent",
+      "period": "2026-04",
+      "posted_at": "2026-04-02T07:30:00+00:00",
+      "late_days": 0,
+      "notes": "Monthly rent, SEPA direct debit"
+    }
+  ]
+}
