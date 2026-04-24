@@ -44,6 +44,30 @@ Decision: `seed/seed.py` now writes `processed_at = received_at` for every seede
 Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
 Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
 
+## 2026-04-24 — Phase 2: Tavily enrichment writes facts directly (not via worker)
+Context: Phase 2 exit criterion requires "At least one fact on each property has a visible Tavily badge." Letting the worker extract facts from a generic "web enrichment" event would produce unreliable output (the rule-based extractor might route it to `compliance.note` or nothing, and real Gemini quality varies).
+Decision: `enrich_property` in `backend/services/tavily.py` inserts the event **and** two seed facts (`overview.market_snapshot`, `compliance.regulation_watch`) in the same transaction, then stamps `processed_at` so the worker skips re-extraction. Idempotent — a second call returns `None` if any Tavily event already exists for the property.
+Reason: Guarantees the demo badge appears, without precluding the worker from handling more nuanced web events later. Keeps the source-of-truth audit trail (event row + sourced facts) intact.
+Revisit if: Tavily hits become rich enough that parsing them with Gemini Pro would outperform the canned summary — at that point route through the worker and drop the direct insert.
+
+## 2026-04-24 — Phase 2: Tavily offline fallback snapshot
+Context: `TAVILY_API_KEY` won't be set on every dev box / CI run, and venue wifi could throttle. Part XII lists "flaky network" as a demo risk.
+Decision: When the key is missing or `tavily.search` errors out, `enrich_property` falls back to a single canned "offline snapshot" fact set clearly labelled as such, rather than no enrichment at all.
+Reason: The badge is a visible UI contract the demo depends on. Offline mode keeps the product surface honest (facts are labelled "offline snapshot (2026 Q1)") without lying to judges.
+Revisit if: The canned copy drifts out of date or starts looking too generic — swap the wording seasonally or tie it to the property's region.
+
+## 2026-04-24 — Phase 2: Mock ERP reads data.json on every request
+Context: The demo needs an ERP data source that's easy to edit live (Part II beat 1:00). A database or fake auth scheme would add friction.
+Decision: `mock_erp/main.py` re-reads `data.json` on every GET. Editing the JSON file is the canonical "ERP got a new payment" gesture during the demo.
+Reason: Minimum moving parts, max demo legibility. No state syncing, no restart needed.
+Revisit if: We start needing filtering/aggregation that's too slow for the naive scan — unlikely under a few hundred rows.
+
+## 2026-04-24 — Phase 2: PDF source_ref = `{filename}:{sha256[:16]}`
+Context: PDFs don't come with a Message-ID; we still need idempotency (`events.(source, source_ref)` is UNIQUE).
+Decision: The `/uploads/pdf` endpoint hashes the file bytes (SHA-256) and concatenates with the filename to form `source_ref`. Reuploading the exact same PDF is a no-op; a renamed PDF is considered distinct.
+Reason: Conservative — we'd rather accept a duplicate upload than miss a genuinely-new PDF with the same content. The filename prefix preserves human context in the events table.
+Revisit if: We start ingesting thousands of PDFs where byte-identical duplicates should collapse even under different filenames.
+
 ## 2026-04-24 — Phase 1: Postgres as the queue, not Redis/Kafka (reinforced)
 Context: Phase 1 needed a queue for events. KEYSTONE Part III already forbids Redis/Kafka.
 Decision: `backend/pipeline/worker.py` uses `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` per tick; `backend/scheduler.py` runs the worker every 2s via APScheduler. `/debug/trigger_event` also kicks a drain inline so `curl` POSTs see fresh markdown before they return.

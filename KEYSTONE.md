@@ -661,8 +661,8 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 1 — Demo Spine (**local exit criterion met**). Next: Phase 2 sources (Slack webhook, PDF upload, mock ERP, Tavily enrichment) + Railway deploy.
-**Next deliverable:** Phase 2 — wire Slack/PDF/ERP sources into the same pipeline, add Tavily enrichment on property creation, show the "Updated from web sources" badge.
+**Current phase:** Phase 2 — Sources + Enrichment (**local exit criterion met**). Next: Phase 3 (signal rules + approval inbox + Entire-compatible broker + outbox).
+**Next deliverable:** Phase 3 — `recurring_maintenance`, `lease_expiring`, `cross_property_pattern` signal rules; Gemini Pro drafter; `EntireBroker` approval inbox; outbox writes on approve.
 **Blockers:** None locally.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
@@ -679,6 +679,17 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 - `backend/tests/test_pipeline_happy_path.py` ingests an email event, runs the worker, asserts a sourced fact was written and shows up in the rendered markdown. Protects the demo.
 - `seed/seed.py` now stamps `processed_at = received_at` on seeded events so the worker doesn't re-extract the hand-crafted dataset on boot.
 - Local self-verify: `/health` → `/debug/trigger_event` → markdown update in **~25ms** (target 10 s). 10 consecutive trigger runs all under 25ms. SSE stream delivers a `fact_update` payload when a new event is processed. Integration test passes (`pytest backend/tests/test_pipeline_happy_path.py`).
+
+**Phase 2 session notes:**
+- `mock_erp/main.py` is a one-file FastAPI service on `:8001` that re-reads `data.json` every request — edit the JSON live during the demo to fake a new payment. `GET /payments` supports `account` + `since` filters.
+- `backend/services/erp_poller.py` drains that endpoint every 30s via APScheduler, inserting each payment row as an `erp` event keyed on `payment_id` (UNIQUE constraint enforces idempotency).
+- `backend/services/pdf_extractor.py` wraps `pdfplumber` with a max-pages cap; `backend/api/uploads.py` exposes `POST /uploads/pdf` (multipart) with `source_ref = {filename}:{sha256[:16]}` for dedupe and an inline worker drain.
+- `backend/services/slack_webhook.py` implements the canonical `v0:{ts}:{body}` HMAC-SHA256 verification with a 5-minute replay window; `backend/api/webhooks.py` mounts `POST /webhooks/slack` and answers the `url_verification` challenge. Bad signature → 401.
+- `backend/services/tavily.py` wraps the `tavily-python` client and, on enrichment, writes the web event + two sourced facts (`overview.market_snapshot`, `compliance.regulation_watch`) in one transaction so the 🌐 badge is always present. Offline fallback kicks in when `TAVILY_API_KEY` is missing or errors, with a clearly-labelled "offline snapshot" value — the demo badge stays up on flaky wifi (Part XII mitigation).
+- `backend/api/properties.py` now exposes `POST /properties` (creates + enriches) and `POST /properties/{id}/enrich` (idempotent admin utility for existing seeded rows).
+- `backend/pipeline/renderer.py` joins facts with events to surface `source` and appends a 🌐 _Updated from web sources_ badge next to every web-sourced fact.
+- `backend/scheduler.py` now runs three jobs: worker (2s), IMAP poll (10s), ERP poll (30s).
+- Phase-2 self-verify: all four sources (email, Slack, PDF, ERP) land in the pipeline and show up in the activity feed for Apt 4B; every property has ≥2 web-badged facts after enrichment; Slack webhook 401s on bad signature; PDF upload turns into a fact within ~100ms; Phase 1 regression test still passes.
 
 ---
 
