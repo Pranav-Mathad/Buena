@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: keystone-postgres
+    environment:
+      POSTGRES_DB: keystone
+      POSTGRES_USER: keystone
+      POSTGRES_PASSWORD: keystone
+    ports:
+      # Host port 5433 → container 5432 to avoid clashing with a local Postgres
+      # that is often bound to 5432 (e.g. Homebrew). Update .env if you change it.
+      - "5433:5432"
+    volumes:
+      - keystone_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keystone -d keystone"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  keystone_pgdata:
