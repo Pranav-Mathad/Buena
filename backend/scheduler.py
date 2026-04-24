@@ -18,6 +18,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from backend.pipeline.worker import process_batch
 from backend.services.erp_poller import poll_once as erp_poll_once
 from backend.services.imap_poller import poll_once as imap_poll_once
+from backend.signals.evaluator import evaluate_all as evaluate_signals
 
 log = structlog.get_logger(__name__)
 
@@ -49,6 +50,15 @@ def build_scheduler() -> AsyncIOScheduler:
         "interval",
         seconds=30,
         id="erp_poll",
+        coalesce=True,
+        max_instances=1,
+        next_run_time=None,
+    )
+    scheduler.add_job(
+        evaluate_signals,
+        "interval",
+        seconds=30,
+        id="signal_eval",
         coalesce=True,
         max_instances=1,
         next_run_time=None,
