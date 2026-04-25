@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "generated_from": "eval/ground_truth/emails_v1.jsonl",
+  "instruction": "Use a field name from this list when the observation matches. If the observation does not match any listed field, choose the closest match by section + semantics, and include the alternative wording you would have preferred under metadata.note. Do NOT invent new field names without precedent.",
+  "sections": {
+    "overview": {
+      "fields": [
+        {
+          "name": "sale_intent",
+          "examples": [
+            "Eigentümer beabsichtigt Verkauf WE 11; benötigt Hausgeld-Bescheinigung + ETV-Protokolle.",
+            "Eigentümer beabsichtigt Verkauf WE 51; benötigt Hausgeld-Bescheinigung + ETV-Protokolle."
+          ]
+        }
+      ]
+    },
+    "tenants": {
+      "fields": []
+    },
+    "lease": {
+      "fields": [
+        {
+          "name": "termination_notice",
+          "examples": [
+            "Mieter WE 06 kündigt zum Monatsende; frei ab 12.03.2026.",
+            "Mieter WE 48 kündigt zum Monatsende; frei ab 01.03.2026."
+          ]
+        }
+      ]
+    },
+    "maintenance": {
+      "fields": [
+        {
+          "name": "defective_window",
+          "examples": [
+            "Küchenfenster WE 50 schließt nicht mehr richtig; Griff locker, Dichtung löst sich."
+          ]
+        },
+        {
+          "name": "key_lost",
+          "examples": [
+            "Mieter WE 02 hat Wohnungsschlüssel verloren; Schließanlagentausch evtl. nötig.",
+            "Mieter WE 35 hat Wohnungsschlüssel verloren; Schließanlagentausch evtl. nötig."
+          ]
+        },
+        {
+          "name": "open_water_damage",
+          "examples": [
+            "Wasserschaden + Schimmel WE 32 seit über 3 Monaten unbehoben.",
+            "Wasserschaden + Schimmel WE 06 seit über 3 Monaten unbehoben."
+          ]
+        },
+        {
+          "name": "open_water_leak",
+          "examples": [
+            "Wasserschaden Bad WE 29: Wasser tropft seit heute Morgen aus der Decke (von WE darüber).",
+            "Water damage in bathroom WE 23: water dripping from ceiling since this morning (from upstairs unit)."
+          ]
+        }
+      ]
+    },
+    "financials": {
+      "fields": [
+        {
+          "name": "deposit_return_pending",
+          "examples": [
+            "Ex-Mieterin WE 49 fragt nach Kaution-Rückzahlung; Auszug vor 7 Wochen."
+          ]
+        },
+        {
+          "name": "nebenkosten_dispute",
+          "examples": [
+            "Mieter WE 50 hinterfragt Nebenkostenabrechnung 2024: Heizkosten +40% trotz weniger geheizt; Aufschlüsselung verlangt."
+          ]
+        },
+        {
+          "name": "rent_reduction_announced",
+          "examples": [
+            "Mieterin WE 32 kündigt 15% Mietminderung ab 02.02.2026 an.",
+            "Mieter WE 06 kündigt 15% Mietminderung ab 09.03.2024 an."
+          ]
+        }
+      ]
+    },
+    "compliance": {
+      "fields": [
+        {
+          "name": "modernization_inquiry",
+          "examples": [
+            "Eigentümer fragt WEG-Zustimmung für Entfernung nicht-tragender Küchenwand WE 02.",
+            "Eigentümer fragt WEG-Zustimmung für Entfernung nicht-tragender Küchenwand WE 40."
+          ]
+        }
+      ]
+    },
+    "activity": {
+      "fields": []
+    },
+    "patterns": {
+      "fields": []
+    },
+    "building_financials": {
+      "fields": []
+    },
+    "building_maintenance": {
+      "fields": []
+    },
+    "building_compliance": {
+      "fields": []
+    },
+    "liegenschaft_financials": {
+      "fields": [
+        {
+          "name": "annual_water_statement_2025",
+          "examples": [
+            "Jahresabrechnung 2025 Wasser: 76.809 m³, Saldo 5.784 EUR."
+          ]
+        },
+        {
+          "name": "outstanding_invoice",
+          "examples": [
+            "Mahnung Rechnung RE-***-8503 Allianz 289,54 EUR offen seit 21.01.2026",
+            "Mahnung Rechnung RE-***-2736 Allianz 1571,87 EUR offen seit 08.02.2025"
+          ]
+        },
+        {
+          "name": "sonderumlage_einspruch",
+          "examples": [
+            "Eigentümer-Einspruch gegen Sonderumlage 3.090 EUR (Ordnungsmäßigkeit angefochten).",
+            "Eigentümer-Einspruch gegen Sonderumlage 4.264 EUR (Ordnungsmäßigkeit angefochten)."
+          ]
+        }
+      ]
+    },
+    "liegenschaft_maintenance": {
+      "fields": [
+        {
+          "name": "heating_service_scheduled",
+          "examples": [
+            "Wartungstermin Heizungsraum 07.06.2024 um 16:00 Uhr bestätigt."
+          ]
+        }
+      ]
+    },
+    "liegenschaft_compliance": {
+      "fields": [
+        {
+          "name": "brandschutz_request",
+          "examples": [
+            "Bauamt Berlin-Mitte fordert aktuellen Brandschutznachweis für Immanuelkirchstraße 26."
+          ]
+        }
+      ]
+    }
+  },
+  "row_count": 30,
+  "fact_count": 15
+}

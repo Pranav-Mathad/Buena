@@ -17,6 +17,8 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -34,6 +36,10 @@ class GeminiUnavailable(RuntimeError):
 # Extraction schema + prompt (Part VII canonical)
 # -----------------------------------------------------------------------------
 
+# Gemini's ``response_schema`` accepts a strict OpenAPI 3.0 subset —
+# ``minimum`` / ``maximum`` / ``$defs`` are rejected. We lean on the
+# prompt to enforce the [0, 1] range on ``confidence``; downstream code
+# clamps it defensively.
 EXTRACTION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -67,11 +73,17 @@ EXTRACTION_SCHEMA: dict[str, Any] = {
                             "compliance",
                             "activity",
                             "patterns",
+                            "building_financials",
+                            "building_maintenance",
+                            "building_compliance",
+                            "liegenschaft_financials",
+                            "liegenschaft_maintenance",
+                            "liegenschaft_compliance",
                         ],
                     },
                     "field": {"type": "string"},
                     "value": {"type": "string"},
-                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "number"},
                 },
                 "required": ["section", "field", "value", "confidence"],
             },
@@ -81,30 +93,78 @@ EXTRACTION_SCHEMA: dict[str, Any] = {
     "required": ["category", "priority", "facts_to_update", "summary"],
 }
 
-EXTRACTION_PROMPT_TEMPLATE = """You are processing an event for a property management context system.
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+_VOCABULARY_PATH = _PROMPT_DIR / "field_vocabulary.json"
 
-Property: {property_name}
-Current relevant context:
-{current_context_excerpt}
 
-New event from {source}:
----
-{raw_content}
----
+@lru_cache(maxsize=4)
+def _load_prompt_template(lang: str) -> str:
+    """Read the per-language Markdown prompt with file-system caching."""
+    name = "extraction_de.md" if lang == "de" else "extraction_en.md"
+    path = _PROMPT_DIR / name
+    if not path.is_file():
+        raise FileNotFoundError(f"missing prompt template: {path}")
+    return path.read_text(encoding="utf-8")
 
-Extract structured facts. Rules:
-- `section` + `field` must be specific and stable (e.g. `section=lease, field=end_date`, not `section=info, field=stuff`)
-- `value` should be self-contained and human-readable
-- `confidence` reflects certainty given the source
-- If the event doesn't warrant updates (e.g. chit-chat), return empty `facts_to_update`
-- Always return a one-line `summary` for the activity feed
 
-Return ONLY valid JSON matching the schema."""
+@lru_cache(maxsize=1)
+def _vocabulary_block() -> str:
+    """Render the JSON vocabulary into a markdown block for the prompts.
+
+    Result example::
+
+        - **maintenance** (4 fields)
+          - `open_water_damage` — e.g. "Wasserschaden + Schimmel WE 32 …"
+          - `key_lost` — e.g. "Mieter WE 02 hat Wohnungsschlüssel verloren …"
+          - `defective_window` — e.g. "Küchenfenster WE 50 schließt nicht mehr …"
+        - **financials** (3 fields)
+          - …
+    """
+    if not _VOCABULARY_PATH.is_file():
+        return "_(no vocabulary file present — emit conservative field names)_"
+    payload = json.loads(_VOCABULARY_PATH.read_text(encoding="utf-8"))
+    lines: list[str] = []
+    for section, body in payload.get("sections", {}).items():
+        fields = body.get("fields", [])
+        if not fields:
+            lines.append(f"- **{section}** (0 fields — section reserved)")
+            continue
+        lines.append(f"- **{section}** ({len(fields)} fields)")
+        for f in fields:
+            example = ""
+            if f.get("examples"):
+                example = f' — e.g. "{f["examples"][0]}"'
+            lines.append(f"  - `{f['name']}`{example}")
+    return "\n".join(lines)
+
+
+def render_extraction_prompt(
+    *,
+    property_name: str,
+    current_context_excerpt: str,
+    source: str,
+    raw_content: str,
+    lang: str,
+) -> str:
+    """Build the prompt fed to ``GenerativeModel.generate_content``."""
+    template = _load_prompt_template(lang)
+    return template.format(
+        property_name=property_name,
+        current_context_excerpt=current_context_excerpt or "(no prior context)",
+        source=source,
+        raw_content=raw_content,
+        vocabulary_block=_vocabulary_block(),
+    )
 
 
 @dataclass
 class ExtractionResult:
-    """Parsed Gemini extraction response."""
+    """Parsed Gemini extraction response.
+
+    Token counts are surfaced so callers (notably ``eval.runner``) can
+    attribute spend to the cost ledger. ``None`` when the rule fallback
+    fired and no LLM call was made.
+    """
 
     category: str
     priority: str
@@ -114,6 +174,8 @@ class ExtractionResult:
     latency_ms: float = 0.0
     model: str = ""
     source: str = "gemini"
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -150,10 +212,11 @@ async def extract_facts(
     current_context_excerpt: str,
     source: str,
     raw_content: str,
+    lang: str = "en",
     model_name: str | None = None,
     max_attempts: int = 3,
 ) -> ExtractionResult:
-    """Run the canonical Phase-1 extraction prompt against Gemini Flash.
+    """Run the canonical extraction prompt against Gemini.
 
     Args:
         property_name: Display name of the matched property (for prompt context).
@@ -161,8 +224,11 @@ async def extract_facts(
             model can reference when deciding if a fact is new.
         source: Event source — ``"email" | "slack" | "pdf" | ...``.
         raw_content: The event text.
-        model_name: Override the configured Flash model. Defaults to
-            :attr:`Settings.gemini_flash_model`.
+        lang: ISO-639-1 language code; selects the per-language prompt.
+        model_name: Override the configured Pro model (Step 5: default is
+            ``gemini_pro_model`` for extraction quality; pass
+            ``gemini_flash_model`` for the auxiliary category-classifier
+            path or for cheap retries).
         max_attempts: Retries with exponential backoff on transient errors.
 
     Returns:
@@ -173,12 +239,13 @@ async def extract_facts(
             fails — callers should fall back to the rule-based path.
     """
     settings = get_settings()
-    model = model_name or settings.gemini_flash_model
-    prompt = EXTRACTION_PROMPT_TEMPLATE.format(
+    model = model_name or settings.gemini_pro_model
+    prompt = render_extraction_prompt(
         property_name=property_name,
-        current_context_excerpt=current_context_excerpt or "(no prior context)",
+        current_context_excerpt=current_context_excerpt,
         source=source,
         raw_content=raw_content,
+        lang=lang,
     )
     digest = _prompt_hash(prompt)
     log.info(
@@ -186,6 +253,7 @@ async def extract_facts(
         model=model,
         prompt_hash=digest,
         source=source,
+        lang=lang,
         prompt_chars=len(prompt),
     )
 
@@ -227,6 +295,8 @@ async def extract_facts(
                 latency_ms=latency_ms,
                 model=model,
                 source="gemini",
+                prompt_tokens=getattr(usage, "prompt_token_count", None),
+                completion_tokens=getattr(usage, "candidates_token_count", None),
             )
         except GeminiUnavailable:
             raise
