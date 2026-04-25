@@ -194,7 +194,7 @@ async def _recent_events_for_scope(
     scope: str,  # 'building' | 'liegenschaft'
     scope_id: UUID,
     limit: int = CONTEXT_LIMIT,
-) -> list[dict[str, str]]:
+) -> list[dict[str, str | int]]:
     """Pull the ``limit`` most recent events attached to a non-property scope."""
     column = "building_id" if scope == "building" else "liegenschaft_id"
     rows = (
@@ -213,7 +213,7 @@ async def _recent_events_for_scope(
             {"sid": scope_id, "lim": limit},
         )
     ).all()
-    out: list[dict[str, str]] = []
+    out: list[dict[str, str | int]] = []
     for r in rows:
         meta = dict(r.metadata or {})
         kategorie = meta.get("kategorie") or meta.get("document_type") or r.source
@@ -224,17 +224,40 @@ async def _recent_events_for_scope(
                 "received_at": r.received_at.isoformat() if r.received_at else "",
                 "kategorie": str(kategorie),
                 "snippet": (r.snippet or "").replace("\n", " ").strip(),
+                "filename": str(meta.get("filename") or ""),
+                "head_chars": int(meta.get("head_chars") or 0),
             }
         )
     return out
 
 
-def _format_context_event(event: dict[str, str]) -> str:
+def _context_body(event: dict[str, str | int]) -> str:
+    """Render the human-facing body of a context event.
+
+    For PDF sources whose text hasn't been extracted yet we use the
+    forward-looking phrasing ``"Invoice <filename> — awaiting
+    extraction"`` (Phase 9 trust-layer ethos: honest about epistemic
+    state). Once text is extracted (``head_chars > 0``) the snippet
+    drives the display normally.
+    """
+    source = str(event.get("source") or "")
+    filename = str(event.get("filename") or "")
+    head_chars = int(event.get("head_chars") or 0)
+
+    if source in {"invoice", "letter"} and head_chars == 0 and filename:
+        label = "Invoice" if source == "invoice" else "Letter"
+        return f"{label} {filename} — awaiting extraction"
+
+    snippet = str(event.get("snippet") or "")
+    return snippet[:90] or "(no body)"
+
+
+def _format_context_event(event: dict[str, str | int]) -> str:
     """Render one per-tier context event as a markdown bullet with source link."""
-    when = event["received_at"][:10] if event["received_at"] else "?"
+    when = str(event.get("received_at") or "")[:10] if event.get("received_at") else "?"
     return (
         f"- *{when}* · `{event['source']}`/{event['kategorie']} — "
-        f"{event['snippet'][:90] or '(no body)'} "
+        f"{_context_body(event)} "
         f"[source: {event['id']}](#event-{event['id']})"
     )
 
