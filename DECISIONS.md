@@ -2,6 +2,18 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8.1 Step 3b: forward-looking PDF placeholder text ("awaiting extraction")
+Context: The connectors emitted `[INVOICE: filename.pdf] (text not extracted)` for PDF events whose body wasn't parsed at backfill time (we deliberately skip pdfplumber on the 329 PDFs in Step 3 to keep the cost ledger free for Steps 4-6). The phrasing reads like an error to a human glancing at the WEG Context block.
+Decision: The connectors now emit `Invoice {filename} — awaiting extraction` (or `Letter {filename} — …`) for the no-body case, and the renderer's `_context_body` reformats existing rows to the same wording when `metadata.head_chars == 0`. New ingest writes the new text directly; existing 194 invoice rows display via the renderer fix without a re-write.
+Reason: Phase 9's trust-layer ethos says the system should be honest about its epistemic state. "Awaiting extraction" is forward-looking and accurate — we know there's content there, we haven't processed it yet. It's not a failure mode to apologise for.
+Revisit if: We start extracting PDF text on backfill (Steps 4-6 may opt-in) — at that point the renderer will fall through to the snippet path automatically once `head_chars > 0`.
+
+## 2026-04-25 — Phase 8.1 Step 3b: 13 closed-lease MIE rows are *known acceptable* unrouted, not a routing bug
+Context: After re-route, 13 events remain unrouted with the diagnostic `refs (none) kat=miete unresolved`. They are bank rows referencing `MIE-NNN` where the matching tenant has `mietende` set (lease ended). Step 2's loader correctly skipped the closed-lease tenant from `relationships(occupied_by)` because the active-only invariant — so the router can't resolve the `MIE-NNN` to a current property.
+Decision: This is *expected* behaviour, not a routing miss. Logged here so a future operator reading the unrouted inbox doesn't waste cycles trying to fix it. If a property manager genuinely needs closed-lease historical routing, the right move is a Phase 9+ feature (e.g. an `historical_tenancies` table or an opt-in `include_closed=True` flag on the loader) — not loosening Step 2's invariant.
+Reason: The active-only constraint protects the property markdown's "who lives here today" answer. Including closed-lease tenants in `occupied_by` would corrupt that for every per-property reader. Keeping 13 events unrouted is the cheapest, most honest representation.
+Revisit if: A customer ships a meaningful number of historical-tenant events that need attribution to a unit (e.g. for late-payment reconstruction across tenancies) — at that point design a parallel `historical_occupied_by` edge that the router can consult after the active-only path misses.
+
 ## 2026-04-25 — Phase 8.1 Step 3b: three-tier ownership hierarchy (Liegenschaft → Building → Property)
 Context: After Step 3a shipped, the live verify revealed 100% of Buena invoices and 12.5% of bank rows landing unrouted. Investigation showed Buena's events span three ownership tiers (1 WEG → 3 Häuser → 52 units), but the schema only modelled per-property attribution. WEG-billed events have a *known* correct attribution; routing them to "unrouted" was hiding truth, not surfacing a gap.
 Decision: Add `liegenschaften` table + `buildings.liegenschaft_id` FK + `events.{building_id, liegenschaft_id}` + `facts.{building_id, liegenschaft_id}` (additive migration `0002_liegenschaft_hierarchy`). Router gains precedence rules for HAUS-N alias → building and WEG keyword/kategorie/invoice → liegenschaft. Renderer ends property markdown with **Building Context** and **WEG Context** subsections; new `/buildings/{id}/markdown` and `/liegenschaften/{id}/markdown` endpoints.

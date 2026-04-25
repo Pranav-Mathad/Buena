@@ -661,8 +661,8 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 8.1 — Buena Real-Data Mode (Steps 1, 2, 3a, 3b verified; merge gate 1 pending user OK).
-**Next deliverable:** MERGE GATE 1 → squash `phase-8/buena-real-data` → main, tag `phase-8.1-structured-data`. Then Step 4 (eval framework).
+**Current phase:** Phase 8.1 — Buena Real-Data Mode (**MERGED**; tag `phase-8.1-structured-data`). Next sub-phase: Step 4 (eval framework).
+**Next deliverable:** Step 4 — `eval/` framework with hand-annotated ground truth, runner, metrics, calibration curve. Gate-stop after the first metrics report.
 **Blockers:** None.
 
 **Phase 8.1 Step 3b results (verified live):**
