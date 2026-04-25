@@ -516,6 +516,152 @@ def _json(value: dict[str, Any]) -> str:
 
 
 # -----------------------------------------------------------------------------
+# Phase 10 Step 10.2 — replay engine
+# -----------------------------------------------------------------------------
+
+
+class ScheduledPause(BaseModel):
+    """One ``scheduled_pauses`` checkpoint for a replay run."""
+
+    at_seconds: float = Field(..., ge=0)
+    message: str = Field(..., max_length=200)
+
+
+class ReplayStartRequest(BaseModel):
+    """Body for ``POST /admin/replay/start``."""
+
+    property_id: UUID
+    speed_multiplier: int = Field(default=10, ge=1, le=10000)
+    source_filter: list[str] = Field(default_factory=lambda: ["email", "invoice", "bank"])
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    scheduled_pauses: list[ScheduledPause] = Field(default_factory=list)
+    reset_property: bool = Field(default=False)
+
+
+class ReplayRunStatus(BaseModel):
+    """Snapshot of one ``replay_runs`` row for the API."""
+
+    run_id: UUID
+    property_id: UUID
+    speed_multiplier: int
+    source_filter: list[str]
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    scheduled_pauses: list[dict[str, Any]] = Field(default_factory=list)
+    reset_property: bool = False
+    status: str
+    total_events: int
+    processed_events: int
+    last_error: str | None = None
+    started_at: datetime
+    paused_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+@router.post("/replay/start", response_model=ReplayRunStatus)
+async def replay_start(body: ReplayStartRequest) -> ReplayRunStatus:
+    """Spin up a replay run for ``property_id``.
+
+    Streams events through the live pipeline at ``speed_multiplier`` ×
+    real time. ``reset_property=True`` wipes facts / uncertainties /
+    rejections for that property first so the demo opens at "day zero".
+    Stammdaten links are preserved.
+    """
+    from backend.services import replay  # noqa: PLC0415
+
+    snapshot = await replay.start_run(
+        property_id=body.property_id,
+        speed_multiplier=body.speed_multiplier,
+        source_filter=list(body.source_filter),
+        start_date=body.start_date,
+        end_date=body.end_date,
+        scheduled_pauses=[p.model_dump() for p in body.scheduled_pauses],
+        reset_property=body.reset_property,
+    )
+    return ReplayRunStatus(**snapshot)
+
+
+@router.post("/replay/{run_id}/pause", response_model=ReplayRunStatus)
+async def replay_pause(run_id: UUID) -> ReplayRunStatus:
+    """Pause a running replay; the in-flight event finishes first."""
+    from backend.services import replay  # noqa: PLC0415
+
+    return ReplayRunStatus(**await replay.pause_run(run_id))
+
+
+@router.post("/replay/{run_id}/resume", response_model=ReplayRunStatus)
+async def replay_resume(run_id: UUID) -> ReplayRunStatus:
+    """Resume a paused replay."""
+    from backend.services import replay  # noqa: PLC0415
+
+    return ReplayRunStatus(**await replay.resume_run(run_id))
+
+
+@router.post("/replay/{run_id}/stop", response_model=ReplayRunStatus)
+async def replay_stop(run_id: UUID) -> ReplayRunStatus:
+    """Stop a replay; durable status flips to ``stopped``."""
+    from backend.services import replay  # noqa: PLC0415
+
+    return ReplayRunStatus(**await replay.stop_run(run_id))
+
+
+@router.get("/replay/{run_id}/status", response_model=ReplayRunStatus)
+async def replay_status(run_id: UUID) -> ReplayRunStatus:
+    """Read the current durable status of a replay run."""
+    from backend.services import replay  # noqa: PLC0415
+
+    try:
+        snapshot = await replay.get_run_status(run_id)
+    except LookupError as exc:
+        from fastapi import HTTPException  # noqa: PLC0415
+
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ReplayRunStatus(**snapshot)
+
+
+@router.post("/demo/replay", response_model=ReplayRunStatus)
+async def demo_replay() -> ReplayRunStatus:
+    """Thin wrapper that runs the canonical demo replay on the hero property.
+
+    All parameters come from configuration:
+
+    - ``KEYSTONE_DEMO_HERO_PROPERTY`` env var (default: WE 29 from
+      Step 6's hero pin) → ``property_id``.
+    - ``KEYSTONE_DEMO_SPEED_MULTIPLIER`` (default 10) →
+      ``speed_multiplier``.
+    - Hardcoded: ``source_filter=['email','invoice','bank']``,
+      ``reset_property=True``, and a single
+      ``scheduled_pauses[0] = {at_seconds: 50, message: 'validator beat'}``
+      that drives the Phase 10 demo's Beat 3 (validator rejecting the
+      "8 floors" email live).
+
+    Everything is configurable via :func:`replay.start_run` for ad-hoc
+    runs; this endpoint just removes the body so the demo button is a
+    one-click affair.
+    """
+    from backend.config import get_settings  # noqa: PLC0415
+    from backend.services import replay  # noqa: PLC0415
+
+    settings = get_settings()
+    snapshot = await replay.start_run(
+        property_id=UUID(settings.keystone_demo_hero_property),
+        speed_multiplier=settings.keystone_demo_speed_multiplier,
+        source_filter=["email", "invoice", "bank"],
+        scheduled_pauses=[
+            {"at_seconds": 50.0, "message": "validator beat"},
+        ],
+        reset_property=True,
+    )
+    log.info(
+        "admin.demo_replay.started",
+        run_id=snapshot["run_id"],
+        property_id=snapshot["property_id"],
+    )
+    return ReplayRunStatus(**snapshot)
+
+
+# -----------------------------------------------------------------------------
 # Phase 9 Step 9.1 — uncertainty inbox (read-only for now)
 # -----------------------------------------------------------------------------
 

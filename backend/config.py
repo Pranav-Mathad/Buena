@@ -68,6 +68,19 @@ class Settings(BaseSettings):
     slack_signing_secret: str = Field(default="")
     mock_erp_url: str = Field(default="http://localhost:8001")
 
+    # --- Phase 10 demo ---
+    # Hero property the no-arg ``POST /admin/demo/replay`` runs against.
+    # Default: WE 29 (Step 6 hero, see DECISIONS.md). Override via env when
+    # a different property has richer coverage post-hackathon.
+    keystone_demo_hero_property: str = Field(
+        default="509393da-6806-49ef-9e59-3da0213008cd"
+    )
+    # Replay engine speed multiplier the demo uses by default.
+    keystone_demo_speed_multiplier: int = Field(default=10)
+    # ``hand_crafted`` falls back to the Berliner 4B beats for safety;
+    # ``buena`` is the primary file-builds-itself replay.
+    keystone_demo_mode: str = Field(default="buena")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

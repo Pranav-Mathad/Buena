@@ -210,6 +210,44 @@ _MIGRATIONS: list[tuple[str, str]] = [
           WHERE status = 'open';
         """,
     ),
+    (
+        "0007_replay_runs",
+        """
+        -- Phase 10 Step 10.2 — sequential replay state.
+        -- One row per ``POST /admin/replay/start`` invocation. Tracks
+        -- progress + control state so the SSE client can render the
+        -- "n / total events streamed" UI without re-querying events,
+        -- and so pause / resume / stop are durable across reconnects.
+        --
+        -- ``status`` lifecycle:
+        --   running   — actively streaming
+        --   paused    — stopped on a scheduled_pauses checkpoint or
+        --               an operator pause
+        --   completed — drained the configured event window
+        --   stopped   — operator-cancelled mid-flight
+        --   failed    — engine raised; ``last_error`` is populated
+        CREATE TABLE IF NOT EXISTS replay_runs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+          speed_multiplier INTEGER NOT NULL DEFAULT 10,
+          source_filter TEXT[] NOT NULL DEFAULT ARRAY['email','invoice','bank']::TEXT[],
+          start_date TIMESTAMPTZ,
+          end_date TIMESTAMPTZ,
+          scheduled_pauses JSONB NOT NULL DEFAULT '[]'::jsonb,
+          reset_property BOOLEAN NOT NULL DEFAULT FALSE,
+          status TEXT NOT NULL DEFAULT 'running',
+          total_events INTEGER NOT NULL DEFAULT 0,
+          processed_events INTEGER NOT NULL DEFAULT 0,
+          last_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
+          last_error TEXT,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          paused_at TIMESTAMPTZ,
+          completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_replay_runs_property_status
+          ON replay_runs (property_id, started_at DESC);
+        """,
+    ),
 ]
 
 
