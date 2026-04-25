@@ -17,6 +17,7 @@ stages don't need to branch.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import structlog
 
@@ -43,8 +44,69 @@ from backend.services.lang import detect_language
 log = structlog.get_logger(__name__)
 
 
+# Phase 9 Step 9.1 — confidence floor. Facts the extractor produced
+# below this threshold are demoted to ``uncertain[]`` regardless of
+# whether the model itself flagged them, so the applier never writes
+# a low-confidence fact into the canonical ``facts`` table.
+# Hardcoded for now; a per-section config table is a Phase 9+ item.
+CONFIDENCE_FLOOR: float = 0.7
+
+
 _SUBJECT_RE = re.compile(r"^subject:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 _FROM_RE = re.compile(r"^from:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+def _apply_confidence_floor(result: ExtractionResult) -> ExtractionResult:
+    """Demote sub-floor facts to ``uncertain[]`` so they don't reach the applier.
+
+    The extractor (Gemini *or* rule fallback) sometimes emits facts at
+    confidence 0.6 — high enough to be worth surfacing, low enough to
+    not warrant overwriting a canonical fact. Step 9.1's contract is
+    that those land in ``uncertainty_events`` instead of ``facts``.
+    """
+    keep: list[dict[str, Any]] = []
+    demoted: list[dict[str, Any]] = []
+    for fact in result.facts_to_update:
+        try:
+            confidence = float(fact.get("confidence", 0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if confidence < CONFIDENCE_FLOOR:
+            demoted.append(
+                {
+                    "observation": str(fact.get("value", ""))[:500],
+                    "hypothesis": str(fact.get("value", ""))[:500],
+                    "reason_uncertain": (
+                        f"low extractor confidence ({confidence:.2f}) "
+                        f"below floor {CONFIDENCE_FLOOR:.2f}"
+                    ),
+                    "relevant_section": str(fact.get("section", "")),
+                    "relevant_field": str(fact.get("field", "")) or None,
+                }
+            )
+        else:
+            keep.append(fact)
+    if not demoted:
+        return result
+    log.info(
+        "extractor.confidence_floor",
+        kept=len(keep),
+        demoted=len(demoted),
+        floor=CONFIDENCE_FLOOR,
+    )
+    return ExtractionResult(
+        category=result.category,
+        priority=result.priority,
+        facts_to_update=keep,
+        uncertain=list(result.uncertain) + demoted,
+        summary=result.summary,
+        raw=result.raw,
+        latency_ms=result.latency_ms,
+        model=result.model,
+        source=result.source,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+    )
 
 
 def _extract_subject(raw: str) -> str:
@@ -134,15 +196,18 @@ async def extract(
 
     if gemini_available():
         try:
-            return await gemini_extract(
+            result = await gemini_extract(
                 property_name=property_name,
                 current_context_excerpt=current_context_excerpt,
                 source=source,
                 raw_content=raw_content,
                 lang=lang,
             )
+            return _apply_confidence_floor(result)
         except GeminiUnavailable as exc:
             log.warning("extractor.gemini_unavailable", error=str(exc), lang=lang)
 
     log.info("extractor.fallback.rule_based", source=source, lang=lang)
-    return _rule_based(source=source, raw_content=raw_content, lang=lang)
+    return _apply_confidence_floor(
+        _rule_based(source=source, raw_content=raw_content, lang=lang)
+    )

@@ -165,6 +165,51 @@ _MIGRATIONS: list[tuple[str, str]] = [
           ON rejected_updates (reviewed_status, created_at DESC);
         """,
     ),
+    (
+        "0006_uncertainty_events",
+        """
+        -- Phase 9 Step 9.1 — uncertainty as first-class output.
+        -- The extractor and the validator both produce things the
+        -- system "noticed but didn't want to commit to":
+        --   * Gemini emits items in its uncertain[] schema field.
+        --   * Confidence floor < 0.7 demotes a fact to uncertainty.
+        --   * Validator needs_review verdicts (e.g. rent change with
+        --     a lease_addendum PDF) — soft-rejects that ask for
+        --     human confirmation rather than blocking outright.
+        -- All three land here. ``status`` tracks the review lifecycle.
+        --
+        -- ``observation`` — what the system saw (the verbatim or
+        --     near-verbatim phrasing that triggered the uncertainty).
+        -- ``hypothesis``  — the candidate value if there is one
+        --     (NULL when the model just flagged something noticed).
+        -- ``reason_uncertain`` — operator-facing why-this-is-flagged.
+        -- ``source`` — where the uncertainty came from:
+        --     gemini | confidence_floor | validator_needs_review
+        CREATE TABLE IF NOT EXISTS uncertainty_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+          building_id UUID REFERENCES buildings(id) ON DELETE SET NULL,
+          liegenschaft_id UUID REFERENCES liegenschaften(id) ON DELETE SET NULL,
+          relevant_section TEXT,
+          relevant_field TEXT,
+          observation TEXT NOT NULL,
+          hypothesis TEXT,
+          reason_uncertain TEXT NOT NULL,
+          source TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          resolved_to_fact_id UUID REFERENCES facts(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          resolved_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_uncertainty_events_property_open
+          ON uncertainty_events (property_id, created_at DESC)
+          WHERE status = 'open';
+        CREATE INDEX IF NOT EXISTS idx_uncertainty_events_section
+          ON uncertainty_events (property_id, relevant_section, created_at DESC)
+          WHERE status = 'open';
+        """,
+    ),
 ]
 
 

@@ -513,3 +513,138 @@ def _json(value: dict[str, Any]) -> str:
     import json  # noqa: PLC0415
 
     return json.dumps(value)
+
+
+# -----------------------------------------------------------------------------
+# Phase 9 Step 9.1 — uncertainty inbox (read-only for now)
+# -----------------------------------------------------------------------------
+
+
+class UncertaintyItemModel(BaseModel):
+    """One open uncertainty row, ready for the admin UI."""
+
+    uncertainty_id: UUID
+    event_id: UUID
+    relevant_section: str | None = None
+    relevant_field: str | None = None
+    observation: str
+    hypothesis: str | None = None
+    reason_uncertain: str
+    source: str
+    status: str
+    created_at: datetime
+
+
+class UncertaintyResponse(BaseModel):
+    """Response envelope for ``GET /admin/properties/{id}/uncertainties``."""
+
+    total: int
+    by_section: dict[str, int]
+    by_source: dict[str, int]
+    items: list[UncertaintyItemModel]
+
+
+@router.get(
+    "/properties/{property_id}/uncertainties",
+    response_model=UncertaintyResponse,
+)
+async def list_uncertainties_for_property(
+    property_id: UUID,
+    status_filter: str = Query(
+        default="open",
+        alias="status",
+        pattern=r"^(open|resolved|dismissed|all)$",
+        description="Filter by status; ``all`` returns every row.",
+    ),
+    limit: int = Query(default=200, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+) -> UncertaintyResponse:
+    """List the property's open uncertainty events.
+
+    Step 9.1 ships this as **read-only**. ``POST /uncertainties/{id}/resolve``
+    is deliberately deferred to Phase 9.2+ — the demo's value is in
+    *seeing* the "Needs Review" section render honestly, not in
+    clicking through it. See DECISIONS.md for the rationale.
+    """
+    where = "WHERE property_id = :pid"
+    params: dict[str, Any] = {"pid": property_id, "lim": limit}
+    if status_filter != "all":
+        where += " AND status = :st"
+        params["st"] = status_filter
+
+    breakdown_section = (
+        await session.execute(
+            text(
+                f"""
+                SELECT COALESCE(relevant_section, '(unsectioned)') AS section,
+                       COUNT(*) AS n
+                FROM uncertainty_events
+                {where}
+                GROUP BY COALESCE(relevant_section, '(unsectioned)')
+                """
+            ),
+            params,
+        )
+    ).all()
+    by_section = {row.section: int(row.n) for row in breakdown_section}
+
+    breakdown_source = (
+        await session.execute(
+            text(
+                f"""
+                SELECT source, COUNT(*) AS n
+                FROM uncertainty_events
+                {where}
+                GROUP BY source
+                """
+            ),
+            params,
+        )
+    ).all()
+    by_source = {row.source: int(row.n) for row in breakdown_source}
+
+    rows = (
+        await session.execute(
+            text(
+                f"""
+                SELECT id, event_id, relevant_section, relevant_field,
+                       observation, hypothesis, reason_uncertain,
+                       source, status, created_at
+                FROM uncertainty_events
+                {where}
+                ORDER BY created_at DESC
+                LIMIT :lim
+                """
+            ),
+            params,
+        )
+    ).all()
+
+    items = [
+        UncertaintyItemModel(
+            uncertainty_id=row.id,
+            event_id=row.event_id,
+            relevant_section=row.relevant_section,
+            relevant_field=row.relevant_field,
+            observation=str(row.observation or ""),
+            hypothesis=row.hypothesis,
+            reason_uncertain=str(row.reason_uncertain or ""),
+            source=str(row.source or "extractor"),
+            status=str(row.status),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+    log.info(
+        "admin.uncertainties.list",
+        property_id=str(property_id),
+        status=status_filter,
+        total=sum(by_section.values()),
+        returned=len(items),
+    )
+    return UncertaintyResponse(
+        total=sum(by_section.values()),
+        by_section=by_section,
+        by_source=by_source,
+        items=items,
+    )
