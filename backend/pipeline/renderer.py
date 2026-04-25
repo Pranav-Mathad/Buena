@@ -55,6 +55,44 @@ SECTION_TITLES: dict[str, str] = {
     "liegenschaft_maintenance": "WEG maintenance",
 }
 
+#: German section titles surfaced when a property's source-event language
+#: majority is German (Phase 8 Step 5).
+SECTION_TITLES_DE: dict[str, str] = {
+    "overview": "Überblick",
+    "tenants": "Mieter",
+    "lease": "Mietvertrag",
+    "maintenance": "Wartung",
+    "financials": "Finanzen",
+    "compliance": "Compliance",
+    "activity": "Aktivität",
+    "patterns": "Muster",
+    "building_financials": "Haus-Finanzen",
+    "building_maintenance": "Haus-Wartung",
+    "liegenschaft_financials": "WEG-Finanzen",
+    "liegenschaft_maintenance": "WEG-Wartung",
+    "liegenschaft_compliance": "WEG-Compliance",
+    "building_compliance": "Haus-Compliance",
+}
+
+CONTEXT_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "building_context": "Building Context",
+        "weg_context": "WEG Context",
+        "building_subtitle": "Recent activity at the parent building",
+        "weg_subtitle": "Recent activity at the WEG (Liegenschaft)",
+        "open_building": "Open building view",
+        "open_weg": "Open WEG view",
+    },
+    "de": {
+        "building_context": "Hauskontext",
+        "weg_context": "WEG-Kontext",
+        "building_subtitle": "Letzte Aktivitäten am übergeordneten Haus",
+        "weg_subtitle": "Letzte Aktivitäten in der WEG (Liegenschaft)",
+        "open_building": "Hausansicht öffnen",
+        "open_weg": "WEG-Ansicht öffnen",
+    },
+}
+
 #: How many recent events to surface in the per-tier context blocks.
 CONTEXT_LIMIT: int = 5
 
@@ -77,6 +115,45 @@ class FactRow:
     source_event_id: UUID | None
     confidence: float
     source: str | None
+
+
+async def _detect_property_language(
+    session: AsyncSession,
+    property_id: UUID,
+    *,
+    sample_limit: int = 8,
+) -> str:
+    """Return ``'de'`` or ``'en'`` based on the property's recent events.
+
+    Heuristic: pull the last ``sample_limit`` event raw_contents,
+    detect each, return the majority. Falls back to ``'en'`` when the
+    sample is empty or the language detector fails on every row.
+    """
+    from backend.services.lang import detect_language  # noqa: PLC0415
+
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT raw_content FROM events
+                WHERE property_id = :pid
+                ORDER BY received_at DESC
+                LIMIT :lim
+                """
+            ),
+            {"pid": property_id, "lim": sample_limit},
+        )
+    ).all()
+    if not rows:
+        return "en"
+    counts: dict[str, int] = {"de": 0, "en": 0}
+    for r in rows:
+        code = detect_language(str(r.raw_content or ""))
+        if code in counts:
+            counts[code] += 1
+    if counts["de"] > counts["en"]:
+        return "de"
+    return "en"
 
 
 async def _fetch_header(session: AsyncSession, property_id: UUID) -> PropertyHeader | None:
@@ -305,8 +382,24 @@ async def _fetch_facts_by_scope(
 def _emit_sections(
     facts: list[FactRow],
     lines: list[str],
+    *,
+    lang: str = "en",
 ) -> None:
-    """Append one ``## Section`` block per non-empty section to ``lines``."""
+    """Append one ``## Section`` block per non-empty section to ``lines``.
+
+    German titles are picked when ``lang='de'`` and a German label is
+    defined for the section in :data:`SECTION_TITLES_DE`; otherwise the
+    English label (or the section name) is used.
+    """
+    titles = SECTION_TITLES_DE if lang == "de" else SECTION_TITLES
+
+    def _title(section: str) -> str:
+        label = titles.get(section)
+        if label is not None:
+            return label
+        # Fall through to English for sections without German labels.
+        return SECTION_TITLES.get(section, section.replace("_", " ").title())
+
     by_section: dict[str, list[FactRow]] = {section: [] for section in SECTION_ORDER}
     for fact in facts:
         by_section.setdefault(fact.section, []).append(fact)
@@ -314,7 +407,7 @@ def _emit_sections(
         rows = by_section.get(section, [])
         if not rows:
             continue
-        lines.append(f"## {SECTION_TITLES.get(section, section.title())}")
+        lines.append(f"## {_title(section)}")
         lines.append("")
         lines.extend(_format_fact_line(fact) for fact in rows)
         lines.append("")
@@ -324,9 +417,7 @@ def _emit_sections(
         if section not in SECTION_ORDER and by_section[section]
     ]
     for section in sorted(extras):
-        lines.append(
-            f"## {SECTION_TITLES.get(section, section.replace('_', ' ').title())}"
-        )
+        lines.append(f"## {_title(section)}")
         lines.append("")
         lines.extend(_format_fact_line(fact) for fact in by_section[section])
         lines.append("")
@@ -349,14 +440,17 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
         raise ValueError(f"Property {property_id} not found")
 
     facts = await _fetch_current_facts(session, property_id)
+    lang = await _detect_property_language(session, property_id)
+    labels = CONTEXT_LABELS[lang]
     log.debug(
         "renderer.fetch",
         property_id=str(property_id),
         fact_count=len(facts),
+        lang=lang,
     )
 
     lines: list[str] = [f"# {header.name}", "", f"_{header.address}_", ""]
-    _emit_sections(facts, lines)
+    _emit_sections(facts, lines, lang=lang)
 
     # Building Context
     building_id, building_address = await _building_for_property(session, property_id)
@@ -365,16 +459,16 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
             session, scope="building", scope_id=building_id
         )
         if events:
-            lines.append("## Building Context")
+            lines.append(f"## {labels['building_context']}")
             lines.append("")
             lines.append(
-                f"_Recent activity at the parent building — "
+                f"_{labels['building_subtitle']} — "
                 f"{building_address or building_id}_"
             )
             lines.append("")
             lines.extend(_format_context_event(ev) for ev in events)
             lines.append(
-                f"\n[Open building view](/buildings/{building_id}/markdown)\n"
+                f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n"
             )
 
     # WEG Context
@@ -387,16 +481,16 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
                 session, scope="liegenschaft", scope_id=liegenschaft_id
             )
             if events:
-                lines.append("## WEG Context")
+                lines.append(f"## {labels['weg_context']}")
                 lines.append("")
                 lines.append(
-                    f"_Recent activity at the WEG (Liegenschaft) — "
+                    f"_{labels['weg_subtitle']} — "
                     f"{liegenschaft_name or liegenschaft_id}_"
                 )
                 lines.append("")
                 lines.extend(_format_context_event(ev) for ev in events)
                 lines.append(
-                    f"\n[Open WEG view](/liegenschaften/"
+                    f"\n[{labels['open_weg']}](/liegenschaften/"
                     f"{liegenschaft_id}/markdown)\n"
                 )
 
