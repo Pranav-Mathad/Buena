@@ -56,6 +56,27 @@
             "Wasserschaden Bad WE 29: Wasser tropft seit heute Morgen aus der Decke (von WE darüber).",
             "Water damage in bathroom WE 23: water dripping from ceiling since this morning (from upstairs unit)."
           ]
+        },
+        {
+          "name": "noise_complaint",
+          "examples": [
+            "Massive Lärmbelästigung GE 37 aus der Wohnung über uns; Mieter bittet um offizielle Abmahnung.",
+            "Mieter WE 29 beschwert sich über wochenlange Lärmbelästigung; bisher mehrfach ohne Erfolg angesprochen."
+          ]
+        },
+        {
+          "name": "clogged_drain",
+          "examples": [
+            "Abfluss in der Dusche GE 37 komplett verstopft; Pümpel ohne Erfolg, Handwerker angefragt.",
+            "Abfluss in der Dusche WE 29 komplett verstopft; Mieter bittet dringend um Handwerkereinsatz."
+          ]
+        },
+        {
+          "name": "heating_outage",
+          "examples": [
+            "Heizung WE 13 heizt seit gestern nicht mehr richtig; alle Thermostate aufgedreht, bleibt kalt.",
+            "Heizung WE 21 seit gestern ausgefallen; kein Warmwasser, zeitnahe Prüfung gewünscht."
+          ]
         }
       ]
     },
