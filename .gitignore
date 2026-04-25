@@ -16,4 +16,5 @@ dist/
 build/
 .idea/
 .vscode/
+.claude/
 Extracted/

@@ -25,11 +25,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_sessionmaker
 from backend.pipeline.applier import apply as apply_plan
-from backend.pipeline.differ import diff
+from backend.pipeline.differ import diff, load_current_facts
 from backend.pipeline.events import get_event_bus
 from backend.pipeline.extractor import extract
 from backend.pipeline.renderer import render_markdown
 from backend.pipeline.router import route
+from backend.pipeline.validator import persist_rejections, validate
+
+# Importing the constraints package registers every constraint in
+# the validator's REGISTRY at module load. The validator only uses
+# whatever is registered — silent omission is the failure mode we'd
+# never want, so this import is non-optional.
+import backend.pipeline.constraints  # noqa: F401
 
 log = structlog.get_logger(__name__)
 
@@ -39,7 +46,8 @@ async def _claim_next(session: AsyncSession) -> dict[str, Any] | None:
     result = await session.execute(
         text(
             """
-            SELECT id, source, source_ref, raw_content, property_id, received_at
+            SELECT id, source, source_ref, raw_content, property_id,
+                   received_at, metadata
             FROM events
             WHERE processed_at IS NULL
               AND processing_error IS NULL
@@ -59,6 +67,7 @@ async def _claim_next(session: AsyncSession) -> dict[str, Any] | None:
         "raw_content": row.raw_content,
         "property_id": row.property_id,
         "received_at": row.received_at,
+        "metadata": dict(row.metadata or {}),
     }
 
 
@@ -139,11 +148,36 @@ async def process_one(session: AsyncSession) -> UUID | None:
             event_source=event["source"],
             proposals=result.facts_to_update,
         )
+
+        # Phase 9 Step 9.2 — constraint validator. Filters proposals
+        # the differ accepted but that violate semantic rules (e.g.
+        # rent change without an addendum, building floor count
+        # change from a free-text email). Rejections persist to
+        # rejected_updates for the admin /rejected inbox.
+        current_facts = await load_current_facts(session, property_id)
+        validated_plan, rejections = validate(
+            plan,
+            event={
+                "source": event["source"],
+                "metadata": event.get("metadata") or {},
+            },
+            current_facts=current_facts,
+        )
+        if rejections:
+            await persist_rejections(
+                session,
+                event_id=event_id,
+                property_id=property_id,
+                building_id=None,
+                liegenschaft_id=None,
+                rejections=rejections,
+            )
+
         written = await apply_plan(
             session,
             property_id=property_id,
             source_event_id=event_id,
-            plan=plan,
+            plan=validated_plan,
         )
 
         # Always drop a summary onto the activity section so the feed stays lively.

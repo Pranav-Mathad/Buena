@@ -120,6 +120,51 @@ _MIGRATIONS: list[tuple[str, str]] = [
         );
         """,
     ),
+    (
+        "0005_rejected_updates",
+        """
+        -- Phase 9 Step 9.2 — constraint validator drop site.
+        -- Each row records a fact-update proposal that the validator
+        -- rejected (or marked needs_review) so the admin /rejected
+        -- inbox can surface it for human triage. ``constraint_name``
+        -- is the class name of the firing constraint; ``reason`` is
+        -- the operator-facing message; ``required_source_type``
+        -- captures what document_type / source the constraint
+        -- expected (e.g. ``kaufvertrag``, ``lease_addendum``).
+        --
+        -- ``reviewed_status``:
+        --   pending      — default, not yet looked at
+        --   needs_review — constraint marked the proposal as soft-
+        --                  reject (Phase 9.1 will promote these to
+        --                  uncertainty_events when that step lands)
+        --   overridden   — operator explicitly approved + an
+        --                  approval_log row was written
+        --   dismissed    — operator explicitly rejected
+        CREATE TABLE IF NOT EXISTS rejected_updates (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+          building_id UUID REFERENCES buildings(id) ON DELETE SET NULL,
+          liegenschaft_id UUID REFERENCES liegenschaften(id) ON DELETE SET NULL,
+          proposed_section TEXT NOT NULL,
+          proposed_field TEXT NOT NULL,
+          proposed_value TEXT NOT NULL,
+          proposed_confidence NUMERIC(5, 4),
+          constraint_name TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          required_source_type TEXT,
+          reviewed_status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          reviewed_at TIMESTAMPTZ,
+          reviewed_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_rejected_updates_property
+          ON rejected_updates (property_id, created_at DESC)
+          WHERE reviewed_status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_rejected_updates_pending_status
+          ON rejected_updates (reviewed_status, created_at DESC);
+        """,
+    ),
 ]
 
 
