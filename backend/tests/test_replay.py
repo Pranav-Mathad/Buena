@@ -290,7 +290,7 @@ async def test_reset_property_wipes_facts_only(
         await _cleanup(pid)
 
 
-def test_normalise_pauses_validates_and_sorts() -> None:
+async def test_normalise_pauses_validates_and_sorts() -> None:
     """``_normalise_pauses`` drops bad rows and sorts by ``at_seconds``."""
     raw = [
         {"at_seconds": 30.0, "message": "second"},
