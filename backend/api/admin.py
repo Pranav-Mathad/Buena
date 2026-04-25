@@ -770,10 +770,9 @@ async def list_uncertainties_for_property(
 ) -> UncertaintyResponse:
     """List the property's open uncertainty events.
 
-    Step 9.1 ships this as **read-only**. ``POST /uncertainties/{id}/resolve``
-    is deliberately deferred to Phase 9.2+ — the demo's value is in
-    *seeing* the "Needs Review" section render honestly, not in
-    clicking through it. See DECISIONS.md for the rationale.
+    Phase 10 Step 10.6 added the write surface
+    (:func:`resolve_uncertainty`); this endpoint stays the read-side
+    pair so a UI can list → click → resolve in one round-trip.
     """
     where = "WHERE property_id = :pid"
     params: dict[str, Any] = {"pid": property_id, "lim": limit}
@@ -856,4 +855,243 @@ async def list_uncertainties_for_property(
         by_section=by_section,
         by_source=by_source,
         items=items,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Phase 10 Step 10.6 — uncertainty action endpoints
+# -----------------------------------------------------------------------------
+
+
+class UncertaintyResolveRequest(BaseModel):
+    """Body for ``POST /admin/uncertainties/{id}/resolve``."""
+
+    action: str = Field(
+        ...,
+        pattern=r"^(promote_to_fact|dismiss)$",
+        description=(
+            "``promote_to_fact`` writes a fact at "
+            "(relevant_section, relevant_field) using ``value`` (or "
+            "``hypothesis`` as fallback) and marks the uncertainty "
+            "``resolved``. ``dismiss`` closes the uncertainty without "
+            "writing a fact."
+        ),
+    )
+    value: str | None = Field(
+        default=None,
+        max_length=2000,
+        description=(
+            "Operator-supplied value to commit when promoting. Falls "
+            "back to ``hypothesis`` from the uncertainty row if omitted. "
+            "Required when promoting an uncertainty whose hypothesis is "
+            "NULL."
+        ),
+    )
+    reason: str = Field(..., min_length=3, max_length=2000)
+    reviewed_by: str = Field(..., min_length=1, max_length=200)
+
+
+class UncertaintyResolveResponse(BaseModel):
+    """Result of a resolve action."""
+
+    uncertainty_id: UUID
+    action: str
+    new_status: str
+    fact_id: UUID | None = None
+    resolved_at: datetime
+
+
+@router.post(
+    "/uncertainties/{uncertainty_id}/resolve",
+    response_model=UncertaintyResolveResponse,
+)
+async def resolve_uncertainty(
+    uncertainty_id: UUID,
+    body: UncertaintyResolveRequest,
+    session: AsyncSession = Depends(get_session),
+) -> UncertaintyResolveResponse:
+    """Promote an uncertainty to a fact, or dismiss it.
+
+    Phase 10 Step 10.6: the trust layer's first write surface. Either
+    action transitions the uncertainty out of ``open`` and records an
+    ``approval_log`` entry naming the operator + reason — the audit
+    trail is the whole point. ``promote_to_fact`` requires the
+    uncertainty to carry both ``relevant_section`` and
+    ``relevant_field``; the value comes from ``body.value`` or, if
+    absent, from the uncertainty's ``hypothesis``. A 422 is returned
+    when neither is available.
+
+    The fact is written with ``confidence=0.95`` and ``source_event_id``
+    pointing at the uncertainty's originating event so the source link
+    keeps working.
+    """
+    from fastapi import HTTPException  # noqa: PLC0415
+
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT id, event_id, property_id, building_id, liegenschaft_id,
+                       relevant_section, relevant_field, observation,
+                       hypothesis, reason_uncertain, status
+                FROM uncertainty_events
+                WHERE id = :uid
+                FOR UPDATE
+                """
+            ),
+            {"uid": uncertainty_id},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="uncertainty not found")
+    if row.status != "open":
+        raise HTTPException(
+            status_code=409,
+            detail=f"uncertainty is already {row.status!r}",
+        )
+
+    fact_id: UUID | None = None
+    written_value: str | None = None
+
+    if body.action == "promote_to_fact":
+        if not row.relevant_section or not row.relevant_field:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "cannot promote — uncertainty is missing relevant_section "
+                    "or relevant_field"
+                ),
+            )
+        # Pick the value: explicit override wins, hypothesis second.
+        candidate = body.value if body.value not in (None, "") else row.hypothesis
+        if not candidate:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "cannot promote — no value supplied and uncertainty has "
+                    "no hypothesis to fall back on"
+                ),
+            )
+        written_value = str(candidate)
+
+        # Pick the scope column the fact should attach to. Property is the
+        # default surface; building / liegenschaft are honoured if the
+        # uncertainty was scoped that way.
+        scope_column = "property_id"
+        scope_value = row.property_id
+        if row.property_id is None and row.building_id is not None:
+            scope_column = "building_id"
+            scope_value = row.building_id
+        elif row.property_id is None and row.liegenschaft_id is not None:
+            scope_column = "liegenschaft_id"
+            scope_value = row.liegenschaft_id
+        if scope_value is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "cannot promote — uncertainty has no property/building/"
+                    "liegenschaft scope"
+                ),
+            )
+
+        fact_row = (
+            await session.execute(
+                text(
+                    f"""
+                    INSERT INTO facts (
+                      {scope_column}, section, field, value, source_event_id,
+                      confidence, valid_from
+                    ) VALUES (
+                      :sid, :section, :field, :value, :eid, 0.95, now()
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "sid": scope_value,
+                    "section": row.relevant_section,
+                    "field": row.relevant_field,
+                    "value": written_value,
+                    "eid": row.event_id,
+                },
+            )
+        ).first()
+        fact_id = UUID(str(fact_row.id))
+
+        await session.execute(
+            text(
+                """
+                UPDATE uncertainty_events
+                SET status = 'resolved',
+                    resolved_to_fact_id = :fid,
+                    resolved_at = now()
+                WHERE id = :uid
+                """
+            ),
+            {"fid": fact_id, "uid": uncertainty_id},
+        )
+        new_status = "resolved"
+    else:
+        await session.execute(
+            text(
+                """
+                UPDATE uncertainty_events
+                SET status = 'dismissed',
+                    resolved_at = now()
+                WHERE id = :uid
+                """
+            ),
+            {"uid": uncertainty_id},
+        )
+        new_status = "dismissed"
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO approval_log (
+              actor, action, target_type, target_id, payload, created_at
+            ) VALUES (
+              :actor, :action, 'uncertainty_event', :tid,
+              CAST(:payload AS JSONB), now()
+            )
+            """
+        ),
+        {
+            "actor": body.reviewed_by,
+            "action": f"uncertainty.{body.action}",
+            "tid": str(uncertainty_id),
+            "payload": _json(
+                {
+                    "section": row.relevant_section,
+                    "field": row.relevant_field,
+                    "value_written": written_value,
+                    "fact_id": str(fact_id) if fact_id else None,
+                    "reason": body.reason,
+                    "observation": str(row.observation or "")[:200],
+                }
+            ),
+        },
+    )
+    resolved_row = (
+        await session.execute(
+            text("SELECT resolved_at FROM uncertainty_events WHERE id = :uid"),
+            {"uid": uncertainty_id},
+        )
+    ).first()
+    await session.commit()
+    log.info(
+        "admin.uncertainty.resolve",
+        uncertainty_id=str(uncertainty_id),
+        action=body.action,
+        fact_id=str(fact_id) if fact_id else None,
+        reviewed_by=body.reviewed_by,
+    )
+    return UncertaintyResolveResponse(
+        uncertainty_id=uncertainty_id,
+        action=body.action,
+        new_status=new_status,
+        fact_id=fact_id,
+        resolved_at=(
+            resolved_row.resolved_at if resolved_row else datetime.utcnow()
+        ),
     )
