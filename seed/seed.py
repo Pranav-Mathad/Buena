@@ -61,6 +61,53 @@ def _apply_schema(cur: Cursor) -> None:
     cur.execute(sql)
 
 
+def _upsert_liegenschaft(
+    cur: Cursor,
+    *,
+    name: str,
+    buena_liegenschaft_id: str | None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    """Insert a Liegenschaft (WEG) row keyed on ``buena_liegenschaft_id``.
+
+    Phase 8.1 introduces a tier above buildings: one Liegenschaft owns
+    N Häuser. The loader passes the customer's stable ID; later events
+    that route to a WEG attach to the resulting UUID.
+    """
+    if buena_liegenschaft_id:
+        cur.execute(
+            "SELECT id FROM liegenschaften WHERE buena_liegenschaft_id = %s",
+            (buena_liegenschaft_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            return cast(str, row[0])
+    cur.execute(
+        """
+        INSERT INTO liegenschaften (name, buena_liegenschaft_id, metadata)
+        VALUES (%s, %s, %s::jsonb)
+        RETURNING id
+        """,
+        (name, buena_liegenschaft_id, json.dumps(metadata or {})),
+    )
+    return cast(str, cur.fetchone()[0])
+
+
+def _set_building_liegenschaft(
+    cur: Cursor, building_id: str, liegenschaft_id: str
+) -> None:
+    """Idempotently attach a building to its Liegenschaft (no-op if already set)."""
+    cur.execute(
+        """
+        UPDATE buildings
+        SET liegenschaft_id = %s
+        WHERE id = %s
+          AND (liegenschaft_id IS DISTINCT FROM %s)
+        """,
+        (liegenschaft_id, building_id, liegenschaft_id),
+    )
+
+
 def _upsert_owner(cur: Cursor, owner: OwnerSeed) -> str:
     """Insert an owner if absent; return the UUID as a string."""
     cur.execute("SELECT id FROM owners WHERE email = %s", (owner.email,))
@@ -118,11 +165,21 @@ def _upsert_property(
     owner_id: str,
     building_id: str,
 ) -> str:
-    """Insert a property if absent; return the UUID as a string."""
+    """Insert a property if absent; return the UUID as a string.
+
+    When ``prop.metadata`` is non-empty (Phase 8 Buena loader path) the
+    JSONB column carries the richer payload; otherwise the legacy
+    ``{"seed_key": prop.key}`` shape is preserved so the hand-crafted
+    Berliner seed continues to work bit-identically.
+    """
     cur.execute("SELECT id FROM properties WHERE name = %s", (prop.name,))
     row = cur.fetchone()
     if row:
         return cast(str, row[0])
+    if prop.metadata:
+        metadata: dict[str, Any] = {"seed_key": prop.key, **prop.metadata}
+    else:
+        metadata = {"seed_key": prop.key}
     cur.execute(
         """
         INSERT INTO properties (name, address, aliases, owner_id, building_id, metadata)
@@ -135,14 +192,19 @@ def _upsert_property(
             prop.aliases,
             owner_id,
             building_id,
-            json.dumps({"seed_key": prop.key}),
+            json.dumps(metadata),
         ),
     )
     return cast(str, cur.fetchone()[0])
 
 
 def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
-    """Insert a tenant if absent; return the UUID as a string."""
+    """Insert a tenant if absent; return the UUID as a string.
+
+    When ``tenant.metadata`` is non-empty (Phase 8 Buena loader path)
+    the JSONB column carries it; the original Berliner seed leaves it
+    empty and the column defaults to ``'{}'``.
+    """
     cur.execute(
         "SELECT id FROM tenants WHERE property_id = %s AND email = %s",
         (property_id, tenant.email),
@@ -152,11 +214,18 @@ def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
         return cast(str, row[0])
     cur.execute(
         """
-        INSERT INTO tenants (property_id, name, email, phone, move_in_date)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO tenants (property_id, name, email, phone, move_in_date, metadata)
+        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
         RETURNING id
         """,
-        (property_id, tenant.name, tenant.email, tenant.phone, tenant.move_in_date),
+        (
+            property_id,
+            tenant.name,
+            tenant.email,
+            tenant.phone,
+            tenant.move_in_date,
+            json.dumps(tenant.metadata or {}),
+        ),
     )
     return cast(str, cur.fetchone()[0])
 

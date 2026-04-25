@@ -66,6 +66,7 @@ class TenantSeed:
     email: str
     phone: str
     move_in_date: date
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ class PropertySeed:
     tenants: list[TenantSeed]
     events: list[EventSeed]
     facts: list[FactSeed]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------

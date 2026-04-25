@@ -2,6 +2,84 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8.1 Step 3b: forward-looking PDF placeholder text ("awaiting extraction")
+Context: The connectors emitted `[INVOICE: filename.pdf] (text not extracted)` for PDF events whose body wasn't parsed at backfill time (we deliberately skip pdfplumber on the 329 PDFs in Step 3 to keep the cost ledger free for Steps 4-6). The phrasing reads like an error to a human glancing at the WEG Context block.
+Decision: The connectors now emit `Invoice {filename} — awaiting extraction` (or `Letter {filename} — …`) for the no-body case, and the renderer's `_context_body` reformats existing rows to the same wording when `metadata.head_chars == 0`. New ingest writes the new text directly; existing 194 invoice rows display via the renderer fix without a re-write.
+Reason: Phase 9's trust-layer ethos says the system should be honest about its epistemic state. "Awaiting extraction" is forward-looking and accurate — we know there's content there, we haven't processed it yet. It's not a failure mode to apologise for.
+Revisit if: We start extracting PDF text on backfill (Steps 4-6 may opt-in) — at that point the renderer will fall through to the snippet path automatically once `head_chars > 0`.
+
+## 2026-04-25 — Phase 8.1 Step 3b: 13 closed-lease MIE rows are *known acceptable* unrouted, not a routing bug
+Context: After re-route, 13 events remain unrouted with the diagnostic `refs (none) kat=miete unresolved`. They are bank rows referencing `MIE-NNN` where the matching tenant has `mietende` set (lease ended). Step 2's loader correctly skipped the closed-lease tenant from `relationships(occupied_by)` because the active-only invariant — so the router can't resolve the `MIE-NNN` to a current property.
+Decision: This is *expected* behaviour, not a routing miss. Logged here so a future operator reading the unrouted inbox doesn't waste cycles trying to fix it. If a property manager genuinely needs closed-lease historical routing, the right move is a Phase 9+ feature (e.g. an `historical_tenancies` table or an opt-in `include_closed=True` flag on the loader) — not loosening Step 2's invariant.
+Reason: The active-only constraint protects the property markdown's "who lives here today" answer. Including closed-lease tenants in `occupied_by` would corrupt that for every per-property reader. Keeping 13 events unrouted is the cheapest, most honest representation.
+Revisit if: A customer ships a meaningful number of historical-tenant events that need attribution to a unit (e.g. for late-payment reconstruction across tenancies) — at that point design a parallel `historical_occupied_by` edge that the router can consult after the active-only path misses.
+
+## 2026-04-25 — Phase 8.1 Step 3b: three-tier ownership hierarchy (Liegenschaft → Building → Property)
+Context: After Step 3a shipped, the live verify revealed 100% of Buena invoices and 12.5% of bank rows landing unrouted. Investigation showed Buena's events span three ownership tiers (1 WEG → 3 Häuser → 52 units), but the schema only modelled per-property attribution. WEG-billed events have a *known* correct attribution; routing them to "unrouted" was hiding truth, not surfacing a gap.
+Decision: Add `liegenschaften` table + `buildings.liegenschaft_id` FK + `events.{building_id, liegenschaft_id}` + `facts.{building_id, liegenschaft_id}` (additive migration `0002_liegenschaft_hierarchy`). Router gains precedence rules for HAUS-N alias → building and WEG keyword/kategorie/invoice → liegenschaft. Renderer ends property markdown with **Building Context** and **WEG Context** subsections; new `/buildings/{id}/markdown` and `/liegenschaften/{id}/markdown` endpoints.
+Reason: Routing a WEG event to one Haus (Option 1: HAUS-12 as primary) is the same false-attribution mistake we rejected at the unit level. A junction table (Option 3) over-engineers a 1:N relationship and burdens every reader. Liegenschaft alongside building reflects German Hausverwaltung reality and is supported by `stammdaten.json::liegenschaft` directly.
+Revisit if: Customer data shows a multi-Liegenschaft tenant — at that point `_default_liegenschaft` (which assumes a single WEG) needs a routing key like `metadata.liegenschaft_id` or a verwendungszweck-based heuristic.
+
+## 2026-04-25 — Phase 8.1 Step 3b: case-insensitive word-boundary WEG keyword matching
+Context: Buena's `verwendungszweck` mixes capitalization freely — `Hausgeld`, `HAUSGELD`, `hausgeld` all appear in real rows. A naive substring or case-sensitive regex would either over-match (`hausgeldverordnung` shouldn't trigger if it ever appeared) or under-match (uppercase rows missed).
+Decision: `_WEG_KEYWORD_RE = re.compile(rf"\b(?:{kws})\b", re.IGNORECASE)` over the keyword list. Word boundaries prevent substring traps; `re.IGNORECASE` covers casing variance. Keyword list is auditable: drawn from real Buena data + the German Hausverwaltung lexicon (Hausgeld, Verwaltergebühr/Verwaltergebuehr, Gemeinschaftskosten, Hausverwaltung, WEG, Sonderumlage, Instandhaltungsrücklage/Instandhaltungsruecklage, Kontoführungsgebühr).
+Reason: Predictable matching across casing variants; auditable list of triggers; no third-party NLP dependency.
+Revisit if: New customer data shows a token-overlap edge case (e.g. `WEG-` as a model number unrelated to Wohnungseigentümergemeinschaft) — at that point promote the heuristic to per-customer keyword sets.
+
+## 2026-04-25 — Phase 8.1 Step 3b: invoice → liegenschaft fallback (Buena invariant)
+Context: Invoice PDFs in Buena's archive carry filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf` — contractor + invoice number, never an EH-NNN or HAUS-NN. Filename heuristics + WEG-keyword matching both fail, but the events are unambiguously WEG bills.
+Decision: Router accepts an `event_source` argument; when `event_source == "invoice"` and a single Liegenschaft exists, route there with `method='weg_invoice'`, `reason='invoice without per-unit attribution'`. Loaders pass `event_source` from the `ConnectorEvent.source` field.
+Reason: Honest data-shape recognition: every invoice in Buena's archive IS a WEG bill. Customers with per-Haus invoice patterns (filenames containing `HAUS-NN`) hit precedence 4 first. Customers with per-unit invoices carry `EH-NNN` or `MIE-NNN` and hit precedence 1-3.
+Revisit if: A customer ships per-property invoices that lack EH-NNN — at that point the rule needs a per-customer override.
+
+## 2026-04-25 — Phase 8.1 Step 3b: one-time re-route migration is documented, not permanent
+Context: After Migration 0002 lands, already-ingested events need their `building_id` / `liegenschaft_id` populated via UPDATE. Running the original backfill skips them (idempotent on `(source, source_ref)`).
+Decision: Ship `connectors.cli re-route` as a one-time migration step. Walks events with no scope set and re-evaluates routing using the current rules. Idempotent (re-running on already-routed events scans nothing). Documented as one-time in CLI help text and module docstring; not added to the scheduler or any auto-run path. Per-event live ingestion in `_ingest_one` already calls `route_structured` on each new row, so the rule changes apply automatically to new events.
+Reason: Migration semantics belong in a dedicated CLI subcommand operators run intentionally, not in the live pipeline. The lack of automation makes it auditable: ledger-style record of "we ran this on date X" lives in DECISIONS.md.
+Revisit if: We start needing recurring re-routes (e.g. when adding new keywords) — at that point the right tool is a SQL migration that backfills, not a Python loop.
+
+## 2026-04-25 — Phase 8 Step 3: structured router refuses to invent property attribution
+Context: Invoices in Buena's archive (filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf`) are billed to the WEG (building owners' association), not to a specific unit. The filename carries contractor (DL-NNN) and invoice number (INV-NNN), never an `EH-NNN`. Bank rows of `kategorie=dienstleister` are the same shape — payments to a contractor for shared services, not for one unit.
+Decision: `backend.pipeline.router.route_structured` only accepts a property when `metadata.eh_id`, `metadata.mie_id`, or `metadata.invoice_ref` *resolves* to one. No token-overlap fallback for structured events; no inventing attribution for shared services. The result: invoice events land 100% unrouted, bank events land 12.5% unrouted (the contractor-payment subset).
+Reason: Honest — the schema currently models attribution at the property level only. Sprinkling shared-service costs onto the first matching property would corrupt every per-property financial metric. The unrouted inbox (`GET /admin/unrouted`) makes the gap observable instead of hidden.
+Revisit if: We add a `building_id` column to `events` (one-line additive migration) so building-level events have somewhere honest to land. Step 8 / 9 work could prompt this; documented as a follow-up rather than a Step 3 blocker.
+
+## 2026-04-25 — Phase 8 Step 3: per-month rent payments supersede the prior `last_rent_payment`
+Context: A two-year bank archive holds 12-24 rent payments per active tenant. Writing each as its own immutable fact would clutter the renderer and obscure the "is this property current?" question.
+Decision: `extract_bank_facts` writes `financials.last_rent_payment` superseding any prior fact for the same `(property_id, section, field)`. Each new payment becomes the current fact; the chain of superseded predecessors is the audit history (still queryable via `superseded_by`). Identical-value writes short-circuit so re-runs add nothing.
+Reason: Matches KEYSTONE's "facts = current truth" rule (Part VI). 611 raw rent rows produced 26 current `last_rent_payment` facts after supersession — one per active tenant who has ever paid.
+Revisit if: We add explicit financial activity timeline UI that wants every monthly row visible — the supersession history is already the data, just needs a different read path.
+
+## 2026-04-25 — Phase 8 Step 1: connectors/ as customer-agnostic ingestion layer
+Context: Buena dropped 29 MB of partner data; the next customer will drop a different shape. Earlier plans treated Buena as a special path inside `seed/`; that bakes a customer name into a generic primitive.
+Decision: `connectors/` is the new customer-agnostic module. `connectors/base.py` defines the `Connector` Protocol + `ConnectorEvent` dataclass; primitives (`csv_stammdaten`, `eml_archive`, `camt_bank`, `pdf_invoice_archive`, `pdf_letter_archive`) are reusable. Each customer ships a single composite (`connectors/<customer>_archive.py`) that knows their directory shape. PII redaction is centralized in `connectors/redact.py` and applied at ingestion. Cost ledger (`connectors/cost_ledger.py` + `cost_ledger` table via `connectors/migrations.py`) is durable across CLI invocations.
+Reason: Treats Buena as the first customer of a real architecture, not an exception. Future customers add one composite + tests; the primitives + redaction + ledger don't change.
+Revisit if: A customer's shape doesn't fit the primitives — at that point we extend a primitive (e.g. add a Slack-archive walker) rather than fork.
+
+## 2026-04-25 — Phase 8 Step 1: redact at ingestion, not at render
+Context: Several places in the pipeline (renderer, MCP responses, SSE stream) read DB rows back out. Redacting at render means every reader has to know to scrub.
+Decision: `connectors/redact.py` scrubs IBANs (→ `****<last4>`), full phones (→ `+CC *** **<last4>`), and email domains (→ `<local>@example.com`) before yielding any `ConnectorEvent`. Tests assert no `r"DE\d{20}"` and no full E.164 phone survives a round-trip through any connector. Buena is treated as PII until anonymisation status is confirmed (TODO note in `redact.py`).
+Reason: Single chokepoint; one module to audit; zero burden on readers; defence-in-depth (renderer can still scrub additionally without changing semantics).
+Revisit if: Buena confirms the dataset is fully synthetic — even then, keep redaction on by default; flip a feature flag if specific demos need fuller display.
+
+## 2026-04-25 — Phase 8 Step 1: durable cost ledger persists across invocations
+Context: A single `--max-total-cost-usd $20` cap should govern the entire Buena backfill, not just one CLI run. A per-run-only counter would let an operator hit Ctrl-C, restart, and silently spend another $20.
+Decision: New `cost_ledger(source_label, cumulative_usd, cap_usd, hit_at)` table (additive `CREATE TABLE IF NOT EXISTS`, applied via `connectors/migrations.py`). Every Gemini call charges via `connectors.cost_ledger.charge`; on `>= cap` the row's `hit_at` is stamped and `CostCapExceeded` raised. Subsequent invocations read the row and abort immediately. Reset is friction-gated (`--reset-cost-ledger` + interactive `y/N`).
+Reason: Spend-across-runs is the only definition that makes the cap real; defaults to "remember spend" so the operator never accidentally over-spends.
+Revisit if: We add per-customer multi-tenancy and need per-customer caps — at that point use `source_label` to namespace per customer, which the schema already supports.
+
+## 2026-04-25 — Phase 8 Step 2: `_upsert_property` honours `prop.metadata`
+Context: The Phase 0 `_upsert_property` hardcoded `metadata = {"seed_key": prop.key}`, which kept the Berliner seed simple but lost richer payload (`kaltmiete`, `lage`, `wohnflaeche_qm`, …) needed for Buena units.
+Decision: When `prop.metadata` is non-empty, the upsert merges it under `seed_key` so both worlds coexist (`{"seed_key": "EH-014", "lage": "5. OG mitte", "wohnflaeche_qm": 85.0, …}`). Same pattern for `_upsert_tenant`. `PropertySeed.metadata` and `TenantSeed.metadata` default to `{}` so the hand-crafted Berliner seed continues bit-identically (no change to existing data).
+Reason: Single ingestion path for *all* customer master data — Buena rows and Berliner rows travel through the same SQL.
+Revisit if: We start needing schema-level richer fields (e.g. dedicated columns for kaltmiete) — at that point migrate columns out of JSONB rather than fork the upsert.
+
+## 2026-04-25 — Phase 8 Step 2: tenants with `mietende` set are skipped (active-only)
+Context: Buena's `mieter.csv` includes 26 rows total but at least one has a populated `mietende` (lease ended). Including those as `occupied_by` edges would misrepresent current occupancy.
+Decision: The Buena loader skips any tenant whose `metadata.active` is `False` (mietende set). Skipped count is reported in the summary (`tenants_skipped_inactive`). The 25 active tenants land with `occupied_by` edges; the 1 closed lease stays out of the relationship graph.
+Reason: "Who lives here today" is a load-bearing question for the markdown / signals; including ex-tenants would confuse it. Closed leases should resurface only via lease history facts (Step 3+).
+Revisit if: Lease-history reconstruction needs the closed-lease tenant rows in `tenants` — at that point insert them with a metadata flag and keep them out of `relationships(occupied_by)`.
+
 ## 2026-04-24 — pgvector image: `pgvector/pgvector:pg15` (not `ankane/pgvector:pg15`)
 Context: Part V specified `ankane/pgvector:pg15`, but that tag does not exist on Docker Hub — `ankane/pgvector` uses v-prefixed tags and the modern pg15 flavor has moved to the official `pgvector/pgvector` repo.
 Decision: Use `pgvector/pgvector:pg15` in `docker-compose.yml`.
