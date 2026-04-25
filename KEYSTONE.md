@@ -661,9 +661,9 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 6 — Demo Lock (**automatable rows of the Part XII checklist green**). Remaining: Lovable UI rehearsal, backup video, sleep.
-**Next deliverable:** Demo. No further backend changes.
-**Blockers:** None on this repo. Pitch rehearsal + recorded backup video are non-Claude tasks.
+**Current phase:** Phase 8 — Buena Real-Data Mode (Steps 1-3 verified; merge gate 1 pending user OK).
+**Next deliverable:** MERGE GATE 1 → squash `phase-8/buena-real-data` → main, tag `phase-8.1-structured-data`. Then Step 4 (eval framework).
+**Blockers:** Need user OK on the structured-events finding: 100% of invoices and 12.5% of bank rows land unrouted because Buena bills shared services at the building level, not the unit level. Decide before merge whether to add a `building_id` column on events or defer to Step 8/9.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
 - `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).

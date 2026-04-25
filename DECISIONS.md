@@ -2,6 +2,18 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8 Step 3: structured router refuses to invent property attribution
+Context: Invoices in Buena's archive (filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf`) are billed to the WEG (building owners' association), not to a specific unit. The filename carries contractor (DL-NNN) and invoice number (INV-NNN), never an `EH-NNN`. Bank rows of `kategorie=dienstleister` are the same shape — payments to a contractor for shared services, not for one unit.
+Decision: `backend.pipeline.router.route_structured` only accepts a property when `metadata.eh_id`, `metadata.mie_id`, or `metadata.invoice_ref` *resolves* to one. No token-overlap fallback for structured events; no inventing attribution for shared services. The result: invoice events land 100% unrouted, bank events land 12.5% unrouted (the contractor-payment subset).
+Reason: Honest — the schema currently models attribution at the property level only. Sprinkling shared-service costs onto the first matching property would corrupt every per-property financial metric. The unrouted inbox (`GET /admin/unrouted`) makes the gap observable instead of hidden.
+Revisit if: We add a `building_id` column to `events` (one-line additive migration) so building-level events have somewhere honest to land. Step 8 / 9 work could prompt this; documented as a follow-up rather than a Step 3 blocker.
+
+## 2026-04-25 — Phase 8 Step 3: per-month rent payments supersede the prior `last_rent_payment`
+Context: A two-year bank archive holds 12-24 rent payments per active tenant. Writing each as its own immutable fact would clutter the renderer and obscure the "is this property current?" question.
+Decision: `extract_bank_facts` writes `financials.last_rent_payment` superseding any prior fact for the same `(property_id, section, field)`. Each new payment becomes the current fact; the chain of superseded predecessors is the audit history (still queryable via `superseded_by`). Identical-value writes short-circuit so re-runs add nothing.
+Reason: Matches KEYSTONE's "facts = current truth" rule (Part VI). 611 raw rent rows produced 26 current `last_rent_payment` facts after supersession — one per active tenant who has ever paid.
+Revisit if: We add explicit financial activity timeline UI that wants every monthly row visible — the supersession history is already the data, just needs a different read path.
+
 ## 2026-04-25 — Phase 8 Step 1: connectors/ as customer-agnostic ingestion layer
 Context: Buena dropped 29 MB of partner data; the next customer will drop a different shape. Earlier plans treated Buena as a special path inside `seed/`; that bakes a customer name into a generic primitive.
 Decision: `connectors/` is the new customer-agnostic module. `connectors/base.py` defines the `Connector` Protocol + `ConnectorEvent` dataclass; primitives (`csv_stammdaten`, `eml_archive`, `camt_bank`, `pdf_invoice_archive`, `pdf_letter_archive`) are reusable. Each customer ships a single composite (`connectors/<customer>_archive.py`) that knows their directory shape. PII redaction is centralized in `connectors/redact.py` and applied at ingestion. Cost ledger (`connectors/cost_ledger.py` + `cost_ledger` table via `connectors/migrations.py`) is durable across CLI invocations.
