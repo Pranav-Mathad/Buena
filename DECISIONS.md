@@ -2,6 +2,30 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8.1 Step 3b: three-tier ownership hierarchy (Liegenschaft → Building → Property)
+Context: After Step 3a shipped, the live verify revealed 100% of Buena invoices and 12.5% of bank rows landing unrouted. Investigation showed Buena's events span three ownership tiers (1 WEG → 3 Häuser → 52 units), but the schema only modelled per-property attribution. WEG-billed events have a *known* correct attribution; routing them to "unrouted" was hiding truth, not surfacing a gap.
+Decision: Add `liegenschaften` table + `buildings.liegenschaft_id` FK + `events.{building_id, liegenschaft_id}` + `facts.{building_id, liegenschaft_id}` (additive migration `0002_liegenschaft_hierarchy`). Router gains precedence rules for HAUS-N alias → building and WEG keyword/kategorie/invoice → liegenschaft. Renderer ends property markdown with **Building Context** and **WEG Context** subsections; new `/buildings/{id}/markdown` and `/liegenschaften/{id}/markdown` endpoints.
+Reason: Routing a WEG event to one Haus (Option 1: HAUS-12 as primary) is the same false-attribution mistake we rejected at the unit level. A junction table (Option 3) over-engineers a 1:N relationship and burdens every reader. Liegenschaft alongside building reflects German Hausverwaltung reality and is supported by `stammdaten.json::liegenschaft` directly.
+Revisit if: Customer data shows a multi-Liegenschaft tenant — at that point `_default_liegenschaft` (which assumes a single WEG) needs a routing key like `metadata.liegenschaft_id` or a verwendungszweck-based heuristic.
+
+## 2026-04-25 — Phase 8.1 Step 3b: case-insensitive word-boundary WEG keyword matching
+Context: Buena's `verwendungszweck` mixes capitalization freely — `Hausgeld`, `HAUSGELD`, `hausgeld` all appear in real rows. A naive substring or case-sensitive regex would either over-match (`hausgeldverordnung` shouldn't trigger if it ever appeared) or under-match (uppercase rows missed).
+Decision: `_WEG_KEYWORD_RE = re.compile(rf"\b(?:{kws})\b", re.IGNORECASE)` over the keyword list. Word boundaries prevent substring traps; `re.IGNORECASE` covers casing variance. Keyword list is auditable: drawn from real Buena data + the German Hausverwaltung lexicon (Hausgeld, Verwaltergebühr/Verwaltergebuehr, Gemeinschaftskosten, Hausverwaltung, WEG, Sonderumlage, Instandhaltungsrücklage/Instandhaltungsruecklage, Kontoführungsgebühr).
+Reason: Predictable matching across casing variants; auditable list of triggers; no third-party NLP dependency.
+Revisit if: New customer data shows a token-overlap edge case (e.g. `WEG-` as a model number unrelated to Wohnungseigentümergemeinschaft) — at that point promote the heuristic to per-customer keyword sets.
+
+## 2026-04-25 — Phase 8.1 Step 3b: invoice → liegenschaft fallback (Buena invariant)
+Context: Invoice PDFs in Buena's archive carry filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf` — contractor + invoice number, never an EH-NNN or HAUS-NN. Filename heuristics + WEG-keyword matching both fail, but the events are unambiguously WEG bills.
+Decision: Router accepts an `event_source` argument; when `event_source == "invoice"` and a single Liegenschaft exists, route there with `method='weg_invoice'`, `reason='invoice without per-unit attribution'`. Loaders pass `event_source` from the `ConnectorEvent.source` field.
+Reason: Honest data-shape recognition: every invoice in Buena's archive IS a WEG bill. Customers with per-Haus invoice patterns (filenames containing `HAUS-NN`) hit precedence 4 first. Customers with per-unit invoices carry `EH-NNN` or `MIE-NNN` and hit precedence 1-3.
+Revisit if: A customer ships per-property invoices that lack EH-NNN — at that point the rule needs a per-customer override.
+
+## 2026-04-25 — Phase 8.1 Step 3b: one-time re-route migration is documented, not permanent
+Context: After Migration 0002 lands, already-ingested events need their `building_id` / `liegenschaft_id` populated via UPDATE. Running the original backfill skips them (idempotent on `(source, source_ref)`).
+Decision: Ship `connectors.cli re-route` as a one-time migration step. Walks events with no scope set and re-evaluates routing using the current rules. Idempotent (re-running on already-routed events scans nothing). Documented as one-time in CLI help text and module docstring; not added to the scheduler or any auto-run path. Per-event live ingestion in `_ingest_one` already calls `route_structured` on each new row, so the rule changes apply automatically to new events.
+Reason: Migration semantics belong in a dedicated CLI subcommand operators run intentionally, not in the live pipeline. The lack of automation makes it auditable: ledger-style record of "we ran this on date X" lives in DECISIONS.md.
+Revisit if: We start needing recurring re-routes (e.g. when adding new keywords) — at that point the right tool is a SQL migration that backfills, not a Python loop.
+
 ## 2026-04-25 — Phase 8 Step 3: structured router refuses to invent property attribution
 Context: Invoices in Buena's archive (filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf`) are billed to the WEG (building owners' association), not to a specific unit. The filename carries contractor (DL-NNN) and invoice number (INV-NNN), never an `EH-NNN`. Bank rows of `kategorie=dienstleister` are the same shape — payments to a contractor for shared services, not for one unit.
 Decision: `backend.pipeline.router.route_structured` only accepts a property when `metadata.eh_id`, `metadata.mie_id`, or `metadata.invoice_ref` *resolves* to one. No token-overlap fallback for structured events; no inventing attribution for shared services. The result: invoice events land 100% unrouted, bank events land 12.5% unrouted (the contractor-payment subset).

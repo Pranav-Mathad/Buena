@@ -661,9 +661,21 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 8 — Buena Real-Data Mode (Steps 1-3 verified; merge gate 1 pending user OK).
+**Current phase:** Phase 8.1 — Buena Real-Data Mode (Steps 1, 2, 3a, 3b verified; merge gate 1 pending user OK).
 **Next deliverable:** MERGE GATE 1 → squash `phase-8/buena-real-data` → main, tag `phase-8.1-structured-data`. Then Step 4 (eval framework).
-**Blockers:** Need user OK on the structured-events finding: 100% of invoices and 12.5% of bank rows land unrouted because Buena bills shared services at the building level, not the unit level. Decide before merge whether to add a `building_id` column on events or defer to Step 8/9.
+**Blockers:** None.
+
+**Phase 8.1 Step 3b results (verified live):**
+- Three-tier routing: 1417 events → property (78.2%), 0 → building, 383 → liegenschaft (21.1%), **13 truly unrouted (0.7%)** vs the 396 from Step 3a.
+- All four miss-rate targets met:
+  - property-level miss rate **2.0%** (13/637 miete events) — target < 5% ✓
+  - building-level miss rate **0%** (no per-Haus events in Buena's data) — target < 10% ✓
+  - liegenschaft-level miss rate **0%** (all 383 WEG events routed) — target < 15% ✓
+  - true unrouted **0.7%** (13/1813) — target < 3% ✓
+- 6/6 routing tests pass (`backend/tests/test_routing.py`).
+- 54 of 55 tests passing (1 expected skip on the legacy Berliner integration test).
+- Markdown spot-check: property markdown shows Financials + WEG Context block with 5 most recent WEG invoices, all source-linked. WEG markdown lists `liegenschaft_financials` (versorger / dienstleister / sonstige paid + received) and `liegenschaft_maintenance` (last contractor invoice). Building markdown shows WEG Context.
+- Idempotency: re-running every backfill + re-route → 0 new events, 0 new facts.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
 - `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).
@@ -834,6 +846,65 @@ Adding a new customer:
 4. Add a `<customer>_archive` smoke test (skip when the dataset is
    absent, like `connectors/tests/test_buena_archive.py`).
 5. Wire a CLI subcommand under `connectors/cli.py` (Step 2+).
+
+## Three-tier ownership hierarchy (Phase 8.1)
+
+German property management models a three-tier hierarchy:
+
+```
+Liegenschaft (WEG)  →  Gebäude (Haus)  →  Einheit (unit / property)
+```
+
+Buena's dataset is **1 WEG → 3 Häuser → 52 units**. Events
+billed at the WEG level (Hausgeld, Verwaltergebühr, shared
+contractor invoices) belong to the Liegenschaft, not to a single
+Haus or unit. Per-Haus events (e.g. roof repair) belong to the
+building. Per-unit events (rent, individual maintenance) belong to
+the property.
+
+Tables (`backend/db/schema.sql`):
+
+- `liegenschaften (id, name, buena_liegenschaft_id, metadata)`
+- `buildings.liegenschaft_id` — FK
+- `events.{property_id, building_id, liegenschaft_id}` — exactly one
+  set when routed; all three NULL for genuinely unrouted
+- `facts.{property_id, building_id, liegenschaft_id}` — same shape
+
+Routing precedence in `backend/pipeline/router.route_structured`:
+
+1. `metadata.eh_id` → property
+2. `metadata.mie_id` → tenant → property
+3. `metadata.invoice_ref` → inherit attribution from a prior invoice
+4. `metadata.haus_id` (or `HAUS-NN` in any text field) → building
+5. Liegenschaft (WEG) when *any* of:
+   - `kategorie ∈ WEG_KATEGORIE` (`hausgeld | dienstleister |
+     versorger | sonstige`, with `hausgeld` only when no per-unit
+     ref upstream)
+   - free-text matches a WEG keyword (case-insensitive,
+     word-boundary): `Hausgeld | Verwaltergebühr |
+     Gemeinschaftskosten | Hausverwaltung | WEG | Sonderumlage |
+     Instandhaltungsrücklage | Kontoführungsgebühr` …
+   - `event_source == 'invoice'` (Buena invariant: every invoice in
+     the archive is a WEG bill)
+6. Else `unrouted` with a precise reason string surfaced in
+   `GET /admin/unrouted`.
+
+The renderer follows the same hierarchy:
+
+- `GET /properties/{id}/markdown` ends with **Building Context** and
+  **WEG Context** subsections — most recent N events at the
+  parent tiers, source-linked.
+- `GET /buildings/{id}/markdown` shows building-level facts +
+  **WEG Context**.
+- `GET /liegenschaften/{id}/markdown` shows WEG-level facts.
+
+PII redaction (`connectors/redact.py`) still applies at every tier.
+
+A one-time `python -m connectors.cli re-route` walks events with no
+scope set and re-evaluates routing using the current rules — used
+once after the Phase 8.1 schema lands to retroactively populate
+`building_id` / `liegenschaft_id` on already-ingested events.
+Idempotent.
 
 ---
 
