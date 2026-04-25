@@ -120,6 +120,96 @@ _MIGRATIONS: list[tuple[str, str]] = [
         );
         """,
     ),
+    (
+        "0005_rejected_updates",
+        """
+        -- Phase 9 Step 9.2 — constraint validator drop site.
+        -- Each row records a fact-update proposal that the validator
+        -- rejected (or marked needs_review) so the admin /rejected
+        -- inbox can surface it for human triage. ``constraint_name``
+        -- is the class name of the firing constraint; ``reason`` is
+        -- the operator-facing message; ``required_source_type``
+        -- captures what document_type / source the constraint
+        -- expected (e.g. ``kaufvertrag``, ``lease_addendum``).
+        --
+        -- ``reviewed_status``:
+        --   pending      — default, not yet looked at
+        --   needs_review — constraint marked the proposal as soft-
+        --                  reject (Phase 9.1 will promote these to
+        --                  uncertainty_events when that step lands)
+        --   overridden   — operator explicitly approved + an
+        --                  approval_log row was written
+        --   dismissed    — operator explicitly rejected
+        CREATE TABLE IF NOT EXISTS rejected_updates (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+          building_id UUID REFERENCES buildings(id) ON DELETE SET NULL,
+          liegenschaft_id UUID REFERENCES liegenschaften(id) ON DELETE SET NULL,
+          proposed_section TEXT NOT NULL,
+          proposed_field TEXT NOT NULL,
+          proposed_value TEXT NOT NULL,
+          proposed_confidence NUMERIC(5, 4),
+          constraint_name TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          required_source_type TEXT,
+          reviewed_status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          reviewed_at TIMESTAMPTZ,
+          reviewed_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_rejected_updates_property
+          ON rejected_updates (property_id, created_at DESC)
+          WHERE reviewed_status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_rejected_updates_pending_status
+          ON rejected_updates (reviewed_status, created_at DESC);
+        """,
+    ),
+    (
+        "0006_uncertainty_events",
+        """
+        -- Phase 9 Step 9.1 — uncertainty as first-class output.
+        -- The extractor and the validator both produce things the
+        -- system "noticed but didn't want to commit to":
+        --   * Gemini emits items in its uncertain[] schema field.
+        --   * Confidence floor < 0.7 demotes a fact to uncertainty.
+        --   * Validator needs_review verdicts (e.g. rent change with
+        --     a lease_addendum PDF) — soft-rejects that ask for
+        --     human confirmation rather than blocking outright.
+        -- All three land here. ``status`` tracks the review lifecycle.
+        --
+        -- ``observation`` — what the system saw (the verbatim or
+        --     near-verbatim phrasing that triggered the uncertainty).
+        -- ``hypothesis``  — the candidate value if there is one
+        --     (NULL when the model just flagged something noticed).
+        -- ``reason_uncertain`` — operator-facing why-this-is-flagged.
+        -- ``source`` — where the uncertainty came from:
+        --     gemini | confidence_floor | validator_needs_review
+        CREATE TABLE IF NOT EXISTS uncertainty_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+          building_id UUID REFERENCES buildings(id) ON DELETE SET NULL,
+          liegenschaft_id UUID REFERENCES liegenschaften(id) ON DELETE SET NULL,
+          relevant_section TEXT,
+          relevant_field TEXT,
+          observation TEXT NOT NULL,
+          hypothesis TEXT,
+          reason_uncertain TEXT NOT NULL,
+          source TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          resolved_to_fact_id UUID REFERENCES facts(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          resolved_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_uncertainty_events_property_open
+          ON uncertainty_events (property_id, created_at DESC)
+          WHERE status = 'open';
+        CREATE INDEX IF NOT EXISTS idx_uncertainty_events_section
+          ON uncertainty_events (property_id, relevant_section, created_at DESC)
+          WHERE status = 'open';
+        """,
+    ),
 ]
 
 

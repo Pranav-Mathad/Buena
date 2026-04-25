@@ -55,7 +55,7 @@ class DiffPlan:
     skipped: list[tuple[str, str]]  # (section.field, reason)
 
 
-async def _current_facts(
+async def load_current_facts(
     session: AsyncSession, property_id: UUID
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Return ``{(section, field): {id, value, confidence, source, created_at}}``."""
@@ -114,7 +114,7 @@ async def diff(
     now: datetime | None = None,  # noqa: ARG001 — reserved for future recency logic
 ) -> DiffPlan:
     """Compute a :class:`DiffPlan` for the proposed facts."""
-    current = await _current_facts(session, property_id)
+    current = await load_current_facts(session, property_id)
     decisions: list[FactDecision] = []
     skipped: list[tuple[str, str]] = []
 

@@ -88,6 +88,48 @@ EXTRACTION_SCHEMA: dict[str, Any] = {
                 "required": ["section", "field", "value", "confidence"],
             },
         },
+        "uncertain": {
+            "type": "array",
+            "description": (
+                "Items the extractor noticed but cannot commit to as a fact. "
+                "Vague mentions, ambiguous references, hearsay, second-hand "
+                "claims. The user prefers 'I noticed something unclear' over "
+                "'I think this is true.'"
+            ),
+            "items": {
+                "type": "object",
+                "properties": {
+                    "observation": {
+                        "type": "string",
+                        "description": "What was noticed, quoted or near-quoted from the source.",
+                    },
+                    "hypothesis": {
+                        "type": "string",
+                        "description": (
+                            "Optional candidate value if there is one; leave "
+                            "empty when only the observation matters."
+                        ),
+                    },
+                    "reason_uncertain": {
+                        "type": "string",
+                        "description": "Why this didn't become a fact (vague, hearsay, ambiguous reference, …).",
+                    },
+                    "relevant_section": {
+                        "type": "string",
+                        "description": (
+                            "Best guess at the section a future fact would land "
+                            "in (overview, tenants, lease, maintenance, financials, "
+                            "compliance, building_*, liegenschaft_*)."
+                        ),
+                    },
+                    "relevant_field": {
+                        "type": "string",
+                        "description": "Optional best guess at the field name.",
+                    },
+                },
+                "required": ["observation", "reason_uncertain", "relevant_section"],
+            },
+        },
         "summary": {"type": "string"},
     },
     "required": ["category", "priority", "facts_to_update", "summary"],
@@ -170,6 +212,11 @@ class ExtractionResult:
     priority: str
     facts_to_update: list[dict[str, Any]]
     summary: str
+    # Phase 9 Step 9.1 — items noticed but not committed to as facts.
+    # Each entry shape: {observation, hypothesis?, reason_uncertain,
+    # relevant_section, relevant_field?}.  Empty list means the
+    # extractor had nothing it wanted to flag.
+    uncertain: list[dict[str, Any]] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
     latency_ms: float = 0.0
     model: str = ""
@@ -309,6 +356,7 @@ async def extract_facts(
                 category=data.get("category", "other"),
                 priority=data.get("priority", "low"),
                 facts_to_update=list(data.get("facts_to_update", [])),
+                uncertain=list(data.get("uncertain", [])),
                 summary=data.get("summary", ""),
                 raw=data,
                 latency_ms=latency_ms,

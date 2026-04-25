@@ -25,11 +25,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_sessionmaker
 from backend.pipeline.applier import apply as apply_plan
-from backend.pipeline.differ import diff
+from backend.pipeline.applier import apply_uncertainties
+from backend.pipeline.differ import diff, load_current_facts
 from backend.pipeline.events import get_event_bus
 from backend.pipeline.extractor import extract
 from backend.pipeline.renderer import render_markdown
 from backend.pipeline.router import route
+from backend.pipeline.validator import (
+    Rejection,
+    persist_rejections,
+    validate,
+)
+
+# Importing the constraints package registers every constraint in
+# the validator's REGISTRY at module load. The validator only uses
+# whatever is registered — silent omission is the failure mode we'd
+# never want, so this import is non-optional.
+import backend.pipeline.constraints  # noqa: F401
+
+
+def _needs_review_to_uncertainty(rejection: Rejection) -> dict[str, Any]:
+    """Map a validator ``needs_review`` Rejection into an uncertainty item.
+
+    The constraint emitted "this proposal *might* be valid but needs a
+    human to confirm" — that's exactly the uncertainty inbox semantic,
+    so we land it there instead of in ``rejected_updates``.
+    """
+    return {
+        "observation": (
+            f"proposed {rejection.section}.{rejection.field} = "
+            f"{rejection.proposed_value!r}"
+        ),
+        "hypothesis": rejection.proposed_value,
+        "reason_uncertain": rejection.reason,
+        "relevant_section": rejection.section,
+        "relevant_field": rejection.field,
+        "source": f"validator_needs_review:{rejection.constraint_name}",
+    }
 
 log = structlog.get_logger(__name__)
 
@@ -39,7 +71,8 @@ async def _claim_next(session: AsyncSession) -> dict[str, Any] | None:
     result = await session.execute(
         text(
             """
-            SELECT id, source, source_ref, raw_content, property_id, received_at
+            SELECT id, source, source_ref, raw_content, property_id,
+                   received_at, metadata
             FROM events
             WHERE processed_at IS NULL
               AND processing_error IS NULL
@@ -59,6 +92,7 @@ async def _claim_next(session: AsyncSession) -> dict[str, Any] | None:
         "raw_content": row.raw_content,
         "property_id": row.property_id,
         "received_at": row.received_at,
+        "metadata": dict(row.metadata or {}),
     }
 
 
@@ -139,11 +173,58 @@ async def process_one(session: AsyncSession) -> UUID | None:
             event_source=event["source"],
             proposals=result.facts_to_update,
         )
+
+        # Phase 9 Step 9.2 — constraint validator. Filters proposals
+        # the differ accepted but that violate semantic rules (e.g.
+        # rent change without an addendum, building floor count
+        # change from a free-text email).
+        current_facts = await load_current_facts(session, property_id)
+        validated_plan, rejections = validate(
+            plan,
+            event={
+                "source": event["source"],
+                "metadata": event.get("metadata") or {},
+            },
+            current_facts=current_facts,
+        )
+
+        # Phase 9 Step 9.1 — split validator output:
+        #   * hard rejections        → rejected_updates inbox
+        #   * needs_review verdicts  → uncertainty_events inbox
+        # Both rows stay queryable; only hard rejections need an
+        # explicit operator override to ever apply.
+        hard_rejections = [r for r in rejections if not r.needs_review]
+        needs_review_uncertainties = [
+            _needs_review_to_uncertainty(r) for r in rejections if r.needs_review
+        ]
+        if hard_rejections:
+            await persist_rejections(
+                session,
+                event_id=event_id,
+                property_id=property_id,
+                building_id=None,
+                liegenschaft_id=None,
+                rejections=hard_rejections,
+            )
+
+        # Combine extractor-emitted uncertainties (Gemini's
+        # ``uncertain[]`` + the confidence-floor demotions in
+        # extractor.py) with validator soft-rejects.
+        uncertainty_items: list[dict[str, Any]] = list(result.uncertain) + needs_review_uncertainties
+        uncertainties_written = 0
+        if uncertainty_items:
+            uncertainties_written = await apply_uncertainties(
+                session,
+                event_id=event_id,
+                property_id=property_id,
+                items=uncertainty_items,
+            )
+
         written = await apply_plan(
             session,
             property_id=property_id,
             source_event_id=event_id,
-            plan=plan,
+            plan=validated_plan,
         )
 
         # Always drop a summary onto the activity section so the feed stays lively.
@@ -175,6 +256,8 @@ async def process_one(session: AsyncSession) -> UUID | None:
             property_id=str(property_id),
             category=result.category,
             facts_written=written,
+            uncertainties_written=uncertainties_written,
+            hard_rejections=len(hard_rejections),
             extractor=result.source,
             latency_ms=round(latency_ms, 1),
         )

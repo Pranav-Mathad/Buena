@@ -82,6 +82,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "weg_subtitle": "Recent activity at the WEG (Liegenschaft)",
         "open_building": "Open building view",
         "open_weg": "Open WEG view",
+        "needs_review": "Needs Review",
     },
     "de": {
         "building_context": "Hauskontext",
@@ -90,6 +91,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "weg_subtitle": "Letzte Aktivitäten in der WEG (Liegenschaft)",
         "open_building": "Hausansicht öffnen",
         "open_weg": "WEG-Ansicht öffnen",
+        "needs_review": "Zu prüfen",
     },
 }
 
@@ -379,19 +381,84 @@ async def _fetch_facts_by_scope(
     ]
 
 
+@dataclass(frozen=True)
+class UncertaintyRow:
+    """One open uncertainty event, ready for the renderer."""
+
+    id: UUID
+    event_id: UUID
+    section: str
+    field: str | None
+    observation: str
+    reason_uncertain: str
+    source: str
+
+
+async def _fetch_open_uncertainties(
+    session: AsyncSession, property_id: UUID
+) -> list[UncertaintyRow]:
+    """Pull every ``status='open'`` uncertainty for a property, grouped per section."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id, event_id, relevant_section, relevant_field,
+                       observation, reason_uncertain, source
+                FROM uncertainty_events
+                WHERE property_id = :pid
+                  AND status = 'open'
+                ORDER BY relevant_section NULLS LAST, created_at DESC
+                """
+            ),
+            {"pid": property_id},
+        )
+    ).all()
+    return [
+        UncertaintyRow(
+            id=row.id,
+            event_id=row.event_id,
+            section=str(row.relevant_section or "(unsectioned)"),
+            field=str(row.relevant_field) if row.relevant_field else None,
+            observation=str(row.observation or ""),
+            reason_uncertain=str(row.reason_uncertain or ""),
+            source=str(row.source or "extractor"),
+        )
+        for row in rows
+    ]
+
+
+def _format_uncertainty_line(item: UncertaintyRow) -> str:
+    """One-line rendering of an open uncertainty inside a section block."""
+    snippet = item.observation
+    if len(snippet) > 160:
+        snippet = snippet[:157].rstrip() + "…"
+    return (
+        f"- _Unclear: {snippet} — {item.reason_uncertain}_ "
+        f"[source: event {item.event_id}]"
+    )
+
+
 def _emit_sections(
     facts: list[FactRow],
     lines: list[str],
     *,
     lang: str = "en",
+    uncertainties: list[UncertaintyRow] | None = None,
 ) -> None:
     """Append one ``## Section`` block per non-empty section to ``lines``.
 
     German titles are picked when ``lang='de'`` and a German label is
     defined for the section in :data:`SECTION_TITLES_DE`; otherwise the
     English label (or the section name) is used.
+
+    Phase 9 Step 9.1: when ``uncertainties`` is provided, each section
+    that has ``status='open'`` uncertainty rows ends with a
+    **Needs Review** subsection listing them. Sections that have only
+    uncertainties (no facts yet) still get rendered so the operator
+    can see what was noticed.
     """
     titles = SECTION_TITLES_DE if lang == "de" else SECTION_TITLES
+    needs_review_label = CONTEXT_LABELS[lang]["needs_review"]
 
     def _title(section: str) -> str:
         label = titles.get(section)
@@ -403,24 +470,39 @@ def _emit_sections(
     by_section: dict[str, list[FactRow]] = {section: [] for section in SECTION_ORDER}
     for fact in facts:
         by_section.setdefault(fact.section, []).append(fact)
-    for section in SECTION_ORDER:
+
+    uncertainty_by_section: dict[str, list[UncertaintyRow]] = {}
+    for item in uncertainties or []:
+        uncertainty_by_section.setdefault(item.section, []).append(item)
+
+    rendered: set[str] = set()
+
+    def _render(section: str) -> None:
         rows = by_section.get(section, [])
-        if not rows:
-            continue
+        unc = uncertainty_by_section.get(section, [])
+        if not rows and not unc:
+            return
         lines.append(f"## {_title(section)}")
         lines.append("")
         lines.extend(_format_fact_line(fact) for fact in rows)
+        if unc:
+            if rows:
+                lines.append("")
+            lines.append(f"### {needs_review_label}")
+            lines.append("")
+            lines.extend(_format_uncertainty_line(item) for item in unc)
         lines.append("")
-    extras = [
-        section
-        for section in by_section
-        if section not in SECTION_ORDER and by_section[section]
-    ]
-    for section in sorted(extras):
-        lines.append(f"## {_title(section)}")
-        lines.append("")
-        lines.extend(_format_fact_line(fact) for fact in by_section[section])
-        lines.append("")
+        rendered.add(section)
+
+    for section in SECTION_ORDER:
+        _render(section)
+    extras = sorted(
+        s
+        for s in set(by_section.keys()) | set(uncertainty_by_section.keys())
+        if s not in SECTION_ORDER
+    )
+    for section in extras:
+        _render(section)
 
 
 async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
@@ -440,17 +522,19 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
         raise ValueError(f"Property {property_id} not found")
 
     facts = await _fetch_current_facts(session, property_id)
+    uncertainties = await _fetch_open_uncertainties(session, property_id)
     lang = await _detect_property_language(session, property_id)
     labels = CONTEXT_LABELS[lang]
     log.debug(
         "renderer.fetch",
         property_id=str(property_id),
         fact_count=len(facts),
+        uncertainty_count=len(uncertainties),
         lang=lang,
     )
 
     lines: list[str] = [f"# {header.name}", "", f"_{header.address}_", ""]
-    _emit_sections(facts, lines, lang=lang)
+    _emit_sections(facts, lines, lang=lang, uncertainties=uncertainties)
 
     # Building Context
     building_id, building_address = await _building_for_property(session, property_id)
