@@ -2,6 +2,12 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8 Step 6: backfill concurrency=4 with bounded cost-cap overshoot
+Context: The Buena email archive is 6,546 .eml files. Sequential extraction at ~3 minutes per 50 emails meant ~6.5 hours for the full pass. Concurrent extraction is the obvious speedup, but `cost_ledger.charge` is a read-modify-write — naive parallelism could double-spend by reading the same `cumulative_usd` from two workers and both passing the cap check before either UPDATE lands.
+Decision: Run 4 parallel extraction workers. Serialize `cost_ledger.charge` behind a single `asyncio.Lock` so the read-modify-write is atomic at the application level (Postgres `FOR UPDATE` already serializes at the DB level — the asyncio lock is belt-and-suspenders, and makes the contract obvious in the loader). Worst-case overshoot when the cap is breached mid-flight is bounded by `concurrency × max_call_cost`. With `concurrency=4` and `max_call_cost ≈ $0.005` (a Pro call on a long German email at ~3k prompt + 200 completion tokens), the bound is **$0.02**. The cap is $20.00, so the overshoot is < 0.1% — auditable.
+Reason: 4× wall-clock improvement (≈1.5 h vs 6.5 h) for a $0.02 worst-case cost ceiling that's well within tolerance. Going higher (`concurrency=8`) would shave another ~30 min but doubles the overshoot bound and runs into Gemini per-minute rate-limit territory; we'll revisit if signal-discovery (Step 8) needs a faster-moving extraction pass.
+Revisit if: Gemini publishes higher per-minute rate limits, OR the backfill needs to repeat under a tighter cost cap, OR a real concurrency bug surfaces (cost-ledger deadlock, double-charge in logs, race on the `failed_events` UPSERT that we missed). Per the launch directive, any concurrency-related surprise in the first 5 minutes triggers a kill-and-revert-to-sequential.
+
 ## 2026-04-25 — Phase 8 Step 5: lease F1 = 0.62 driven by `lease.termination_notice` over-firing on owner-communication emails
 Context: After Gemini Pro shipped on the German-first prompt, lease F1 was 0.62 — driven entirely by 5 spurious `lease.termination_notice` emissions on emails whose ground-truth category was `owner_communication` (sale intent, modernization consent, WEG governance). The model conflates "the relationship is changing" (owner side) with "the tenancy is ending" (lease side).
 Decision: Ship as-is at 0.62, above the VERIFY 5 acceptance floor of 0.50. No prompt patch in Step 5; the residual is logged as a known limitation.

@@ -197,7 +197,7 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
         or "      (no property-routed events yet)"
     )
     return (
-        f"{summary.label} backfill summary\n"
+        f"{summary.label} backfill summary  (concurrency={summary.concurrency})\n"
         f"  total_seen           = {summary.total_seen}\n"
         f"  inserted_now         = {summary.inserted_now}\n"
         f"  routed_property      = {summary.routed_property}\n"
@@ -210,9 +210,10 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
         f"  extracted_facts      = {summary.extracted_facts}\n"
         f"  extractor_errors     = {summary.extractor_errors}\n"
         f"  failed_events_dead   = {summary.failed_events}\n"
+        f"  historical_stamped   = {summary.historical_stamped}\n"
         f"  aborted_on_cost_cap  = {summary.aborted_on_cost_cap}\n"
         f"  cost_ledger          ${summary.cumulative_usd} / ${summary.cap_usd}\n"
-        f"  top_miss_reasons:\n{miss_lines}\n"
+        f"  unrouted_reason_buckets:\n{miss_lines}\n"
         f"  error_samples:\n{err_lines}\n"
         f"  top_10_properties:\n{top_props}\n"
     )
@@ -254,6 +255,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
             dead_letter_after=args.dead_letter_after,
             reprocess_historical=args.reprocess_historical,
             limit=args.limit,
+            concurrency=args.concurrency,
         )
     except DataMissing as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
@@ -372,6 +374,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Stop after N .eml files. Use for dry-runs without burning "
         "the full cost cap.",
+    )
+    emails.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Number of parallel extraction workers. Default 1 "
+        "(sequential). At N>1 the cost ledger charge() call is "
+        "serialized via asyncio.Lock; worst-case overshoot if the "
+        "cap is breached mid-flight is bounded by N * max_call_cost. "
+        "See DECISIONS.md for the auditable bound.",
     )
     emails.add_argument(
         "--reset-cost-ledger",

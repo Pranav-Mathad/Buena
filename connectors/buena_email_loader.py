@@ -21,6 +21,7 @@ Persistent failure (3 attempts that raise) is captured in the
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timezone
@@ -39,7 +40,11 @@ from backend.pipeline.differ import diff
 from backend.pipeline.events import insert_event
 from backend.pipeline.extractor import extract as run_extractor
 from backend.pipeline.renderer import render_markdown
-from backend.pipeline.router import StructuredRoute, route_text_event
+from backend.pipeline.router import (
+    WEG_KEYWORDS,
+    StructuredRoute,
+    route_text_event,
+)
 from backend.services.gemini import ExtractionResult
 from connectors import buena_archive, cost_ledger, eml_archive
 from connectors.base import ConnectorEvent
@@ -69,6 +74,132 @@ FLASH_COMPLETION_USD_PER_M = Decimal("0.30")
 HISTORICAL_THRESHOLD_DAYS = 30
 
 
+# --- Granular unrouted-reason classifiers ----------------------------------
+# Step 6 broke the single "no match" miss reason into auditable buckets.
+# Each regex is named after the bucket it produces.
+
+# Buena unit conventions + generic apartment markers + HAUS-NN.
+_PROPERTY_TOKEN_RE = re.compile(
+    r"\b(?:EH|MIE|WE|GE|TG|HAUS)[-\s]?\d{1,3}\b"
+    r"|\b(?:Apt|Apartment|Wohnung|Whg)\s*\d{1,3}[A-Za-z]?\b",
+    re.IGNORECASE,
+)
+
+# Word-boundary, case-insensitive WEG keyword regex — same vocabulary the
+# router uses for liegenschaft escalation.
+_WEG_KEYWORD_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in WEG_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+_DOMAIN_RE = re.compile(r"@([\w.-]+)")
+
+_AUTO_REPLY_RE = re.compile(
+    r"\b(?:auto[\s-]?reply|out\s+of\s+office|abwesenheit|"
+    r"abwesenheits[a-z]+|automatic[a-z]+)\b",
+    re.IGNORECASE,
+)
+
+# Boilerplate signatures we want stripped before length-checking the body.
+_SIGNATURE_MARKERS: tuple[str, ...] = (
+    "\n--\n",  # standard signature delimiter
+    "\nMit freundlichen Grüßen",
+    "\nFreundliche Grüße",
+    "\nViele Grüße",
+    "\nBeste Grüße",
+    "\nBest regards",
+    "\nKind regards",
+    "\nGesendet von",
+    "\nSent from",
+)
+
+
+def _strip_signature(body: str) -> str:
+    """Drop the first occurrence of any signature marker."""
+    earliest = len(body)
+    for marker in _SIGNATURE_MARKERS:
+        idx = body.find(marker)
+        if idx != -1 and idx < earliest:
+            earliest = idx
+    return body[:earliest].strip()
+
+
+def _detect_raw_language(text_in: str) -> str:
+    """Return the *raw* langdetect code (``de``, ``en``, ``fr``, …)."""
+    if not text_in or len(text_in) < 30:
+        return "unknown"
+    try:
+        from langdetect import DetectorFactory, detect  # noqa: PLC0415
+
+        DetectorFactory.seed = 0
+        return str(detect(text_in)).lower()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _classify_unrouted_reason(
+    *, raw_content: str, metadata: dict[str, Any], known_sender_domains: set[str]
+) -> str:
+    """Bucket a route_text_event miss into an actionable category.
+
+    Hierarchy is intentional — first match wins, ordered from "structural
+    skip-no-extraction-needed" to "real signal but no alias matched".
+    Each bucket maps to a Step 9 / Step 8 follow-up.
+
+    Buckets:
+        body_too_short
+            Body < 50 chars after signature strip. Auto-reply / quoted
+            originals fall here.
+        auto_reply
+            "Out of office" / "Abwesenheit" markers in subject or body.
+        non_de_en_language_<code>
+            langdetect returns something other than de/en/nl/af. Step 9
+            decides whether to translate or drop.
+        weg_keyword_no_liegenschaft
+            Body has a WEG keyword (Hausgeld, Mahnung, …) but no
+            liegenschaft was resolved — interesting only when the
+            customer has multiple WEGs (Buena: single WEG, so this is
+            effectively "no liegenschaft loaded yet" if it ever fires).
+        property_tokens_no_alias_match
+            Body has property-shaped tokens (EH-NNN / Wohnung 4B / …)
+            that didn't match any seeded alias — a Step 9 onboarding
+            signal: customer has units we haven't seeded.
+        unknown_sender_domain
+            Sender domain has no prior routed event in the system.
+            Feeds Step 9's sender_routing_history bootstrap.
+        no_signal_known_sender
+            Sender is known but the body is too thin to route.
+        no_signal
+            None of the above; genuinely empty event.
+    """
+    body = _strip_signature(raw_content)
+
+    if len(body) < 50:
+        return "body_too_short"
+
+    subject = str(metadata.get("subject", "") or "")
+    if _AUTO_REPLY_RE.search(subject) or _AUTO_REPLY_RE.search(body):
+        return "auto_reply"
+
+    code = _detect_raw_language(raw_content)
+    if code not in {"de", "en", "nl", "af", "unknown"}:
+        return f"non_de_en_language_{code}"
+
+    if _WEG_KEYWORD_RE.search(raw_content):
+        return "weg_keyword_no_liegenschaft"
+
+    if _PROPERTY_TOKEN_RE.search(raw_content):
+        return "property_tokens_no_alias_match"
+
+    sender = str(metadata.get("from", "") or "")
+    domain_match = _DOMAIN_RE.search(sender)
+    domain = domain_match.group(1).lower() if domain_match else ""
+    if domain and domain not in known_sender_domains:
+        return "unknown_sender_domain"
+
+    return "no_signal_known_sender" if domain else "no_signal"
+
+
 @dataclass
 class EmailBackfillSummary:
     """Counters returned to the CLI."""
@@ -84,9 +215,11 @@ class EmailBackfillSummary:
     extraction_attempts: int = 0
     extractor_errors: int = 0
     failed_events: int = 0
+    historical_stamped: int = 0
     aborted_on_cost_cap: bool = False
     cumulative_usd: str = "0"
     cap_usd: str = "0"
+    concurrency: int = 1
     miss_reasons: dict[str, int] = dc_field(default_factory=dict)
     error_samples: list[str] = dc_field(default_factory=list)
     top_property_event_counts: dict[str, int] = dc_field(default_factory=dict)
@@ -105,9 +238,11 @@ class EmailBackfillSummary:
             "extraction_attempts": self.extraction_attempts,
             "extractor_errors": self.extractor_errors,
             "failed_events": self.failed_events,
+            "historical_stamped": self.historical_stamped,
             "aborted_on_cost_cap": self.aborted_on_cost_cap,
             "cumulative_usd": self.cumulative_usd,
             "cap_usd": self.cap_usd,
+            "concurrency": self.concurrency,
             "miss_reasons": dict(self.miss_reasons),
             "error_samples": list(self.error_samples),
             "top_property_event_counts": dict(self.top_property_event_counts),
@@ -326,12 +461,22 @@ async def _process_event(
     cap_usd: Decimal,
     dead_letter_after: int,
     reprocess_historical: bool,
+    ledger_lock: asyncio.Lock,
+    known_sender_domains: set[str],
 ) -> bool:
     """Full single-event pipeline. Returns ``True`` to keep iterating.
 
     Returns ``False`` when the cost cap has been hit — the caller stops
     the outer loop. Persistent extraction failures don't stop the loop;
     they land in ``failed_events``.
+
+    The mutation surface (``summary``, ``known_sender_domains``) is
+    safe under the asyncio-single-threaded model — increments don't
+    race because there's no real parallelism, only cooperative
+    multitasking. The ``ledger_lock`` is what we need: it serializes
+    the read-modify-write inside :func:`cost_ledger.charge` so two
+    concurrent workers can't both see "cumulative <= cap" and both
+    spend.
     """
     summary.total_seen += 1
 
@@ -368,14 +513,26 @@ async def _process_event(
         )
         if route.property_id is not None:
             summary.routed_property += 1
+            # Track this sender's domain as "seen" — feeds Step 9's
+            # sender_routing_history bootstrap and lets the unrouted
+            # classifier distinguish unknown vs no-signal senders.
+            sender = str(ev.metadata.get("from", "") or "")
+            domain_match = _DOMAIN_RE.search(sender)
+            if domain_match:
+                known_sender_domains.add(domain_match.group(1).lower())
         elif route.building_id is not None:
             summary.routed_building += 1
         elif route.liegenschaft_id is not None:
             summary.routed_liegenschaft += 1
         else:
             summary.unrouted += 1
-            summary.miss_reasons[route.reason] = (
-                summary.miss_reasons.get(route.reason, 0) + 1
+            bucket = _classify_unrouted_reason(
+                raw_content=ev.raw_content,
+                metadata=ev.metadata,
+                known_sender_domains=known_sender_domains,
+            )
+            summary.miss_reasons[bucket] = (
+                summary.miss_reasons.get(bucket, 0) + 1
             )
 
     historical = _is_historical(
@@ -423,7 +580,8 @@ async def _process_event(
                     int(result.completion_tokens or 0),
                 )
                 try:
-                    cost_ledger.charge(label, cost)
+                    async with ledger_lock:
+                        cost_ledger.charge(label, cost)
                 except CostCapExceeded as exc:
                     log.warning(
                         "buena_email.cost_cap_post_charge",
@@ -467,16 +625,19 @@ async def _process_event(
                 summary.failed_events += 1
 
     # --- 4. Stamp event (scope + processed_at + processing_error) ----------
+    stamp_historical = historical and not reprocess_historical
     async with factory() as session:
         await _stamp_event(
             session,
             event_id=event_id,
             route=route,
             received_at=ev.received_at,
-            historical=(historical and not reprocess_historical),
+            historical=stamp_historical,
             error=error_text,
         )
         await session.commit()
+    if stamp_historical:
+        summary.historical_stamped += 1
 
     return True
 
@@ -503,6 +664,38 @@ async def _populate_top_properties(
             summary.top_property_event_counts[str(row.name)] = int(row.n)
 
 
+async def _load_known_sender_domains(factory: Any) -> set[str]:
+    """Bootstrap the unrouted-reason classifier with already-routed senders.
+
+    Reading existing email events whose property_id is set lets the
+    "unknown_sender_domain" bucket distinguish first-time senders from
+    senders we've successfully routed before. Empty on a fresh DB; that's
+    fine — every classification will fall through to the
+    unknown-sender-domain bucket on the first run, which is itself the
+    signal Step 9 wants.
+    """
+    domains: set[str] = set()
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT DISTINCT metadata->>'from' AS sender
+                    FROM events
+                    WHERE source = 'email'
+                      AND property_id IS NOT NULL
+                    """
+                )
+            )
+        ).all()
+    for row in rows:
+        sender = str(row.sender or "")
+        match = _DOMAIN_RE.search(sender)
+        if match:
+            domains.add(match.group(1).lower())
+    return domains
+
+
 async def backfill_emails(
     *,
     root: Path | None = None,
@@ -510,6 +703,7 @@ async def backfill_emails(
     dead_letter_after: int = 3,
     reprocess_historical: bool = False,
     limit: int | None = None,
+    concurrency: int = 1,
 ) -> EmailBackfillSummary:
     """Drive the full Buena ``.eml`` archive through the live pipeline.
 
@@ -527,6 +721,13 @@ async def backfill_emails(
             migrations flip this to ``True`` once those layers ship.
         limit: Stop after ``limit`` ``.eml`` files. ``None`` means full
             archive.
+        concurrency: Number of parallel extraction workers. Default 1
+            (sequential). At ``N>1`` an :class:`asyncio.Lock`
+            serializes :func:`cost_ledger.charge` so the
+            read-modify-write can't double-spend; the worst-case
+            overshoot is bounded by ``N × max_call_cost`` because that
+            many calls can be in-flight when the cap is breached. See
+            DECISIONS.md for the auditable bound.
     """
     extracted_root = root if root is not None else buena_archive.require_root()
     emails_dir = extracted_root / "emails"
@@ -537,6 +738,7 @@ async def backfill_emails(
     factory = get_sessionmaker()
     summary = EmailBackfillSummary()
     summary.cap_usd = str(cap_usd)
+    summary.concurrency = concurrency
 
     # Pre-flight: refuse to start if a previous run already exhausted the cap.
     state = cost_ledger.get_state(LEDGER_LABEL)
@@ -550,23 +752,89 @@ async def backfill_emails(
         summary.cumulative_usd = str(state.cumulative_usd)
         return summary
 
+    known_sender_domains = await _load_known_sender_domains(factory)
+    ledger_lock = asyncio.Lock()
+
     iterator: Iterable[ConnectorEvent] = eml_archive.walk_directory(emails_dir)
-    seen = 0
-    for ev in iterator:
-        if limit is not None and seen >= limit:
-            break
-        seen += 1
-        proceed = await _process_event(
-            factory,
-            ev,
-            summary=summary,
-            label=LEDGER_LABEL,
-            cap_usd=cap_usd,
-            dead_letter_after=dead_letter_after,
-            reprocess_historical=reprocess_historical,
+
+    if concurrency <= 1:
+        # Sequential path — preserves the dry-run / test path behaviour.
+        seen = 0
+        for ev in iterator:
+            if limit is not None and seen >= limit:
+                break
+            seen += 1
+            proceed = await _process_event(
+                factory,
+                ev,
+                summary=summary,
+                label=LEDGER_LABEL,
+                cap_usd=cap_usd,
+                dead_letter_after=dead_letter_after,
+                reprocess_historical=reprocess_historical,
+                ledger_lock=ledger_lock,
+                known_sender_domains=known_sender_domains,
+            )
+            if not proceed:
+                break
+    else:
+        # Concurrent path — producer feeds a bounded queue, ``concurrency``
+        # consumers process events. ``abort_event`` short-circuits both
+        # sides on cost-cap breach; in-flight tasks finish (≤ N × call cost
+        # overshoot) but no new work starts.
+        queue: asyncio.Queue[ConnectorEvent | None] = asyncio.Queue(
+            maxsize=concurrency * 4
         )
-        if not proceed:
-            break
+        abort_event = asyncio.Event()
+
+        async def _producer() -> None:
+            seen = 0
+            for ev in iterator:
+                if abort_event.is_set():
+                    break
+                if limit is not None and seen >= limit:
+                    break
+                seen += 1
+                await queue.put(ev)
+            for _ in range(concurrency):
+                await queue.put(None)
+
+        async def _consumer(_worker_id: int) -> None:
+            while True:
+                ev = await queue.get()
+                if ev is None:
+                    return
+                if abort_event.is_set():
+                    # Drain remaining queue items without processing so
+                    # the producer's sentinels reach the consumers.
+                    continue
+                try:
+                    proceed = await _process_event(
+                        factory,
+                        ev,
+                        summary=summary,
+                        label=LEDGER_LABEL,
+                        cap_usd=cap_usd,
+                        dead_letter_after=dead_letter_after,
+                        reprocess_historical=reprocess_historical,
+                        ledger_lock=ledger_lock,
+                        known_sender_domains=known_sender_domains,
+                    )
+                except Exception:  # noqa: BLE001 — keep workers alive
+                    log.exception(
+                        "buena_email.consumer_error",
+                        worker=_worker_id,
+                        source_ref=ev.source_ref,
+                    )
+                    proceed = True
+                if not proceed:
+                    abort_event.set()
+
+        producer_task = asyncio.create_task(_producer())
+        consumer_tasks = [
+            asyncio.create_task(_consumer(i)) for i in range(concurrency)
+        ]
+        await asyncio.gather(producer_task, *consumer_tasks)
 
     state_after = cost_ledger.get_state(LEDGER_LABEL)
     if state_after is not None:
@@ -585,6 +853,7 @@ def run_backfill_emails(
     dead_letter_after: int = 3,
     reprocess_historical: bool = False,
     limit: int | None = None,
+    concurrency: int = 1,
 ) -> EmailBackfillSummary:
     """Sync wrapper used by ``connectors.cli``."""
     root = buena_archive.require_root(extracted_root)
@@ -595,6 +864,7 @@ def run_backfill_emails(
             dead_letter_after=dead_letter_after,
             reprocess_historical=reprocess_historical,
             limit=limit,
+            concurrency=concurrency,
         )
     )
 
