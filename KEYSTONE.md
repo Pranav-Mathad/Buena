@@ -661,9 +661,21 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 8.1 — Buena Real-Data Mode (**MERGED**; tag `phase-8.1-structured-data`). Next sub-phase: Step 4 (eval framework).
-**Next deliverable:** Step 4 — `eval/` framework with hand-annotated ground truth, runner, metrics, calibration curve. Gate-stop after the first metrics report.
+**Current phase:** Phase 10 — File-Is-Product (**MERGED**; tag `phase-10-complete`). Phases 8 → 9 → 10 all closed.
+**Next deliverable:** Open. Default candidates: live IMAP transport probe against a real mailbox; Step 10.1 time-bucketed renderer (Active/Recent/Archive — currently single-tier); demo-script polish (Beat 0 cold-open + onboarding-aloud beat).
 **Blockers:** None.
+
+**Phase 10 results (verified live, all five priorities shipped):**
+- **10.2 reprocessing engine** — `backend/services/replay.py`. asyncio.Event pause/resume/stop, Postgres-durable progress (`replay_runs` table, migration 0007), `scheduled_pauses` for validator-beat checkpoints, `reset_property=True` wipes facts/uncertainties/rejections but preserves stammdaten. Six admin endpoints + `POST /admin/demo/replay` thin wrapper reading `KEYSTONE_DEMO_HERO_PROPERTY`.
+- **10.3 onboarding view** — `GET /admin/properties/{id}/onboarding`, `backend/services/onboarding.py`. Five sections: stammdaten + counts (deterministic), open issues right now (deterministic), 5–7 bullet Gemini Pro briefing with `Gap:` / `Lücke:` markers in the property's language (cached on `properties.metadata.onboarding` keyed by latest fact/uncertainty/rejection timestamps), recurring-pattern watch, per-section pointer index. Live VERIFY (WE 29) — German briefing leads with urgent water leak, uses `Lücke:` for the vague rent uncertainty.
+- **10.4 document linking** — `backend/api/files.py` + `backend/api/source_links.py`. `GET /files/<path>` is realpath + commonpath protected (rejects absolute paths, NUL bytes, `..` escapes, symlink escapes — 9 tests). `GET /events/{id}/source` smart-redirects: invoice/letter PDFs → `/files/<original_path>`, email → `/raw`, bank → `/detail`. Renderer + onboarding emit real URLs in every fact-source link instead of dead anchors.
+- **10.6 trust-layer write surface** — `POST /admin/uncertainties/{id}/resolve` with `promote_to_fact` (writes fact at relevant_section/field, links via `resolved_to_fact_id`) or `dismiss`, both audit-logged. Verified existing `POST /admin/rejected/{id}/override` end-to-end. Surfaced a latent schema bug (Phase 9.2 INSERTs referenced columns Phase 5 schema didn't have); fixed via migration 0008_approval_log_generic.
+- **IMAP verification** — 4 tests in `backend/tests/test_imap_ingestion.py`. `_ingest` parses real Buena German .eml (multipart, charset, umlauts), idempotent on Message-ID, `poll_once` is a safe no-op without creds. Transport gap (the `imapclient.IMAPClient` fetch loop itself) is documented in DECISIONS.md.
+
+**Phase 10 quality gates:**
+- Full suite: **82 passed, 1 skipped** (4.1× the Phase 6 suite size).
+- 30 new tests across replay, onboarding, file safety, source-link dispatch, trust actions, and IMAP path.
+- Live render against hero property (WE 29) reads as a 60-second briefing in native German with honest gap-flagging.
 
 **Phase 8.1 Step 3b results (verified live):**
 - Three-tier routing: 1417 events → property (78.2%), 0 → building, 383 → liegenschaft (21.1%), **13 truly unrouted (0.7%)** vs the 396 from Step 3a.
