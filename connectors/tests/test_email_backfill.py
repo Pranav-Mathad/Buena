@@ -5,6 +5,13 @@ dev Postgres on :5433. They monkeypatch ``backend.pipeline.extractor``
 so no Gemini calls are made — the assertions are about loop control,
 the failed_events table, and the cost ledger's abort path. Skipped
 when Postgres is unreachable so the suite stays portable.
+
+**Test isolation:** every test gets a fresh, unique cost-ledger label
+(``step6_test_<uuid>``) via the :func:`_unique_label` fixture so the
+test suite can run while a real backfill is using the production
+``step6_email_backfill`` row. Without this, the cleanup
+``reset_label`` calls would delete the live row mid-run. The
+production label is left strictly alone by the test surface.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -128,7 +136,11 @@ async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> 
     """When the ledger hits the cap mid-run, the loop stops cleanly."""
     await _setup_or_skip()
     await _cleanup_test_events()
-    cost_ledger_module.reset_label(buena_email_loader.LEDGER_LABEL)
+    # Per-test unique label so a concurrent live backfill can't be
+    # corrupted by our reset_label calls. See module docstring.
+    test_label = f"step6_test_{uuid4().hex[:8]}"
+    monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", test_label)
+    cost_ledger_module.reset_label(test_label)
 
     pid = await _ensure_one_property()
 
@@ -202,7 +214,7 @@ async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> 
     assert summary2.extraction_attempts == 0
 
     # Cleanup so re-runs of the suite stay deterministic.
-    cost_ledger_module.reset_label(buena_email_loader.LEDGER_LABEL)
+    cost_ledger_module.reset_label(test_label)
     await _cleanup_test_events()
 
 
@@ -210,7 +222,9 @@ async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> N
     """A persistent extractor failure increments retry_count across runs."""
     await _setup_or_skip()
     await _cleanup_test_events()
-    cost_ledger_module.reset_label(buena_email_loader.LEDGER_LABEL)
+    test_label = f"step6_test_{uuid4().hex[:8]}"
+    monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", test_label)
+    cost_ledger_module.reset_label(test_label)
 
     pid = await _ensure_one_property()
 
@@ -279,5 +293,5 @@ async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert summary4.extraction_attempts == 0  # dead-lettered → skipped
 
-    cost_ledger_module.reset_label(buena_email_loader.LEDGER_LABEL)
+    cost_ledger_module.reset_label(test_label)
     await _cleanup_test_events()
