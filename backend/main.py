@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
+from backend.api.admin import router as admin_router
 from backend.api.events import router as events_router
 from backend.api.portfolio import router as portfolio_router
 from backend.api.properties import router as properties_router
@@ -57,6 +58,7 @@ app.include_router(webhooks_router)
 app.include_router(signals_router)
 app.include_router(portfolio_router)
 app.include_router(settings_router)
+app.include_router(admin_router)
 
 
 @app.get("/health", tags=["system"])
