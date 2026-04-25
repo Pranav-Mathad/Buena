@@ -460,7 +460,8 @@ def _render_open_issues(
                 f"- **{fact.field.replace('_', ' ').capitalize()}:** "
                 f"{fact.value} "
                 f"_(confidence {fact.confidence:.2f})_ "
-                f"[source: {fact.source_event_id}](#event-{fact.source_event_id})"
+                f"[source: {fact.source_event_id}]"
+                f"(/events/{fact.source_event_id}/source)"
             )
         lines.append("")
         rendered_anything = True
@@ -480,7 +481,7 @@ def _render_open_issues(
             lines.append(
                 f"- _{u.section}_ — {obs} "
                 f"(_{u.reason_uncertain}_) "
-                f"[source: event {u.event_id}]"
+                f"[source: event {u.event_id}](/events/{u.event_id}/source)"
             )
         lines.append("")
         rendered_anything = True
@@ -500,7 +501,7 @@ def _render_open_issues(
             lines.append(
                 f"- `{r.constraint_name}` — proposed "
                 f"**{r.section}.{r.field}** = `{value}` — {r.reason} "
-                f"[source: event {r.event_id}]"
+                f"[source: event {r.event_id}](/events/{r.event_id}/source)"
             )
         lines.append("")
         rendered_anything = True
@@ -617,7 +618,8 @@ def _render_pointer_index(
                     continue
                 lines.append(
                     f"  - {f.field.replace('_', ' ')} → "
-                    f"[source: {f.source_event_id}](#event-{f.source_event_id})"
+                    f"[source: {f.source_event_id}]"
+                    f"(/events/{f.source_event_id}/source)"
                 )
         lines.append("")
 

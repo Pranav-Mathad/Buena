@@ -206,9 +206,16 @@ def _format_field(field: str) -> str:
 
 
 def _format_fact_line(fact: FactRow) -> str:
-    """Render a single fact as a bullet with inline source + optional web badge."""
+    """Render a single fact as a bullet with inline source + optional web badge.
+
+    Phase 10 Step 10.4: source links resolve to ``/events/<id>/source``,
+    which redirects to the right surface for the event's source type
+    (PDF → ``/files/<path>``, email → ``/raw``, bank → ``/detail``).
+    The renderer never has to know which is which — the dispatch lives
+    in :mod:`backend.api.source_links`.
+    """
     source = (
-        f"[source: {fact.source_event_id}](#event-{fact.source_event_id})"
+        f"[source: {fact.source_event_id}](/events/{fact.source_event_id}/source)"
         if fact.source_event_id is not None
         else "[source: unknown]"
     )
@@ -337,7 +344,7 @@ def _format_context_event(event: dict[str, str | int]) -> str:
     return (
         f"- *{when}* · `{event['source']}`/{event['kategorie']} — "
         f"{_context_body(event)} "
-        f"[source: {event['id']}](#event-{event['id']})"
+        f"[source: {event['id']}](/events/{event['id']}/source)"
     )
 
 
@@ -434,7 +441,7 @@ def _format_uncertainty_line(item: UncertaintyRow) -> str:
         snippet = snippet[:157].rstrip() + "…"
     return (
         f"- _Unclear: {snippet} — {item.reason_uncertain}_ "
-        f"[source: event {item.event_id}]"
+        f"[source: event {item.event_id}](/events/{item.event_id}/source)"
     )
 
 

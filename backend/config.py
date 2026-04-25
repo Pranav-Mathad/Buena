@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     # ``buena`` is the primary file-builds-itself replay.
     keystone_demo_mode: str = Field(default="buena")
 
+    # --- Phase 10 Step 10.4 — document linking ---
+    # Filesystem root that ``GET /files/<path>`` is allowed to serve. Any
+    # path that, after ``realpath`` resolution, escapes this root is
+    # refused with 403. Default points at the gitignored Buena dump so
+    # the dev environment "just works"; production deployments must
+    # set an absolute path explicitly.
+    keystone_files_root: str = Field(default="Extracted")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
