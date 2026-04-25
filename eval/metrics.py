@@ -10,9 +10,12 @@ The runner builds one :class:`Row` per ground-truth example, and
 - **Routing accuracy** — fraction whose extracted scope matches
   ``ground_truth.expected_scope`` (Phase 8.1: ``property | building |
   liegenschaft | unrouted``).
-- **Calibration curve** — confidence-bucketed accuracy. The bucket
-  midpoint should approximate accuracy if the extractor is honest
-  about its uncertainty.
+- **Calibration curve** — confidence-bucketed accuracy where
+  "correct" means the extractor placed the fact in the right
+  ``(section, field)`` slot. Value-equality lives in the per-section
+  ``value_match_rate`` column so paraphrase doesn't pollute the
+  calibration signal. The bucket midpoint should approximate accuracy
+  if the extractor is honest about its uncertainty.
 - **Top-N failures** — rows where the extractor diverged most.
 
 No smoothing, no rounding-to-zero, no "but the model meant well".
@@ -164,19 +167,22 @@ class Report:
         """Calibration curve over extractor confidence.
 
         Iterates *every fact the extractor produced* (matched or
-        spurious). A fact counts as ``correct`` when there is a
-        same-``(section, field)`` ground-truth fact AND the values
-        soft-match (substring containment in either direction). A
-        well-calibrated extractor's bucket midpoint should approximate
+        spurious). A fact counts as ``correct`` when its
+        ``(section, field)`` key matches a ground-truth fact for the
+        same row — i.e. the extractor put the observation in the right
+        slot. Value-equality is reported separately via
+        :attr:`CategoryStats.value_match_rate`; conflating the two here
+        punishes paraphrase even when the model nailed the slot.
+
+        A well-calibrated extractor's bucket midpoint should approximate
         accuracy in that bucket.
         """
         buckets = [CalibrationBucket(low=lo, high=hi) for lo, hi in CALIBRATION_BUCKETS]
         for row in self.rows:
-            # Map (section, field) of expected facts → expected value
-            expected_value_by_key: dict[tuple[str, str], str] = {}
-            for ef in row.expected_facts:
-                key = (str(ef.get("section", "")), str(ef.get("field", "")))
-                expected_value_by_key[key] = str(ef.get("value", ""))
+            expected_keys: set[tuple[str, str]] = {
+                (str(ef.get("section", "")), str(ef.get("field", "")))
+                for ef in row.expected_facts
+            }
 
             for xf in row.extracted_facts:
                 conf_raw = xf.get("confidence")
@@ -187,19 +193,11 @@ class Report:
                 except (TypeError, ValueError):
                     continue
                 key = (str(xf.get("section", "")), str(xf.get("field", "")))
-                expected_value = expected_value_by_key.get(key, "").strip().lower()
-                extracted_value = str(xf.get("value", "")).strip().lower()
-                value_correct = bool(
-                    expected_value
-                    and (
-                        expected_value in extracted_value
-                        or extracted_value in expected_value
-                    )
-                )
+                key_correct = key in expected_keys
                 for b in buckets:
                     if b.low <= conf < b.high:
                         b.count += 1
-                        if value_correct:
+                        if key_correct:
                             b.correct += 1
                         break
         return buckets
