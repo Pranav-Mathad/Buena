@@ -42,8 +42,13 @@ class Settings(BaseSettings):
 
     # --- Gemini ---
     gemini_api_key: str = Field(default="")
-    gemini_flash_model: str = Field(default="gemini-2.0-flash")
-    gemini_pro_model: str = Field(default="gemini-2.0-pro")
+    # Model defaults updated 2026-04-25 — Phase 8.1. The previous
+    # ``gemini-2.0-{flash,pro}`` names were retired for new API users.
+    # Pinning explicit versions makes eval/runs reproducible across
+    # weeks; flip to ``gemini-flash-latest`` if we explicitly want
+    # tracking-the-edge behavior.
+    gemini_flash_model: str = Field(default="gemini-2.5-flash")
+    gemini_pro_model: str = Field(default="gemini-2.5-pro")
     gemini_embed_model: str = Field(default="text-embedding-004")
 
     # --- Partners ---
