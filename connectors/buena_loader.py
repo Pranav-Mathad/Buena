@@ -34,8 +34,10 @@ from seed.realistic_data import (
 from seed.seed import (
     _apply_schema,
     _schema_applied,
+    _set_building_liegenschaft,
     _upsert_building,
     _upsert_contractor,
+    _upsert_liegenschaft,
     _upsert_owner,
     _upsert_property,
     _upsert_relationship,
@@ -49,22 +51,26 @@ log = structlog.get_logger(__name__)
 class LoadSummary:
     """What :func:`load_stammdaten` reports back to the CLI."""
 
-    owners_total: int
-    owners_inserted_now: int
-    buildings_total: int
-    buildings_inserted_now: int
-    contractors_total: int
-    contractors_inserted_now: int
-    properties_total: int
-    properties_inserted_now: int
-    tenants_total: int
-    tenants_inserted_now: int
-    tenants_skipped_inactive: int
-    relationships_total: int
+    liegenschaften_total: int = 0
+    liegenschaften_inserted_now: int = 0
+    owners_total: int = 0
+    owners_inserted_now: int = 0
+    buildings_total: int = 0
+    buildings_inserted_now: int = 0
+    contractors_total: int = 0
+    contractors_inserted_now: int = 0
+    properties_total: int = 0
+    properties_inserted_now: int = 0
+    tenants_total: int = 0
+    tenants_inserted_now: int = 0
+    tenants_skipped_inactive: int = 0
+    relationships_total: int = 0
 
     def as_json(self) -> dict[str, int]:
         """Serializable view used by the CLI's ``--json`` output mode."""
         return {
+            "liegenschaften_total": self.liegenschaften_total,
+            "liegenschaften_inserted_now": self.liegenschaften_inserted_now,
             "owners_total": self.owners_total,
             "owners_inserted_now": self.owners_inserted_now,
             "buildings_total": self.buildings_total,
@@ -182,20 +188,15 @@ def load_stammdaten(
 
     owner_uuid_by_key: dict[str, str] = {}
     building_uuid_by_key: dict[str, str] = {}
+    liegenschaft_uuid_by_key: dict[str, str] = {}
 
     summary = LoadSummary(
+        liegenschaften_total=len(payload.liegenschaften),
         owners_total=len(payload.owners),
-        owners_inserted_now=0,
         buildings_total=len(payload.buildings),
-        buildings_inserted_now=0,
         contractors_total=len(payload.contractors),
-        contractors_inserted_now=0,
         properties_total=len(payload.properties),
-        properties_inserted_now=0,
         tenants_total=len(payload.tenants),
-        tenants_inserted_now=0,
-        tenants_skipped_inactive=0,
-        relationships_total=0,
     )
 
     with psycopg2.connect(url) as conn:
@@ -208,6 +209,25 @@ def load_stammdaten(
             if not _schema_applied(cur):
                 _apply_schema(cur)
 
+            # ---- Liegenschaften (WEG) — must come before buildings so we
+            # can stamp building.liegenschaft_id during the building upsert.
+            for raw in payload.liegenschaften:
+                lie_key = str(raw.get("buena_liegenschaft_id") or "")
+                before = (
+                    _count(cur, "liegenschaften", "buena_liegenschaft_id", lie_key)
+                    if lie_key
+                    else 0
+                )
+                lie_uuid = _upsert_liegenschaft(
+                    cur,
+                    name=str(raw.get("name") or "WEG"),
+                    buena_liegenschaft_id=lie_key or None,
+                    metadata=dict(raw.get("metadata") or {}),
+                )
+                if before == 0:
+                    summary.liegenschaften_inserted_now += 1
+                liegenschaft_uuid_by_key[lie_key] = lie_uuid
+
             # ---- Owners ----
             for raw in payload.owners:
                 seed = _owner_seed(raw)
@@ -217,7 +237,7 @@ def load_stammdaten(
                     summary.owners_inserted_now += 1
                 owner_uuid_by_key[seed.key] = uid
 
-            # ---- Buildings ----
+            # ---- Buildings + Haus → WEG link ----
             for raw in payload.buildings:
                 seed = _building_seed(raw)
                 before = _count(cur, "buildings", "address", seed.address)
@@ -225,6 +245,11 @@ def load_stammdaten(
                 if before == 0:
                     summary.buildings_inserted_now += 1
                 building_uuid_by_key[seed.key] = uid
+
+                lie_key = str(raw.get("buena_liegenschaft_id") or "")
+                lie_uuid = liegenschaft_uuid_by_key.get(lie_key)
+                if lie_uuid is not None:
+                    _set_building_liegenschaft(cur, uid, lie_uuid)
 
             # ---- Contractors ----
             for raw in payload.contractors:

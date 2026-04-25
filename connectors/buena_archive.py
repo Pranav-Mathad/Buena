@@ -85,8 +85,15 @@ def require_root(env_value: str | None = None) -> Path:
 
 @dataclass(frozen=True)
 class BuenaStammdaten:
-    """Concrete Stammdaten payload after redaction + adaptation."""
+    """Concrete Stammdaten payload after redaction + adaptation.
 
+    ``liegenschaften`` is the WEG tier (`Wohnungseigentümergemeinschaft`,
+    owners' association) — one Liegenschaft owns N Häuser; per-WEG
+    events (Hausgeld, Verwaltergebühr, shared contractor fees) attach
+    here, not to a single Haus.
+    """
+
+    liegenschaften: list[dict[str, Any]] = field(default_factory=list)
     owners: list[dict[str, Any]] = field(default_factory=list)
     buildings: list[dict[str, Any]] = field(default_factory=list)
     properties: list[dict[str, Any]] = field(default_factory=list)
@@ -157,8 +164,27 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
 
     payload: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
 
-    # liegenschaft is a single dict in the Buena dataset
+    # liegenschaft is a single dict in the Buena dataset (the WEG that
+    # owns the three Häuser).
     liegenschaft = payload.get("liegenschaft", {}) or {}
+    liegenschaften: list[dict[str, Any]] = []
+    if liegenschaft:
+        lie_id = str(liegenschaft.get("id") or "")
+        liegenschaften.append(
+            {
+                "buena_liegenschaft_id": lie_id,
+                "name": str(
+                    liegenschaft.get("name")
+                    or f"WEG {liegenschaft.get('strasse', '')}".strip()
+                ),
+                "metadata": {
+                    "buena_liegenschaft_id": lie_id,
+                    "strasse": liegenschaft.get("strasse"),
+                    "plz": liegenschaft.get("plz"),
+                    "ort": liegenschaft.get("ort"),
+                },
+            }
+        )
     gebaeude_list: list[dict[str, Any]] = list(payload.get("gebaeude", []) or [])
     einheiten_list: list[dict[str, Any]] = list(payload.get("einheiten", []) or [])
     eigentuemer_list: list[dict[str, Any]] = list(payload.get("eigentuemer", []) or [])
@@ -181,6 +207,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         buildings.append(
             {
                 "buena_haus_id": haus_id,
+                "buena_liegenschaft_id": liegenschaft.get("id"),
                 "address": building_address or base_address,
                 "year_built": g.get("baujahr"),
                 "metadata": {
@@ -346,6 +373,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
 
     log.info(
         "buena.stammdaten.load",
+        liegenschaften=len(liegenschaften),
         owners=len(owners),
         buildings=len(buildings),
         properties=len(properties),
@@ -353,6 +381,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         contractors=len(contractors),
     )
     return BuenaStammdaten(
+        liegenschaften=liegenschaften,
         owners=owners,
         buildings=buildings,
         properties=properties,

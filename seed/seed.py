@@ -61,6 +61,53 @@ def _apply_schema(cur: Cursor) -> None:
     cur.execute(sql)
 
 
+def _upsert_liegenschaft(
+    cur: Cursor,
+    *,
+    name: str,
+    buena_liegenschaft_id: str | None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    """Insert a Liegenschaft (WEG) row keyed on ``buena_liegenschaft_id``.
+
+    Phase 8.1 introduces a tier above buildings: one Liegenschaft owns
+    N Häuser. The loader passes the customer's stable ID; later events
+    that route to a WEG attach to the resulting UUID.
+    """
+    if buena_liegenschaft_id:
+        cur.execute(
+            "SELECT id FROM liegenschaften WHERE buena_liegenschaft_id = %s",
+            (buena_liegenschaft_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            return cast(str, row[0])
+    cur.execute(
+        """
+        INSERT INTO liegenschaften (name, buena_liegenschaft_id, metadata)
+        VALUES (%s, %s, %s::jsonb)
+        RETURNING id
+        """,
+        (name, buena_liegenschaft_id, json.dumps(metadata or {})),
+    )
+    return cast(str, cur.fetchone()[0])
+
+
+def _set_building_liegenschaft(
+    cur: Cursor, building_id: str, liegenschaft_id: str
+) -> None:
+    """Idempotently attach a building to its Liegenschaft (no-op if already set)."""
+    cur.execute(
+        """
+        UPDATE buildings
+        SET liegenschaft_id = %s
+        WHERE id = %s
+          AND (liegenschaft_id IS DISTINCT FROM %s)
+        """,
+        (liegenschaft_id, building_id, liegenschaft_id),
+    )
+
+
 def _upsert_owner(cur: Cursor, owner: OwnerSeed) -> str:
     """Insert an owner if absent; return the UUID as a string."""
     cur.execute("SELECT id FROM owners WHERE email = %s", (owner.email,))
