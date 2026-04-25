@@ -661,9 +661,9 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 5 — Polish + Sponsor Visibility (**backend exit criterion met**). Next: Lovable UI polish (outside this repo) + Phase 6 demo lock.
-**Next deliverable:** Phase 6 — 10 consecutive demo runs, backup video, rehearsal, partner-visibility audit.
-**Blockers:** Lovable UI work is out-of-repo (Part IV); all backend surfaces are ready for it.
+**Current phase:** Phase 6 — Demo Lock (**automatable rows of the Part XII checklist green**). Remaining: Lovable UI rehearsal, backup video, sleep.
+**Next deliverable:** Demo. No further backend changes.
+**Blockers:** None on this repo. Pitch rehearsal + recorded backup video are non-Claude tasks.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
 - `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).
@@ -718,6 +718,17 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 - `backend/api/settings.py` exposes `GET /settings/security`, `GET /settings/learning`, and `POST /settings/regulation_watch` (manual trigger that runs the watcher + evaluator inline so fresh signals show up in the inbox immediately).
 - `backend/scheduler.py` adds the `regulation_watch` job at 60-minute cadence; `backend/main.py` mounts the settings router.
 - Phase 5 self-verify: `POST /settings/regulation_watch` → 3 events ingested + 3 regulation_change signals created; repeat calls → 0/0 (dedupe OK); `/settings/security` returns `passing` with commit SHA; `/settings/learning` produces a rich snapshot with trend line "Keystone is prioritizing **cross property pattern** based on your approval behavior (100% approved over 2 proposals)" after a mix of approve/edit/reject decisions. Phase 1 regression test still green.
+
+**Phase 6 session notes:**
+- Added `seed/demo_bootstrap.py` — one-shot script that wipes a fresh DB to a visibly-alive demo state: schema → seed → Tavily-enrich every property → run regulation watcher → fire evaluator. Idempotent; safe to re-run between rehearsals.
+- Added `DEMO_QA.md` — written answers to the five Part XII judge questions (scale, privacy, business model, extraction accuracy, what happens when it's wrong), each grounded in repo paths so we can show the file behind the answer.
+- Phase XII stability checklist (automatable rows):
+  - **10× `/debug/trigger_event`** — 10/10 under 10 s; avg **24 ms**, max **64 ms**.
+  - **3× MCP stdio handshake** — 3/3 clean, all under **250 ms**, every run lists 5 tools and a `search_properties` call returns live JSON.
+  - **Signal fires on cue** — bootstrap → 6 pending signals (4 portfolio-level), portfolio banner returns the urgent shared-boiler signal.
+  - **Sponsor visibility** — every property has 2-4 🌐 web-badged facts, Aikido `passing` with current commit SHA, Pioneer trend line goes from neutral → "prioritizing cross_property_pattern" after one approval.
+  - **Phase 1 integration test** — passes in 0.17 s.
+- Remaining checklist rows are human work: backup video, real-email run from a phone, calm pitch rehearsal, laptop on charger.
 
 ---
 
