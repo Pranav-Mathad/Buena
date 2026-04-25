@@ -2,6 +2,36 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-04-25 — Phase 8 Step 1: connectors/ as customer-agnostic ingestion layer
+Context: Buena dropped 29 MB of partner data; the next customer will drop a different shape. Earlier plans treated Buena as a special path inside `seed/`; that bakes a customer name into a generic primitive.
+Decision: `connectors/` is the new customer-agnostic module. `connectors/base.py` defines the `Connector` Protocol + `ConnectorEvent` dataclass; primitives (`csv_stammdaten`, `eml_archive`, `camt_bank`, `pdf_invoice_archive`, `pdf_letter_archive`) are reusable. Each customer ships a single composite (`connectors/<customer>_archive.py`) that knows their directory shape. PII redaction is centralized in `connectors/redact.py` and applied at ingestion. Cost ledger (`connectors/cost_ledger.py` + `cost_ledger` table via `connectors/migrations.py`) is durable across CLI invocations.
+Reason: Treats Buena as the first customer of a real architecture, not an exception. Future customers add one composite + tests; the primitives + redaction + ledger don't change.
+Revisit if: A customer's shape doesn't fit the primitives — at that point we extend a primitive (e.g. add a Slack-archive walker) rather than fork.
+
+## 2026-04-25 — Phase 8 Step 1: redact at ingestion, not at render
+Context: Several places in the pipeline (renderer, MCP responses, SSE stream) read DB rows back out. Redacting at render means every reader has to know to scrub.
+Decision: `connectors/redact.py` scrubs IBANs (→ `****<last4>`), full phones (→ `+CC *** **<last4>`), and email domains (→ `<local>@example.com`) before yielding any `ConnectorEvent`. Tests assert no `r"DE\d{20}"` and no full E.164 phone survives a round-trip through any connector. Buena is treated as PII until anonymisation status is confirmed (TODO note in `redact.py`).
+Reason: Single chokepoint; one module to audit; zero burden on readers; defence-in-depth (renderer can still scrub additionally without changing semantics).
+Revisit if: Buena confirms the dataset is fully synthetic — even then, keep redaction on by default; flip a feature flag if specific demos need fuller display.
+
+## 2026-04-25 — Phase 8 Step 1: durable cost ledger persists across invocations
+Context: A single `--max-total-cost-usd $20` cap should govern the entire Buena backfill, not just one CLI run. A per-run-only counter would let an operator hit Ctrl-C, restart, and silently spend another $20.
+Decision: New `cost_ledger(source_label, cumulative_usd, cap_usd, hit_at)` table (additive `CREATE TABLE IF NOT EXISTS`, applied via `connectors/migrations.py`). Every Gemini call charges via `connectors.cost_ledger.charge`; on `>= cap` the row's `hit_at` is stamped and `CostCapExceeded` raised. Subsequent invocations read the row and abort immediately. Reset is friction-gated (`--reset-cost-ledger` + interactive `y/N`).
+Reason: Spend-across-runs is the only definition that makes the cap real; defaults to "remember spend" so the operator never accidentally over-spends.
+Revisit if: We add per-customer multi-tenancy and need per-customer caps — at that point use `source_label` to namespace per customer, which the schema already supports.
+
+## 2026-04-25 — Phase 8 Step 2: `_upsert_property` honours `prop.metadata`
+Context: The Phase 0 `_upsert_property` hardcoded `metadata = {"seed_key": prop.key}`, which kept the Berliner seed simple but lost richer payload (`kaltmiete`, `lage`, `wohnflaeche_qm`, …) needed for Buena units.
+Decision: When `prop.metadata` is non-empty, the upsert merges it under `seed_key` so both worlds coexist (`{"seed_key": "EH-014", "lage": "5. OG mitte", "wohnflaeche_qm": 85.0, …}`). Same pattern for `_upsert_tenant`. `PropertySeed.metadata` and `TenantSeed.metadata` default to `{}` so the hand-crafted Berliner seed continues bit-identically (no change to existing data).
+Reason: Single ingestion path for *all* customer master data — Buena rows and Berliner rows travel through the same SQL.
+Revisit if: We start needing schema-level richer fields (e.g. dedicated columns for kaltmiete) — at that point migrate columns out of JSONB rather than fork the upsert.
+
+## 2026-04-25 — Phase 8 Step 2: tenants with `mietende` set are skipped (active-only)
+Context: Buena's `mieter.csv` includes 26 rows total but at least one has a populated `mietende` (lease ended). Including those as `occupied_by` edges would misrepresent current occupancy.
+Decision: The Buena loader skips any tenant whose `metadata.active` is `False` (mietende set). Skipped count is reported in the summary (`tenants_skipped_inactive`). The 25 active tenants land with `occupied_by` edges; the 1 closed lease stays out of the relationship graph.
+Reason: "Who lives here today" is a load-bearing question for the markdown / signals; including ex-tenants would confuse it. Closed leases should resurface only via lease history facts (Step 3+).
+Revisit if: Lease-history reconstruction needs the closed-lease tenant rows in `tenants` — at that point insert them with a metadata flag and keep them out of `relationships(occupied_by)`.
+
 ## 2026-04-24 — pgvector image: `pgvector/pgvector:pg15` (not `ankane/pgvector:pg15`)
 Context: Part V specified `ankane/pgvector:pg15`, but that tag does not exist on Docker Hub — `ankane/pgvector` uses v-prefixed tags and the modern pg15 flavor has moved to the official `pgvector/pgvector` repo.
 Decision: Use `pgvector/pgvector:pg15` in `docker-compose.yml`.
