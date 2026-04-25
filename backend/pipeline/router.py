@@ -82,11 +82,13 @@ async def route(
     *,
     min_score: float = 0.3,
 ) -> PropertyRoute | None:
-    """Pick the most likely property for ``raw_content``.
+    """Property-only text router — alias substring + token-overlap fallback.
 
-    Returns ``None`` when no candidate clears ``min_score`` — the caller should
-    route the event to an 'unrouted inbox' (Phase 1 TODO: surface in UI; for
-    now we log and leave the event with ``property_id IS NULL``).
+    Returns ``None`` when nothing matches; callers then escalate to
+    :func:`route_text_event` to apply the WEG keyword heuristics.
+
+    Kept as a focused primitive so existing tests + Phase 1 worker
+    paths continue to work bit-identically.
     """
     haystack = raw_content.lower()
     corpus = await _load_routing_corpus(session)
@@ -157,16 +159,116 @@ async def route(
     return None
 
 
+async def route_text_event(
+    session: AsyncSession,
+    raw_content: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> StructuredRoute:
+    """Route a free-text event (email / slack / debug) to its scope.
+
+    Order of attempts:
+
+    1. **WEG keyword AND no unit ref** in the body → Liegenschaft.
+       This is intentionally before the property attempt: a Mahnung
+       from an insurer or a Bauamt Brandschutz request should land at
+       the WEG even though the body mentions the building's
+       ``Immanuelkirchstraße 26`` address (which the property
+       token-overlap fallback would otherwise greedily claim).
+    2. :func:`route` — alias substring + token-overlap → property.
+    3. ``HAUS-NN`` mention in the body → building.
+    4. WEG keyword (with a unit ref present, or after #2 missed) →
+       Liegenschaft as a last-resort fallback.
+    5. Metadata fallback → :func:`route_structured` if explicit IDs
+       were provided.
+
+    Returns :class:`StructuredRoute` so the worker / eval runner / admin
+    views reason about both routing paths with one type.
+    """
+    keyword_match = _WEG_KEYWORD_RE.search(raw_content)
+    has_unit_ref = bool(_UNIT_REF_RE.search(raw_content))
+
+    # 1. WEG-precedence: keyword present AND no unit ref → trust the WEG
+    if keyword_match and not has_unit_ref:
+        liegenschaft_id = await _default_liegenschaft(session)
+        if liegenschaft_id is not None:
+            log.info(
+                "router.text.weg_keyword_precedence",
+                liegenschaft_id=str(liegenschaft_id),
+                keyword=keyword_match.group(0),
+            )
+            return StructuredRoute(
+                liegenschaft_id=liegenschaft_id,
+                method="text_weg_keyword",
+                reason=f"keyword '{keyword_match.group(0)}' (no unit ref)",
+            )
+
+    # 2. Property attempt
+    property_match = await route(session, raw_content)
+    if property_match is not None:
+        return StructuredRoute(
+            property_id=property_match.property_id,
+            method="text_alias",
+            reason=f"matched alias {property_match.matched_alias!r}",
+        )
+
+    # 3. HAUS-NN attempt
+    haus_match = _HAUS_RE.search(raw_content)
+    if haus_match:
+        haus_id = haus_match.group(0).upper()
+        building_id = await _route_by_haus_alias(session, haus_id)
+        if building_id is not None:
+            log.info(
+                "router.text.haus",
+                building_id=str(building_id),
+                haus_id=haus_id,
+            )
+            return StructuredRoute(
+                building_id=building_id,
+                method="text_haus",
+                reason=f"matched {haus_id} in body",
+            )
+
+    # 4. WEG-keyword last-resort (a unit ref was present but the
+    #    property router still missed — degenerate case; we'd rather
+    #    route to WEG than leave it stranded)
+    if keyword_match:
+        liegenschaft_id = await _default_liegenschaft(session)
+        if liegenschaft_id is not None:
+            log.info(
+                "router.text.weg_keyword_fallback",
+                liegenschaft_id=str(liegenschaft_id),
+                keyword=keyword_match.group(0),
+            )
+            return StructuredRoute(
+                liegenschaft_id=liegenschaft_id,
+                method="text_weg_keyword",
+                reason=f"keyword '{keyword_match.group(0)}' (fallback)",
+            )
+
+    # 5. Metadata fallback
+    if metadata:
+        structured = await route_structured(session, metadata, event_source="email")
+        if structured.is_routed:
+            return structured
+
+    return StructuredRoute(
+        method="unrouted",
+        reason="no property alias / token / HAUS- / WEG-keyword match",
+    )
+
+
 # -----------------------------------------------------------------------------
 # Structured-event routing (bank, invoice, erp)
 # -----------------------------------------------------------------------------
 
 
 # Phase 8.1 — keyword set for liegenschaft (WEG) routing. The list is
-# drawn from real Buena verwendungszweck strings; matching is
-# case-insensitive with word boundaries because the dataset mixes
-# `Hausgeld / HAUSGELD / hausgeld` freely.
+# drawn from real Buena verwendungszweck strings + email subjects/bodies;
+# matching is case-insensitive with word boundaries because the dataset
+# mixes ``Hausgeld / HAUSGELD / hausgeld`` freely.
 WEG_KEYWORDS: tuple[str, ...] = (
+    # Core WEG governance
     "hausgeld",
     "verwaltergebühr",
     "verwaltergebuehr",
@@ -176,10 +278,23 @@ WEG_KEYWORDS: tuple[str, ...] = (
     "sonderumlage",
     "instandhaltungsrücklage",
     "instandhaltungsruecklage",
-    "instandhaltungsruecklage",
-    "instandhaltungsrücklage",
+    # Accounting / banking
     "kontofuehrungsgebuehr",
     "kontoführungsgebühr",
+    # External parties typically billing the WEG (Step 4 baseline added)
+    "mahnung",
+    "rechnung",
+    "jahresabrechnung",
+    "jahresverbrauch",
+    "jahresverbrauchsabrechnung",
+    "versicherung",
+    # WEG-level utilities + maintenance
+    "wartungstermin",
+    "heizungsraum",
+    # Authority correspondence (addressed to the WEG / property)
+    "bauamt",
+    "brandschutz",
+    "brandschutznachweis",
 )
 WEG_KATEGORIE: frozenset[str] = frozenset(
     {"hausgeld", "dienstleister", "versorger", "sonstige"}
@@ -189,6 +304,13 @@ _WEG_KEYWORD_RE = re.compile(
     re.IGNORECASE,
 )
 _HAUS_RE = re.compile(r"\bHAUS-\d+\b", re.IGNORECASE)
+# Per-unit reference markers — used by route_text_event to decide when a
+# WEG keyword genuinely indicates WEG attribution vs. a per-unit note
+# that happens to mention "Mahnung" or "Rechnung" alongside an EH-/WE-/GE-.
+_UNIT_REF_RE = re.compile(
+    r"\b(?:EH-\d{2,}|MIE-\d{2,}|WE\s*\d{1,3}|GE\s*\d{1,3})\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)

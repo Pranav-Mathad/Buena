@@ -36,8 +36,10 @@ import structlog
 from backend.db.session import get_sessionmaker
 from backend.logging import configure_logging
 from backend.pipeline.extractor import extract as run_extractor
-from backend.pipeline.router import route as route_text
-from backend.pipeline.router import route_structured
+from backend.pipeline.router import (
+    route_structured,
+    route_text_event,
+)
 from connectors.migrations import apply_all as ensure_migrations
 from eval.metrics import Report, score_row
 
@@ -98,8 +100,16 @@ async def _scope_for_event(
         factory = get_sessionmaker()
         async with factory() as session:
             if source in TEXT_ROUTER_SOURCES:
-                match = await route_text(session, raw_content)
-                return "property" if match is not None else "unrouted"
+                text_route = await route_text_event(
+                    session, raw_content, metadata=metadata
+                )
+                if text_route.property_id is not None:
+                    return "property"
+                if text_route.building_id is not None:
+                    return "building"
+                if text_route.liegenschaft_id is not None:
+                    return "liegenschaft"
+                return "unrouted"
             structured = await route_structured(
                 session, metadata, event_source=source
             )
