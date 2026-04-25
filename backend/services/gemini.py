@@ -485,3 +485,166 @@ async def draft_action_message(
     raise GeminiUnavailable(
         f"draft_action_message failed after {max_attempts} attempts: {last_error!r}"
     )
+
+
+# -----------------------------------------------------------------------------
+# Onboarding briefing (Phase 10 Step 10.3)
+# -----------------------------------------------------------------------------
+
+
+ONBOARDING_PROMPT_EN = """You are briefing a property manager who is reading {property_name} for the first time.
+
+Write 5 to 7 bullets. Each bullet is ≤ 25 words. The reader has 60 seconds.
+
+HARD RULES:
+- Honesty over completeness. If a key piece is missing, say so plainly.
+  Use the literal prefix "Gap:" and name what is missing.
+- Do not invent dates, amounts, names, or facts. If something is uncertain,
+  treat it as a gap, not as a fact.
+- Lead with what is operationally relevant TODAY (open issues, recent
+  changes), then context, then risks to watch.
+- Plain text, no headings, no preamble like "Here is the briefing".
+- One bullet per line, prefix each with "- ".
+- Write in English.
+
+CURRENT FACTS (authoritative — already validated):
+{facts_summary}
+
+OPEN UNCERTAINTIES (noticed but not committed — call out as gaps):
+{uncertainties_summary}
+
+VALIDATOR REJECTIONS (proposed but rejected — note as known conflicts):
+{rejections_summary}
+
+RECENT EVENT ACTIVITY (last 12 months, by category):
+{activity_summary}
+
+Write the bullets now."""
+
+
+ONBOARDING_PROMPT_DE = """Du briefst eine:n Hausverwalter:in, die:der {property_name} zum ersten Mal liest.
+
+Schreibe 5 bis 7 Stichpunkte. Jeder Stichpunkt ≤ 25 Wörter. Der Leser hat 60 Sekunden.
+
+HARTE REGELN:
+- Ehrlichkeit vor Vollständigkeit. Fehlt etwas Wichtiges, sage es klar.
+  Verwende dafür das wörtliche Präfix "Lücke:" und benenne, was fehlt.
+- Keine erfundenen Daten, Beträge, Namen oder Fakten. Was unsicher ist,
+  ist eine Lücke — kein Fakt.
+- Beginne mit dem operativ Wichtigsten HEUTE (offene Punkte, jüngste
+  Änderungen), dann Kontext, dann Risiken zur Beobachtung.
+- Reiner Text, keine Überschriften, keine Einleitung wie "Hier ist das Briefing".
+- Ein Stichpunkt pro Zeile, jeweils mit "- " beginnen.
+- Schreibe auf Deutsch.
+
+AKTUELLE FAKTEN (validiert, autoritativ):
+{facts_summary}
+
+OFFENE UNSICHERHEITEN (bemerkt, aber nicht als Fakt festgeschrieben — als Lücken nennen):
+{uncertainties_summary}
+
+VALIDATOR-ABLEHNUNGEN (vorgeschlagen, aber abgelehnt — als bekannte Konflikte vermerken):
+{rejections_summary}
+
+LETZTE EREIGNISAKTIVITÄT (12 Monate, nach Quelle):
+{activity_summary}
+
+Schreibe jetzt die Stichpunkte."""
+
+
+async def draft_onboarding_briefing(
+    *,
+    property_name: str,
+    facts_summary: str,
+    uncertainties_summary: str,
+    rejections_summary: str,
+    activity_summary: str,
+    lang: str = "en",
+    model_name: str | None = None,
+    max_attempts: int = 2,
+    timeout_s: float = 45.0,
+) -> str:
+    """Render the "Key context" briefing for the onboarding view.
+
+    Five-to-seven bullet narrative, hard-instructed to mention gaps as
+    "Gap: …" / "Lücke: …" rather than inventing. ``lang`` selects the
+    German (``"de"``) or English (``"en"``) prompt so the output
+    matches the surrounding markdown's tongue. Returns the bullet
+    block as plain markdown (no surrounding heading). Raises
+    :class:`GeminiUnavailable` if every attempt fails — callers fall
+    back to a deterministic placeholder so the rest of the onboarding
+    view still renders.
+    """
+    settings = get_settings()
+    model = model_name or settings.gemini_pro_model
+    template = ONBOARDING_PROMPT_DE if lang == "de" else ONBOARDING_PROMPT_EN
+    no_facts = "(noch keine Fakten)" if lang == "de" else "(no facts yet)"
+    none_label = "(keine)" if lang == "de" else "(none)"
+    no_activity = (
+        "(keine jüngste Aktivität)" if lang == "de" else "(no recent activity)"
+    )
+    prompt = template.format(
+        property_name=property_name,
+        facts_summary=facts_summary or no_facts,
+        uncertainties_summary=uncertainties_summary or none_label,
+        rejections_summary=rejections_summary or none_label,
+        activity_summary=activity_summary or no_activity,
+    )
+    digest = _prompt_hash(prompt)
+    log.info(
+        "gemini.onboarding.start",
+        model=model,
+        prompt_hash=digest,
+        property=property_name,
+        prompt_chars=len(prompt),
+    )
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        start = time.perf_counter()
+        try:
+            genai = _configure_client()
+            gen_model = genai.GenerativeModel(model)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    gen_model.generate_content,
+                    prompt,
+                    generation_config={"temperature": 0.2},
+                ),
+                timeout=timeout_s,
+            )
+            latency_ms = (time.perf_counter() - start) * 1000
+            text = (response.text or "").strip()
+            usage = getattr(response, "usage_metadata", None)
+            log.info(
+                "gemini.onboarding.ok",
+                model=model,
+                prompt_hash=digest,
+                attempt=attempt,
+                latency_ms=round(latency_ms, 1),
+                prompt_tokens=getattr(usage, "prompt_token_count", None),
+                completion_tokens=getattr(usage, "candidates_token_count", None),
+                chars=len(text),
+            )
+            if text:
+                return text
+            last_error = RuntimeError("empty response")
+        except GeminiUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001 — broad retry policy for drafting
+            last_error = exc
+            latency_ms = (time.perf_counter() - start) * 1000
+            log.warning(
+                "gemini.onboarding.retry",
+                model=model,
+                prompt_hash=digest,
+                attempt=attempt,
+                latency_ms=round(latency_ms, 1),
+                error=str(exc),
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(0.4 * attempt)
+
+    raise GeminiUnavailable(
+        f"draft_onboarding_briefing failed after {max_attempts} attempts: {last_error!r}"
+    )

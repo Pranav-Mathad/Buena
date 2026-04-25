@@ -210,6 +210,70 @@ _MIGRATIONS: list[tuple[str, str]] = [
           WHERE status = 'open';
         """,
     ),
+    (
+        "0007_replay_runs",
+        """
+        -- Phase 10 Step 10.2 — sequential replay state.
+        -- One row per ``POST /admin/replay/start`` invocation. Tracks
+        -- progress + control state so the SSE client can render the
+        -- "n / total events streamed" UI without re-querying events,
+        -- and so pause / resume / stop are durable across reconnects.
+        --
+        -- ``status`` lifecycle:
+        --   running   — actively streaming
+        --   paused    — stopped on a scheduled_pauses checkpoint or
+        --               an operator pause
+        --   completed — drained the configured event window
+        --   stopped   — operator-cancelled mid-flight
+        --   failed    — engine raised; ``last_error`` is populated
+        CREATE TABLE IF NOT EXISTS replay_runs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+          speed_multiplier INTEGER NOT NULL DEFAULT 10,
+          source_filter TEXT[] NOT NULL DEFAULT ARRAY['email','invoice','bank']::TEXT[],
+          start_date TIMESTAMPTZ,
+          end_date TIMESTAMPTZ,
+          scheduled_pauses JSONB NOT NULL DEFAULT '[]'::jsonb,
+          reset_property BOOLEAN NOT NULL DEFAULT FALSE,
+          status TEXT NOT NULL DEFAULT 'running',
+          total_events INTEGER NOT NULL DEFAULT 0,
+          processed_events INTEGER NOT NULL DEFAULT 0,
+          last_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
+          last_error TEXT,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          paused_at TIMESTAMPTZ,
+          completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_replay_runs_property_status
+          ON replay_runs (property_id, started_at DESC);
+        """,
+    ),
+    (
+        "0008_approval_log_generic",
+        """
+        -- Phase 10 Step 10.6 — extend approval_log so trust-layer
+        -- actions (uncertainty resolve, rejection override) can write
+        -- audit rows alongside the original signal-centric format.
+        --
+        -- The existing columns (signal_id, user_id, decision, edits)
+        -- stay untouched so Phase 5 signal approvals keep working.
+        -- New columns are NULL-by-default so old INSERTs don't break.
+        ALTER TABLE approval_log
+          ADD COLUMN IF NOT EXISTS actor TEXT,
+          ADD COLUMN IF NOT EXISTS action TEXT,
+          ADD COLUMN IF NOT EXISTS target_type TEXT,
+          ADD COLUMN IF NOT EXISTS target_id TEXT,
+          ADD COLUMN IF NOT EXISTS payload JSONB;
+        -- Old schema required ``decision`` for signal approvals; trust-
+        -- layer actions track ``action`` instead, so we drop the NOT NULL
+        -- constraint. Existing signal-approval INSERTs still write it.
+        ALTER TABLE approval_log
+          ALTER COLUMN decision DROP NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_approval_log_target
+          ON approval_log (target_type, target_id, created_at DESC)
+          WHERE target_id IS NOT NULL;
+        """,
+    ),
 ]
 
 
