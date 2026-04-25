@@ -44,6 +44,24 @@ Decision: `seed/seed.py` now writes `processed_at = received_at` for every seede
 Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
 Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
 
+## 2026-04-24 — Phase 5: Regulation watcher runs hourly, offline mode seeds canned headlines
+Context: Part IV says "Regulation watcher cron — hourly for keywords like 'Berlin rent cap', 'Mietpreisbremse'." Demo must still show a `regulation_change` signal on a fresh DB even when `TAVILY_API_KEY` is absent (flaky wifi, missing key, etc.).
+Decision: `backend/services/tavily.watch_regulations` polls Tavily for five canonical queries when the key is set; otherwise seeds three clearly-labelled "offline snapshot" headlines as `web` events tagged `metadata.regulation=true`. Every event is stamped `processed_at` so the extractor worker doesn't touch it — the `regulation_change` rule reads the events directly. Idempotent via `source_ref = tavily-reg:{query}:{hour}`.
+Reason: Preserves the partner-visibility bar ("every partner tool visible somewhere in the demo") without lying about live data when offline, and the hourly cadence is what Part IV specifies.
+Revisit if: We want streaming / diff-based regulation change detection — at that point store a `content_hash` per headline and only fire when it changes.
+
+## 2026-04-24 — Phase 5: Aikido badge reads live when keyed, otherwise local snapshot with git SHA
+Context: Aikido is a scheduled scanner, not a mid-request API. The demo renders a "Security scan: passing" badge on Settings; we need it to be honest whether or not the CI scan has been hooked up.
+Decision: `backend/services/aikido.get_badge` attempts a live GET when `AIKIDO_API_KEY` is present, falls back to a `local_snapshot` badge that surfaces the git SHA the demo is running on (via `git rev-parse --short HEAD`). The response payload tags `source` so the UI / judges know which mode.
+Reason: "Passing" without context is a hand-wave. Showing the commit SHA + explicit source mode makes the fallback defensible and obvious.
+Revisit if: CI starts publishing scan results somewhere (e.g., GitHub Actions artifact) — point the fetcher at that instead of Aikido's REST API.
+
+## 2026-04-24 — Phase 5: Pioneer approval-rate weighting computed locally
+Context: Pioneer / Fastino may not expose a usable ranking endpoint in hackathon time. The Settings > Learning panel still needs to show Keystone is adapting to the human.
+Decision: `backend/services/pioneer.compute_learning` reads `approval_log`, derives per-signal-type approval rates (edits count as 0.8 × approved), and maps them to priority weights in `[0.5, 1.5]` with sample-size shrinkage (< 5 proposals anchored to 1.0). The trend-line sentence highlights the top-weighted signal type ("Keystone is prioritizing cross_property_pattern based on your approval behavior (100% approved over 2 proposals)"). Interface is a plain dataclass so swapping in a real Pioneer call later is a one-function change.
+Reason: Keeps the learning story true to what the system has observed, backs up the "Pioneer learning layer" pitch with verifiable numbers, and avoids overclaiming ML we haven't trained.
+Revisit if: We start feeding live approval logs to Pioneer's training endpoint — replace `compute_learning` with a call that merges remote weights into the local snapshot.
+
 ## 2026-04-24 — Phase 4: MCP server is a thin REST adapter, not a database client
 Context: Part V says "MCP server is a thin adapter. All tools call the backend REST API." An alternative would be sharing SQLAlchemy sessions / pgvector access across both surfaces for speed.
 Decision: `mcp_server/tools.py` wraps `httpx.AsyncClient` and hits the same REST endpoints the UI uses. Zero DB imports. Every schema change lands in exactly one place (the REST layer), and the MCP server can be pointed at a remote Keystone by flipping `KEYSTONE_BASE_URL`.
