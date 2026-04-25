@@ -32,6 +32,24 @@ Decision: Lease/tenant/financial facts sourced from a PDF carry 0.95–0.99; mai
 Reason: Signals downstream are meant to key off confidence, and the demo markdown visibly prints the value. Gradient matches how a real extractor would score these sources.
 Revisit if: Gemini extractor lands and its scores calibrate differently — re-seed and align.
 
+## 2026-04-24 — Phase 1: dual-path extractor (Gemini Flash + rule-based fallback)
+Context: Part IV designates Gemini Flash as the extraction engine. The demo venue's wifi + Gemini's quota are both failure modes; Part XII explicitly lists "fallback to rule-based extraction for demo emails" as the mitigation.
+Decision: `backend/pipeline/extractor.py` calls `backend.services.gemini.extract_facts` when `GEMINI_API_KEY` is set, otherwise runs a deterministic keyword-based extractor covering heating/leak/payment/lease/compliance shapes. Both paths return the same `ExtractionResult`.
+Reason: Demo can't brick on a network issue, and the fallback also makes local dev / CI possible without burning Gemini quota. Gemini remains the production path — the fallback does **not** write lower-quality facts when Gemini is available.
+Revisit if: Gemini throughput becomes reliable enough to drop the fallback, or we want to log calibration deltas between the two paths.
+
+## 2026-04-24 — Phase 1: seed events stamped `processed_at = received_at`
+Context: Dropping seed events into the queue with `processed_at IS NULL` caused the Phase 1 worker to rerun the rule-based extractor over the hand-crafted dataset on first boot, producing spurious "Latest heating issue: Mietvertrag" facts.
+Decision: `seed/seed.py` now writes `processed_at = received_at` for every seeded event, signalling to the worker that the hand-authored facts are authoritative.
+Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
+Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
+
+## 2026-04-24 — Phase 1: Postgres as the queue, not Redis/Kafka (reinforced)
+Context: Phase 1 needed a queue for events. KEYSTONE Part III already forbids Redis/Kafka.
+Decision: `backend/pipeline/worker.py` uses `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` per tick; `backend/scheduler.py` runs the worker every 2s via APScheduler. `/debug/trigger_event` also kicks a drain inline so `curl` POSTs see fresh markdown before they return.
+Reason: Honors the spirit of the constitution (one system, visible SQL). SKIP LOCKED is safe under concurrency when we scale to multiple worker processes later. Inline drain on debug POSTs cuts perceived latency to ~20ms without altering the scheduled path.
+Revisit if: We add a second backend instance and notice drift between the APScheduler ticks and the debug inline call (add LISTEN/NOTIFY then).
+
 ## 2026-04-24 — Skip heavy deps (google-generativeai, pdfplumber, tavily-python, imapclient) for Phase 0 local boot
 Context: `pyproject.toml` lists the full dep matrix, but Phase 0 only touches FastAPI + SQLAlchemy + pydantic + structlog + psycopg2 + asyncpg.
 Decision: Installed only Phase 0 runtime deps into `.venv` locally to keep the first boot fast; `pip install -e ".[dev]"` still pulls the full tree for CI / Railway / Phase 1+.
