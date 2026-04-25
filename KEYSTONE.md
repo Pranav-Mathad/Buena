@@ -661,9 +661,21 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 6 — Demo Lock (**automatable rows of the Part XII checklist green**). Remaining: Lovable UI rehearsal, backup video, sleep.
-**Next deliverable:** Demo. No further backend changes.
-**Blockers:** None on this repo. Pitch rehearsal + recorded backup video are non-Claude tasks.
+**Current phase:** Phase 8.1 — Buena Real-Data Mode (**MERGED**; tag `phase-8.1-structured-data`). Next sub-phase: Step 4 (eval framework).
+**Next deliverable:** Step 4 — `eval/` framework with hand-annotated ground truth, runner, metrics, calibration curve. Gate-stop after the first metrics report.
+**Blockers:** None.
+
+**Phase 8.1 Step 3b results (verified live):**
+- Three-tier routing: 1417 events → property (78.2%), 0 → building, 383 → liegenschaft (21.1%), **13 truly unrouted (0.7%)** vs the 396 from Step 3a.
+- All four miss-rate targets met:
+  - property-level miss rate **2.0%** (13/637 miete events) — target < 5% ✓
+  - building-level miss rate **0%** (no per-Haus events in Buena's data) — target < 10% ✓
+  - liegenschaft-level miss rate **0%** (all 383 WEG events routed) — target < 15% ✓
+  - true unrouted **0.7%** (13/1813) — target < 3% ✓
+- 6/6 routing tests pass (`backend/tests/test_routing.py`).
+- 54 of 55 tests passing (1 expected skip on the legacy Berliner integration test).
+- Markdown spot-check: property markdown shows Financials + WEG Context block with 5 most recent WEG invoices, all source-linked. WEG markdown lists `liegenschaft_financials` (versorger / dienstleister / sonstige paid + received) and `liegenschaft_maintenance` (last contractor invoice). Building markdown shows WEG Context.
+- Idempotency: re-running every backfill + re-route → 0 new events, 0 new facts.
 **Last session notes (Phase 1):**
 - `backend/services/gemini.py` is the single choke-point. Uses structured output (the Part VII JSON schema), 3× retries with backoff, and logs prompt hash + latency + token counts on every call. Raises `GeminiUnavailable` when `GEMINI_API_KEY` is unset or requests fail.
 - `backend/pipeline/extractor.py` calls Gemini Flash when available, otherwise a deterministic keyword-based fallback (heating/leak/payment/lease/compliance) so the demo survives wifi/quota loss (Part XII mitigation).
@@ -744,6 +756,155 @@ Before submitting:
 6. ✅ No feature outside demo scope shipped.
 7. ✅ Repo is clean: `ruff` + `mypy --strict` pass, no dead code, README explains setup in 5 steps.
 8. ✅ `DECISIONS.md` reflects every non-obvious choice.
+
+---
+
+# PART XVI — CONNECTOR ARCHITECTURE (Phase 8)
+
+Phase 8 introduces `connectors/` as the customer-agnostic ingestion
+layer. **Buena is the first composer, not a special case.** Every new
+customer integration is a new composite under `connectors/`; the
+shape-handling primitives below are shared.
+
+## Contract
+
+Every connector satisfies one of these Protocols (`connectors/base.py`):
+
+```python
+@runtime_checkable
+class Connector(Protocol):
+    name: str
+    def pull(self) -> Iterator[ConnectorEvent]: ...
+    def stream(self) -> Iterator[ConnectorEvent]: ...
+```
+
+`ConnectorEvent` mirrors the keyword arguments of
+`backend.pipeline.events.insert_event` so the call site is a one-liner.
+Every event carries `source`, `source_ref`, `raw_content`, `metadata`,
+`received_at`, and an optional pre-routed `property_id`. PDF-derived
+events additionally carry `metadata.document_type` (Phase 9 constraints
+read this).
+
+## Idempotency
+
+`(events.source, events.source_ref)` is `UNIQUE` (Part VI). Connectors
+must produce the **same** `source_ref` on every re-run for the same
+input. Concrete formulas:
+
+| Source | `source_ref` |
+|---|---|
+| Email (`.eml`)        | `Message-ID` (fallback `sha256(From+Date+Subject)[:16]`) |
+| Bank txn              | `sha256(datum + betrag + verwendungszweck + buena_id)[:12]` |
+| Invoice / letter PDF  | `<filename>:<sha256(file_bytes)[:16]>` |
+| Master data row       | natural key (email / id / address) |
+
+## PII redaction at ingestion (not at render)
+
+`connectors/redact.py` is the **only** module that touches raw IBANs,
+full phone numbers, or full email domains on the way *into* the
+database. Every connector calls `redact.iban_last4`, `phone_last4`,
+`email_redact`, or `scrub_text` before yielding a `ConnectorEvent`.
+Tests assert no `r"DE\d{20}"` or full E.164 phone survives.
+
+PII contract:
+
+- IBAN  → `****<last4>`  (e.g. `****1349`)
+- Phone → `+CC *** **<last4>` (country code preserved when present)
+- Email → `<local-part>@example.com` (local part kept; domain replaced)
+
+## Cost ledger
+
+Every LLM call charges `connectors/cost_ledger.py`. The ledger is a
+durable Postgres table (`cost_ledger`, additive migration in
+`connectors/migrations.py`) keyed on `source_label` so a single
+`--max-total-cost-usd` cap governs the entire backfill across CLI
+invocations. Subsequent runs read the persisted state and abort
+immediately if the cap was already hit. Reset is friction-gated:
+`--reset-cost-ledger` prompts `y/N`.
+
+Sub-labels share the same table — e.g. the PDF document-type
+classifier (`pdf_doctype`) gets a `$2` sub-cap inside the broader
+`buena_email` budget.
+
+## Composite layout
+
+`connectors/buena_archive.py` is the only module that knows Buena's
+directory shape. It exposes `load_stammdaten(root)`, `iter_emails`,
+`iter_bank`, `iter_invoices`, `iter_letters`, and
+`iter_incremental_day(day)`. The next customer ships a sibling file
+(`connectors/<customer>_archive.py`) and reuses the primitives.
+
+## Extending
+
+Adding a new customer:
+
+1. Verify their data shape — what files / formats / cardinalities.
+2. Reuse existing primitives where possible
+   (`csv_stammdaten`, `eml_archive`, `camt_bank`,
+   `pdf_invoice_archive`, `pdf_letter_archive`).
+3. Write a new composite `connectors/<customer>_archive.py`.
+4. Add a `<customer>_archive` smoke test (skip when the dataset is
+   absent, like `connectors/tests/test_buena_archive.py`).
+5. Wire a CLI subcommand under `connectors/cli.py` (Step 2+).
+
+## Three-tier ownership hierarchy (Phase 8.1)
+
+German property management models a three-tier hierarchy:
+
+```
+Liegenschaft (WEG)  →  Gebäude (Haus)  →  Einheit (unit / property)
+```
+
+Buena's dataset is **1 WEG → 3 Häuser → 52 units**. Events
+billed at the WEG level (Hausgeld, Verwaltergebühr, shared
+contractor invoices) belong to the Liegenschaft, not to a single
+Haus or unit. Per-Haus events (e.g. roof repair) belong to the
+building. Per-unit events (rent, individual maintenance) belong to
+the property.
+
+Tables (`backend/db/schema.sql`):
+
+- `liegenschaften (id, name, buena_liegenschaft_id, metadata)`
+- `buildings.liegenschaft_id` — FK
+- `events.{property_id, building_id, liegenschaft_id}` — exactly one
+  set when routed; all three NULL for genuinely unrouted
+- `facts.{property_id, building_id, liegenschaft_id}` — same shape
+
+Routing precedence in `backend/pipeline/router.route_structured`:
+
+1. `metadata.eh_id` → property
+2. `metadata.mie_id` → tenant → property
+3. `metadata.invoice_ref` → inherit attribution from a prior invoice
+4. `metadata.haus_id` (or `HAUS-NN` in any text field) → building
+5. Liegenschaft (WEG) when *any* of:
+   - `kategorie ∈ WEG_KATEGORIE` (`hausgeld | dienstleister |
+     versorger | sonstige`, with `hausgeld` only when no per-unit
+     ref upstream)
+   - free-text matches a WEG keyword (case-insensitive,
+     word-boundary): `Hausgeld | Verwaltergebühr |
+     Gemeinschaftskosten | Hausverwaltung | WEG | Sonderumlage |
+     Instandhaltungsrücklage | Kontoführungsgebühr` …
+   - `event_source == 'invoice'` (Buena invariant: every invoice in
+     the archive is a WEG bill)
+6. Else `unrouted` with a precise reason string surfaced in
+   `GET /admin/unrouted`.
+
+The renderer follows the same hierarchy:
+
+- `GET /properties/{id}/markdown` ends with **Building Context** and
+  **WEG Context** subsections — most recent N events at the
+  parent tiers, source-linked.
+- `GET /buildings/{id}/markdown` shows building-level facts +
+  **WEG Context**.
+- `GET /liegenschaften/{id}/markdown` shows WEG-level facts.
+
+PII redaction (`connectors/redact.py`) still applies at every tier.
+
+A one-time `python -m connectors.cli re-route` walks events with no
+scope set and re-evaluates routing using the current rules — used
+once after the Phase 8.1 schema lands to retroactively populate
+`building_id` / `liegenschaft_id` on already-ingested events.
+Idempotent.
 
 ---
 

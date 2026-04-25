@@ -122,3 +122,49 @@ CREATE TABLE outbox (
   body TEXT NOT NULL,
   sent_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Phase 8.1 — Liegenschaft (WEG) tier above buildings.
+-- One liegenschaft can own multiple Häuser; events billed at WEG level
+-- (Hausgeld, Verwaltergebühr, shared contractor fees) attach here, not
+-- to a specific Haus. Routing precedence in route_structured():
+-- property_id (unit) → building_id (Haus) → liegenschaft_id (WEG).
+CREATE TABLE IF NOT EXISTS liegenschaften (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  buena_liegenschaft_id TEXT UNIQUE,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE buildings
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS building_id    UUID REFERENCES buildings(id);
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+ALTER TABLE facts
+  ADD COLUMN IF NOT EXISTS building_id    UUID REFERENCES buildings(id);
+ALTER TABLE facts
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+CREATE INDEX IF NOT EXISTS idx_events_building
+  ON events (building_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_liegenschaft
+  ON events (liegenschaft_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_facts_building_current
+  ON facts (building_id, section, field) WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS idx_facts_liegenschaft_current
+  ON facts (liegenschaft_id, section, field) WHERE superseded_by IS NULL;
+
+-- Phase 8 — durable LLM-spend ledger.
+-- Persists across CLI invocations so a single budget cap (e.g. $20)
+-- governs the entire Buena backfill, not just one run. Sub-labels
+-- (e.g. 'pdf_doctype' at $2 sub-cap) share the same row family.
+CREATE TABLE IF NOT EXISTS cost_ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_label TEXT NOT NULL,           -- 'buena_email' | 'pdf_doctype' | etc.
+  cumulative_usd NUMERIC(12, 4) NOT NULL DEFAULT 0,
+  cap_usd NUMERIC(12, 4) NOT NULL,
+  hit_at TIMESTAMPTZ,                   -- set the first time the cap is reached
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_label)
+);
+CREATE INDEX IF NOT EXISTS idx_cost_ledger_label ON cost_ledger(source_label);
