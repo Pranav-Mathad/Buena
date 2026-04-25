@@ -33,6 +33,8 @@ from typing import Any
 
 import structlog
 
+from decimal import Decimal
+
 from backend.db.session import get_sessionmaker
 from backend.logging import configure_logging
 from backend.pipeline.extractor import extract as run_extractor
@@ -40,8 +42,23 @@ from backend.pipeline.router import (
     route_structured,
     route_text_event,
 )
+from connectors import cost_ledger
+from connectors.cost_ledger import CostCapExceeded
 from connectors.migrations import apply_all as ensure_migrations
 from eval.metrics import Report, score_row
+
+# Eval-run ledger label. The cap is generous because evals are run
+# infrequently and we'd rather see the spend than hit the limit
+# mid-run; the cap exists mainly to stop runaway loops.
+EVAL_LEDGER_LABEL = "step5_eval"
+EVAL_LEDGER_CAP_USD = Decimal("5.00")
+
+# Gemini 2.5 Pro public pricing as of 2026-04-25 (USD per 1M tokens).
+# Source: pinned in this comment so future readers see the assumption.
+PRO_PROMPT_USD_PER_M = Decimal("1.25")
+PRO_COMPLETION_USD_PER_M = Decimal("10.0")
+FLASH_PROMPT_USD_PER_M = Decimal("0.075")
+FLASH_COMPLETION_USD_PER_M = Decimal("0.30")
 
 #: Sources that travel through the *text-based* router (route).
 TEXT_ROUTER_SOURCES: frozenset[str] = frozenset({"email", "slack", "debug"})
@@ -127,6 +144,18 @@ async def _scope_for_event(
         return "unrouted"
 
 
+def _gemini_call_cost(model: str, prompt_tokens: int, completion_tokens: int) -> Decimal:
+    """Convert token counts → estimated USD using public Gemini pricing."""
+    is_pro = "pro" in model.lower()
+    prompt_rate = PRO_PROMPT_USD_PER_M if is_pro else FLASH_PROMPT_USD_PER_M
+    completion_rate = PRO_COMPLETION_USD_PER_M if is_pro else FLASH_COMPLETION_USD_PER_M
+    cost = (
+        Decimal(prompt_tokens) * prompt_rate / Decimal(1_000_000)
+        + Decimal(completion_tokens) * completion_rate / Decimal(1_000_000)
+    )
+    return cost.quantize(Decimal("0.000001"))
+
+
 async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
     """Run the extractor + router on one ground-truth row.
 
@@ -157,6 +186,23 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         metadata=metadata,
     )
 
+    prompt_tokens = getattr(result, "prompt_tokens", None)
+    completion_tokens = getattr(result, "completion_tokens", None)
+    model = getattr(result, "model", "") or ""
+    if (
+        getattr(result, "source", "") == "gemini"
+        and prompt_tokens is not None
+        and completion_tokens is not None
+    ):
+        try:
+            cost = _gemini_call_cost(model, int(prompt_tokens), int(completion_tokens))
+            cost_ledger.charge(EVAL_LEDGER_LABEL, cost)
+        except CostCapExceeded:
+            log.warning("eval.cost_cap_hit", event_id=event_id)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("eval.ledger_error", error=str(exc))
+
     scored = score_row(
         event_id=event_id,
         expected=expected,
@@ -165,8 +211,8 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         extracted_facts=list(getattr(result, "facts_to_update", [])),
         extractor_source=str(getattr(result, "source", "")),
         latency_ms=float(getattr(result, "latency_ms", 0.0) or 0.0),
-        prompt_tokens=None,  # Phase 8 doesn't surface token counts in ExtractionResult
-        completion_tokens=None,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
         extracted_scope=extracted_scope,
     )
 
@@ -187,12 +233,33 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
 async def run(set_name: str) -> tuple[Report, list[dict[str, Any]]]:
     """Run the eval set end-to-end. Returns (report, raw payloads)."""
     rows = _load_ground_truth(set_name)
+    # Ensure the cost-ledger row exists with a fresh cap. We deliberately
+    # don't auto-reset spend across runs — operators do that with
+    # `python -m connectors.cli re-route ... --reset-cost-ledger`. The
+    # eval-runner cap is generous because a 30-row pass at Pro pricing
+    # is on the order of a few cents.
+    try:
+        cost_ledger.ensure_label(EVAL_LEDGER_LABEL, EVAL_LEDGER_CAP_USD)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("eval.cost_ledger_unavailable", error=str(exc))
+
     report = Report(set_name=set_name)
     raw: list[dict[str, Any]] = []
     for gt_row in rows:
         scored, payload = await _score_one(gt_row)
         report.rows.append(scored)
         raw.append(payload)
+
+    try:
+        state = cost_ledger.get_state(EVAL_LEDGER_LABEL)
+        if state is not None:
+            log.info(
+                "eval.cost_ledger.summary",
+                cumulative_usd=str(state.cumulative_usd),
+                cap_usd=str(state.cap_usd),
+            )
+    except Exception:  # noqa: BLE001
+        pass
     return report, raw
 
 
@@ -236,6 +303,18 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
     else:
         markdown = report.render_markdown()
+        try:
+            state = cost_ledger.get_state(EVAL_LEDGER_LABEL)
+        except Exception:  # noqa: BLE001
+            state = None
+        if state is not None:
+            markdown += (
+                "\n## Cost ledger\n\n"
+                f"- label: `{state.source_label}`\n"
+                f"- cumulative spend: **${state.cumulative_usd:.4f}**\n"
+                f"- cap: ${state.cap_usd:.2f}\n"
+                f"- exhausted: {state.exhausted}\n"
+            )
         if args.out:
             out_path = Path(args.out)
             out_path.parent.mkdir(parents=True, exist_ok=True)
