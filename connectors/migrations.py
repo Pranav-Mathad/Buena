@@ -105,6 +105,21 @@ _MIGRATIONS: list[tuple[str, str]] = [
           ON failed_events (retry_count, last_attempted_at DESC);
         """,
     ),
+    (
+        "0004_system_state",
+        """
+        -- Generic per-process / per-feature key-value store. Phase 8 Step 7
+        -- uses ``system_state['buena_day_cursor']`` to persist the
+        -- incremental-feed cursor across server restarts; future features
+        -- (e.g. Phase 10 replay state) can reuse the same primitive without
+        -- a new migration.
+        CREATE TABLE IF NOT EXISTS system_state (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """,
+    ),
 ]
 
 
