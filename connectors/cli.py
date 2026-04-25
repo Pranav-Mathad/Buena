@@ -23,8 +23,10 @@ from backend.logging import configure_logging
 from connectors.base import DataMissing
 from connectors.buena_event_loader import (
     BackfillSummary,
+    RerouteSummary,
     run_backfill_bank,
     run_backfill_invoices,
+    run_re_route,
 )
 from connectors.buena_loader import load_from_disk
 
@@ -82,18 +84,35 @@ def _format_backfill(summary: BackfillSummary) -> str:
     miss = summary.miss_reasons or {}
     top = sorted(miss.items(), key=lambda kv: kv[1], reverse=True)[:5]
     miss_lines = "\n".join(f"      {n:>4}  {reason}" for reason, n in top) or "      (none)"
-    pct = (
-        f"{(summary.unrouted / summary.inserted_now * 100):.1f}%"
-        if summary.inserted_now
-        else "n/a"
-    )
+    inserted = summary.inserted_now or 1  # avoid div-by-zero in pct calcs
+    pct_unrouted = (summary.unrouted / inserted * 100) if summary.inserted_now else 0.0
     return (
         f"{summary.label} backfill summary\n"
-        f"  total_seen      = {summary.total_seen}\n"
-        f"  inserted_now    = {summary.inserted_now}\n"
-        f"  routed          = {summary.routed}\n"
-        f"  unrouted        = {summary.unrouted}  ({pct} of inserted)\n"
-        f"  facts_written   = {summary.facts_written}\n"
+        f"  total_seen          = {summary.total_seen}\n"
+        f"  inserted_now        = {summary.inserted_now}\n"
+        f"  routed_property     = {summary.routed_property}\n"
+        f"  routed_building     = {summary.routed_building}\n"
+        f"  routed_liegenschaft = {summary.routed_liegenschaft}\n"
+        f"  routed_total        = {summary.routed}\n"
+        f"  unrouted            = {summary.unrouted}  ({pct_unrouted:.1f}% of inserted)\n"
+        f"  facts_written       = {summary.facts_written}\n"
+        f"  top_miss_reasons:\n{miss_lines}\n"
+    )
+
+
+def _format_reroute(summary: RerouteSummary) -> str:
+    """Pretty multi-line summary for the one-time re-route migration."""
+    miss = summary.miss_reasons or {}
+    top = sorted(miss.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    miss_lines = "\n".join(f"      {n:>4}  {reason}" for reason, n in top) or "      (none)"
+    return (
+        "re-route summary (one-time migration step)\n"
+        f"  scanned                = {summary.scanned}\n"
+        f"  moved_to_property      = {summary.moved_to_property}\n"
+        f"  moved_to_building      = {summary.moved_to_building}\n"
+        f"  moved_to_liegenschaft  = {summary.moved_to_liegenschaft}\n"
+        f"  still_unrouted         = {summary.still_unrouted}\n"
+        f"  facts_written          = {summary.facts_written}\n"
         f"  top_miss_reasons:\n{miss_lines}\n"
     )
 
@@ -137,6 +156,23 @@ def _cmd_backfill_invoices(args: argparse.Namespace) -> int:
         print(json.dumps(summary.as_json(), indent=2))
     else:
         print(_format_backfill(summary))
+    return 0
+
+
+def _cmd_re_route(args: argparse.Namespace) -> int:
+    """Handle the one-time ``re-route`` subcommand.
+
+    Walks every event with no scope set and re-evaluates routing using
+    the current rules. Stamps property_id / building_id / liegenschaft_id
+    on rows that now match. Idempotent: a second call finds nothing to
+    scan unless new events are added in between.
+    """
+    sources = list(args.sources) if args.sources else None
+    summary = run_re_route(sources)
+    if args.json:
+        print(json.dumps(summary.as_json(), indent=2))
+    else:
+        print(_format_reroute(summary))
     return 0
 
 
@@ -187,6 +223,23 @@ def build_parser() -> argparse.ArgumentParser:
     invoices.add_argument("--extracted-root", default=None)
     invoices.add_argument("--json", action="store_true")
     invoices.set_defaults(func=_cmd_backfill_invoices)
+
+    reroute = sub.add_parser(
+        "re-route",
+        help=(
+            "ONE-TIME migration: re-evaluate routing on every event that "
+            "has no scope set. Idempotent — safe to re-run."
+        ),
+    )
+    reroute.add_argument(
+        "--sources",
+        nargs="*",
+        default=None,
+        help="Optional list of event sources to limit the rescan to "
+        "(default: all sources).",
+    )
+    reroute.add_argument("--json", action="store_true")
+    reroute.set_defaults(func=_cmd_re_route)
 
     return parser
 

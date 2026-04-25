@@ -45,15 +45,32 @@ log = structlog.get_logger(__name__)
 
 @dataclass
 class BackfillSummary:
-    """What :func:`backfill_*` returns to the CLI."""
+    """What :func:`backfill_*` returns to the CLI.
+
+    The four-tier counts (``routed_property / routed_building /
+    routed_liegenschaft / unrouted``) sum to ``inserted_now`` and let the
+    operator read the per-tier miss rates that Phase 8.1 verification
+    requires.
+    """
 
     label: str
     total_seen: int = 0
     inserted_now: int = 0
-    routed: int = 0
+    routed_property: int = 0
+    routed_building: int = 0
+    routed_liegenschaft: int = 0
     unrouted: int = 0
     facts_written: int = 0
     miss_reasons: dict[str, int] | None = None
+
+    @property
+    def routed(self) -> int:
+        """Total events that resolved to *some* scope (any tier)."""
+        return (
+            self.routed_property
+            + self.routed_building
+            + self.routed_liegenschaft
+        )
 
     def as_json(self) -> dict[str, Any]:
         """Serializable view for the CLI's ``--json`` mode."""
@@ -61,7 +78,10 @@ class BackfillSummary:
             "label": self.label,
             "total_seen": self.total_seen,
             "inserted_now": self.inserted_now,
-            "routed": self.routed,
+            "routed_property": self.routed_property,
+            "routed_building": self.routed_building,
+            "routed_liegenschaft": self.routed_liegenschaft,
+            "routed_total": self.routed,
             "unrouted": self.unrouted,
             "facts_written": self.facts_written,
             "miss_reasons": self.miss_reasons or {},
@@ -94,9 +114,15 @@ async def _ingest_one(
             await session.commit()
             return
 
-        route: StructuredRoute = await route_structured(session, ev.metadata)
+        route: StructuredRoute = await route_structured(
+            session, ev.metadata, event_source=ev.source
+        )
         if route.property_id is not None:
-            summary.routed += 1
+            summary.routed_property += 1
+        elif route.building_id is not None:
+            summary.routed_building += 1
+        elif route.liegenschaft_id is not None:
+            summary.routed_liegenschaft += 1
         else:
             summary.unrouted += 1
             if summary.miss_reasons is None:
@@ -105,11 +131,13 @@ async def _ingest_one(
                 summary.miss_reasons.get(route.reason, 0) + 1
             )
 
-        # Write facts (no-op when property_id is None).
+        # Write facts (no-op when no scope is resolved).
         written = await fact_writer(
             session,
             event_id=event_id,
             property_id=route.property_id,
+            building_id=route.building_id,
+            liegenschaft_id=route.liegenschaft_id,
             metadata=ev.metadata,
         )
         summary.facts_written += int(written or 0)
@@ -118,6 +146,8 @@ async def _ingest_one(
             session,
             event_id,
             property_id=route.property_id,
+            building_id=route.building_id,
+            liegenschaft_id=route.liegenschaft_id,
             received_at=_normalise_ts(ev.received_at),
         )
         await session.commit()
@@ -210,11 +240,183 @@ def run_backfill_invoices(extracted_root: str | None = None) -> BackfillSummary:
     return asyncio.run(backfill_invoices(root=root))
 
 
+# -----------------------------------------------------------------------------
+# One-time re-route migration
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class RerouteSummary:
+    """Result of a one-shot re-route over already-ingested events."""
+
+    label: str
+    scanned: int = 0
+    moved_to_property: int = 0
+    moved_to_building: int = 0
+    moved_to_liegenschaft: int = 0
+    still_unrouted: int = 0
+    facts_written: int = 0
+    miss_reasons: dict[str, int] | None = None
+
+    def as_json(self) -> dict[str, Any]:
+        """Serializable view for the CLI's ``--json`` mode."""
+        return {
+            "label": self.label,
+            "scanned": self.scanned,
+            "moved_to_property": self.moved_to_property,
+            "moved_to_building": self.moved_to_building,
+            "moved_to_liegenschaft": self.moved_to_liegenschaft,
+            "still_unrouted": self.still_unrouted,
+            "facts_written": self.facts_written,
+            "miss_reasons": self.miss_reasons or {},
+        }
+
+
+async def _reroute_one(
+    factory: Any,
+    *,
+    event_id: str,
+    source: str,
+    metadata: dict[str, Any],
+    summary: RerouteSummary,
+) -> None:
+    """Re-evaluate routing for one already-ingested event."""
+    from sqlalchemy import text  # noqa: PLC0415 — local import keeps imports tidy
+
+    async with factory() as session:
+        route: StructuredRoute = await route_structured(
+            session, metadata, event_source=source
+        )
+        if route.property_id is not None:
+            summary.moved_to_property += 1
+        elif route.building_id is not None:
+            summary.moved_to_building += 1
+        elif route.liegenschaft_id is not None:
+            summary.moved_to_liegenschaft += 1
+        else:
+            summary.still_unrouted += 1
+            if summary.miss_reasons is None:
+                summary.miss_reasons = {}
+            summary.miss_reasons[route.reason] = (
+                summary.miss_reasons.get(route.reason, 0) + 1
+            )
+            await session.commit()
+            return
+
+        # Stamp the event with its new scope.
+        await session.execute(
+            text(
+                """
+                UPDATE events
+                SET property_id     = :pid,
+                    building_id     = :bid,
+                    liegenschaft_id = :lid
+                WHERE id = :id
+                """
+            ),
+            {
+                "id": event_id,
+                "pid": route.property_id,
+                "bid": route.building_id,
+                "lid": route.liegenschaft_id,
+            },
+        )
+
+        # Write any facts that follow from the new scope. Same writer
+        # logic as the backfill — identical writes short-circuit.
+        writer = (
+            extract_bank_facts
+            if source == "bank"
+            else extract_invoice_facts
+            if source == "invoice"
+            else None
+        )
+        if writer is not None:
+            from uuid import UUID  # noqa: PLC0415
+
+            written = await writer(
+                session,
+                event_id=UUID(event_id),
+                property_id=route.property_id,
+                building_id=route.building_id,
+                liegenschaft_id=route.liegenschaft_id,
+                metadata=metadata,
+            )
+            summary.facts_written += int(written or 0)
+
+        await session.commit()
+
+
+async def re_route_unrouted(
+    sources: list[str] | None = None,
+) -> RerouteSummary:
+    """Walk every event with no scope set and re-evaluate routing.
+
+    One-time migration step after Phase 8.1 schema/router changes —
+    surfaces in ``DECISIONS.md`` as a documented re-attribution pass,
+    not as ongoing pipeline behavior. Idempotent: re-running on already-
+    re-routed events finds nothing new to scan.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+
+    ensure_migrations()
+    factory = get_sessionmaker()
+    summary = RerouteSummary(label="re_route")
+
+    src_filter = ""
+    params: dict[str, Any] = {}
+    if sources:
+        src_filter = "AND source = ANY(:sources)"
+        params["sources"] = sources
+
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT id, source, metadata
+                    FROM events
+                    WHERE property_id IS NULL
+                      AND building_id IS NULL
+                      AND liegenschaft_id IS NULL
+                      {src_filter}
+                    ORDER BY received_at ASC
+                    """
+                ),
+                params,
+            )
+        ).all()
+
+    for row in rows:
+        summary.scanned += 1
+        try:
+            await _reroute_one(
+                factory,
+                event_id=str(row.id),
+                source=str(row.source),
+                metadata=dict(row.metadata or {}),
+                summary=summary,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("reroute.error", event_id=str(row.id))
+
+    log.info("reroute.done", **summary.as_json())
+    return summary
+
+
+def run_re_route(sources: list[str] | None = None) -> RerouteSummary:
+    """Sync wrapper for ``connectors.cli``."""
+    return asyncio.run(re_route_unrouted(sources))
+
+
 __all__ = [
     "BackfillSummary",
+    "RerouteSummary",
     "backfill_bank",
     "backfill_invoices",
+    "re_route_unrouted",
     "run_backfill_bank",
     "run_backfill_invoices",
+    "run_re_route",
     "DataMissing",
 ]
