@@ -84,6 +84,27 @@ _MIGRATIONS: list[tuple[str, str]] = [
           ON facts (liegenschaft_id, section, field) WHERE superseded_by IS NULL;
         """,
     ),
+    (
+        "0003_failed_events",
+        """
+        -- Backfill dead-letter table. ``retry_count`` increments on each
+        -- failed extraction attempt; once it hits the configured ceiling
+        -- (default 3) the event lands here for human triage via
+        -- /admin/failed in Step 9. ``last_error`` keeps the most recent
+        -- traceback excerpt so the operator can scan without joining.
+        CREATE TABLE IF NOT EXISTS failed_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          retry_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          last_attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE (event_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_failed_events_retry
+          ON failed_events (retry_count, last_attempted_at DESC);
+        """,
+    ),
 ]
 
 

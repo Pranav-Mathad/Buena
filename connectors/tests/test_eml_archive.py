@@ -117,3 +117,52 @@ def test_subject_passes_through_when_safe(
     )
     event = eml_archive.parse_one(eml, root=tmp_path)
     assert expected_subject_contains in event.metadata["subject"]
+
+
+@pytest.mark.parametrize(
+    "subject,body_first_line",
+    [
+        ("Fwd: Heizung kalt", "From: lukas.weber@tenant.demo"),
+        ("WG: Mahnung 2/3", "Von: amtsgericht@example.org"),
+        ("FW: Schimmelmeldung", "From: maria.schulz@tenant.demo"),
+    ],
+)
+def test_forwarded_emails_capture_inner_sender(
+    tmp_path: Path, subject: str, body_first_line: str
+) -> None:
+    """``Fwd:``/``WG:`` prefix → inner_sender pulled from the quoted body."""
+    eml = tmp_path / "20260424_090000_EMAIL-00099.eml"
+    eml.write_text(
+        f"Message-ID: <fwd-99@example.com>\r\n"
+        f"From: pm@hausverwaltung.demo\r\n"
+        f"Subject: {subject}\r\n"
+        "Date: Thu, 24 Apr 2026 09:00:00 +0000\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "\r\n"
+        f"{body_first_line}\r\n"
+        "Sent: yesterday\r\n"
+        "Subject: original subject\r\n"
+        "\r\n"
+        "urspruenglicher Inhalt\r\n",
+        encoding="utf-8",
+    )
+    event = eml_archive.parse_one(eml, root=tmp_path)
+    assert event.metadata["is_forward"] is True
+    assert event.metadata["inner_sender"] is not None
+
+
+def test_non_forward_email_has_no_inner_sender(tmp_path: Path) -> None:
+    """``Re:``/``Aw:`` replies preserve the outer From; no inner_sender capture."""
+    eml = tmp_path / "20260424_090000_EMAIL-00100.eml"
+    eml.write_text(
+        "Message-ID: <reply-100@example.com>\r\n"
+        "From: tenant@example.demo\r\n"
+        "Subject: Re: Wartungstermin\r\n"
+        "Date: Thu, 24 Apr 2026 09:00:00 +0000\r\n"
+        "\r\n"
+        "Vielen Dank.\r\n",
+        encoding="utf-8",
+    )
+    event = eml_archive.parse_one(eml, root=tmp_path)
+    assert event.metadata["is_forward"] is False
+    assert event.metadata["inner_sender"] is None

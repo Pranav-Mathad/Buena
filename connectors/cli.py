@@ -21,6 +21,12 @@ import structlog
 
 from backend.logging import configure_logging
 from connectors.base import DataMissing
+from connectors import cost_ledger as cost_ledger_module
+from connectors.buena_email_loader import (
+    LEDGER_LABEL as EMAIL_LEDGER_LABEL,
+    EmailBackfillSummary,
+    run_backfill_emails,
+)
 from connectors.buena_event_loader import (
     BackfillSummary,
     RerouteSummary,
@@ -159,6 +165,110 @@ def _cmd_backfill_invoices(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_email_backfill(summary: EmailBackfillSummary) -> str:
+    """Pretty multi-line summary for the email backfill."""
+    inserted = summary.inserted_now or 1
+    pct_routed = (
+        (summary.routed_property + summary.routed_building + summary.routed_liegenschaft)
+        / inserted * 100 if summary.inserted_now else 0.0
+    )
+    pct_unrouted = (summary.unrouted / inserted * 100) if summary.inserted_now else 0.0
+    miss_lines = (
+        "\n".join(
+            f"      {n:>4}  {reason}"
+            for reason, n in sorted(
+                summary.miss_reasons.items(), key=lambda kv: kv[1], reverse=True
+            )[:5]
+        )
+        or "      (none)"
+    )
+    err_lines = (
+        "\n".join(f"      {s}" for s in summary.error_samples) or "      (none)"
+    )
+    top_props = (
+        "\n".join(
+            f"      {n:>4}  {name}"
+            for name, n in sorted(
+                summary.top_property_event_counts.items(),
+                key=lambda kv: kv[1],
+                reverse=True,
+            )[:10]
+        )
+        or "      (no property-routed events yet)"
+    )
+    return (
+        f"{summary.label} backfill summary\n"
+        f"  total_seen           = {summary.total_seen}\n"
+        f"  inserted_now         = {summary.inserted_now}\n"
+        f"  routed_property      = {summary.routed_property}\n"
+        f"  routed_building      = {summary.routed_building}\n"
+        f"  routed_liegenschaft  = {summary.routed_liegenschaft}\n"
+        f"  unrouted             = {summary.unrouted}  "
+        f"({pct_unrouted:.1f}% of inserted)\n"
+        f"  routed_total_pct     = {pct_routed:.1f}% of inserted\n"
+        f"  extraction_attempts  = {summary.extraction_attempts}\n"
+        f"  extracted_facts      = {summary.extracted_facts}\n"
+        f"  extractor_errors     = {summary.extractor_errors}\n"
+        f"  failed_events_dead   = {summary.failed_events}\n"
+        f"  aborted_on_cost_cap  = {summary.aborted_on_cost_cap}\n"
+        f"  cost_ledger          ${summary.cumulative_usd} / ${summary.cap_usd}\n"
+        f"  top_miss_reasons:\n{miss_lines}\n"
+        f"  error_samples:\n{err_lines}\n"
+        f"  top_10_properties:\n{top_props}\n"
+    )
+
+
+def _cmd_backfill_emails(args: argparse.Namespace) -> int:
+    """Handle the ``backfill-emails`` subcommand."""
+    if args.source not in SUPPORTED_SOURCES:
+        print(
+            f"unknown --source: {args.source!r}; "
+            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.reset_cost_ledger:
+        # Friction gate — ledger reset is intentional. The y/N prompt
+        # makes it impossible to wipe spend by reflex.
+        prompt = (
+            f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' "
+            "(deletes durable spend record)? [y/N] "
+        )
+        try:
+            answer = input(prompt).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer != "y":
+            print("aborted: cost ledger NOT reset", file=sys.stderr)
+            return 4
+        cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL)
+        print(f"cost ledger row '{EMAIL_LEDGER_LABEL}' reset")
+
+    from decimal import Decimal as _Decimal  # noqa: PLC0415 — local import
+
+    try:
+        summary = run_backfill_emails(
+            extracted_root=args.extracted_root,
+            cap_usd=_Decimal(str(args.max_total_cost_usd)),
+            dead_letter_after=args.dead_letter_after,
+            reprocess_historical=args.reprocess_historical,
+            limit=args.limit,
+        )
+    except DataMissing as exc:
+        print(f"buena dataset missing: {exc}", file=sys.stderr)
+        return 3
+
+    if args.json:
+        print(json.dumps(summary.as_json(), indent=2))
+    else:
+        print(_format_email_backfill(summary))
+
+    # Non-zero exit when the run aborted on the cost cap so CI / cron
+    # workflows surface it as a failure rather than silent success.
+    return 5 if summary.aborted_on_cost_cap else 0
+
+
 def _cmd_re_route(args: argparse.Namespace) -> int:
     """Handle the one-time ``re-route`` subcommand.
 
@@ -223,6 +333,54 @@ def build_parser() -> argparse.ArgumentParser:
     invoices.add_argument("--extracted-root", default=None)
     invoices.add_argument("--json", action="store_true")
     invoices.set_defaults(func=_cmd_backfill_invoices)
+
+    emails = sub.add_parser(
+        "backfill-emails",
+        help=(
+            "Walk the customer .eml archive through the live extraction "
+            "pipeline. Cost-bounded by --max-total-cost-usd against the "
+            "durable cost ledger; resumable across runs."
+        ),
+    )
+    emails.add_argument("--source", required=True, choices=SUPPORTED_SOURCES)
+    emails.add_argument("--extracted-root", default=None)
+    emails.add_argument(
+        "--max-total-cost-usd",
+        type=float,
+        default=20.00,
+        help="Hard ceiling on the cost ledger for label "
+        f"'{EMAIL_LEDGER_LABEL}'. Default: 20.00.",
+    )
+    emails.add_argument(
+        "--dead-letter-after",
+        type=int,
+        default=3,
+        help="failed_events.retry_count ceiling before an event is "
+        "considered permanently failed. Default: 3.",
+    )
+    emails.add_argument(
+        "--reprocess-historical",
+        action="store_true",
+        help="When set, events older than 30 days are stamped "
+        "processed_at=now() rather than processed_at=received_at. "
+        "Phase 9 migration flips this on once the validator/uncertainty "
+        "layers ship; default keeps backfill quiet for the live worker.",
+    )
+    emails.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Stop after N .eml files. Use for dry-runs without burning "
+        "the full cost cap.",
+    )
+    emails.add_argument(
+        "--reset-cost-ledger",
+        action="store_true",
+        help="Friction-gated: prompts y/N then deletes the durable "
+        f"spend row for label '{EMAIL_LEDGER_LABEL}' before starting.",
+    )
+    emails.add_argument("--json", action="store_true")
+    emails.set_defaults(func=_cmd_backfill_emails)
 
     reroute = sub.add_parser(
         "re-route",

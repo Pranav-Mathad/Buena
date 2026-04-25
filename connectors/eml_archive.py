@@ -40,6 +40,41 @@ log = structlog.get_logger(__name__)
 
 _FILENAME_TS_RE = re.compile(r"(\d{8})_(\d{6})_")
 
+# Subject-line forwarding markers — case-insensitive. ``Fwd:`` is the
+# Anglo convention; ``WG:`` is the German "weitergeleitet" prefix. We
+# don't aggregate ``Aw:``/``Re:`` here — replies preserve the original
+# sender, so the outer ``From:`` is already the correct routing key.
+_FWD_PREFIX_RE = re.compile(r"^\s*(?:Fwd?|WG)\s*:\s*", re.IGNORECASE)
+
+# Inner-sender markers inside the forwarded body. The body of a
+# forwarded message typically contains a quoted ``From: <inner>`` line
+# (Gmail/Outlook style) or ``Von: <inner>`` (German clients). We pick
+# the first match and use it as ``inner_sender`` in metadata so the
+# router can prefer the originator over the forwarding inbox.
+_INNER_FROM_RE = re.compile(
+    r"^\s*(?:From|Von)\s*:\s*(.+?)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _detect_forward(subject: str, body: str) -> str | None:
+    """Return the inner sender when ``subject`` looks like a forward.
+
+    Forwards complicate routing because the visible ``From:`` is the
+    forwarding mailbox (usually the property manager themselves) — so
+    the actual subject of the message is one quote-level deep. When
+    the subject prefix is ``Fwd:`` / ``WG:`` and the body contains a
+    ``From:`` / ``Von:`` line, we return that line so the worker can
+    decide whether to route on the inner sender instead.
+    """
+    if not _FWD_PREFIX_RE.match(subject or ""):
+        return None
+    match = _INNER_FROM_RE.search(body or "")
+    if not match:
+        return None
+    candidate = match.group(1).strip()
+    return candidate or None
+
 
 def _parse_filename_timestamp(name: str) -> datetime | None:
     """Parse the ``YYYYMMDD_HHMMSS_`` prefix that Buena's EMLs use."""
@@ -159,6 +194,11 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
         else str(path)
     )
 
+    inner_sender_raw = _detect_forward(headers["subject"], body)
+    inner_sender = (
+        redact.scrub_text(inner_sender_raw) if inner_sender_raw else None
+    )
+
     metadata: dict[str, Any] = {
         "from": redacted_headers["from"],
         "to": redacted_headers["to"],
@@ -177,6 +217,8 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
         "in_reply_to": headers["in_reply_to"].strip("<>") or None,
         "references": [r.strip("<>") for r in _references_list(headers["references"])],
         "relative_path": relative_path,
+        "is_forward": inner_sender is not None,
+        "inner_sender": inner_sender,
     }
 
     return ConnectorEvent(
