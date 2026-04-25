@@ -122,3 +122,18 @@ CREATE TABLE outbox (
   body TEXT NOT NULL,
   sent_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Phase 8 — durable LLM-spend ledger.
+-- Persists across CLI invocations so a single budget cap (e.g. $20)
+-- governs the entire Buena backfill, not just one run. Sub-labels
+-- (e.g. 'pdf_doctype' at $2 sub-cap) share the same row family.
+CREATE TABLE IF NOT EXISTS cost_ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_label TEXT NOT NULL,           -- 'buena_email' | 'pdf_doctype' | etc.
+  cumulative_usd NUMERIC(12, 4) NOT NULL DEFAULT 0,
+  cap_usd NUMERIC(12, 4) NOT NULL,
+  hit_at TIMESTAMPTZ,                   -- set the first time the cap is reached
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_label)
+);
+CREATE INDEX IF NOT EXISTS idx_cost_ledger_label ON cost_ledger(source_label);

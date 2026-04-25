@@ -747,6 +747,96 @@ Before submitting:
 
 ---
 
+# PART XVI — CONNECTOR ARCHITECTURE (Phase 8)
+
+Phase 8 introduces `connectors/` as the customer-agnostic ingestion
+layer. **Buena is the first composer, not a special case.** Every new
+customer integration is a new composite under `connectors/`; the
+shape-handling primitives below are shared.
+
+## Contract
+
+Every connector satisfies one of these Protocols (`connectors/base.py`):
+
+```python
+@runtime_checkable
+class Connector(Protocol):
+    name: str
+    def pull(self) -> Iterator[ConnectorEvent]: ...
+    def stream(self) -> Iterator[ConnectorEvent]: ...
+```
+
+`ConnectorEvent` mirrors the keyword arguments of
+`backend.pipeline.events.insert_event` so the call site is a one-liner.
+Every event carries `source`, `source_ref`, `raw_content`, `metadata`,
+`received_at`, and an optional pre-routed `property_id`. PDF-derived
+events additionally carry `metadata.document_type` (Phase 9 constraints
+read this).
+
+## Idempotency
+
+`(events.source, events.source_ref)` is `UNIQUE` (Part VI). Connectors
+must produce the **same** `source_ref` on every re-run for the same
+input. Concrete formulas:
+
+| Source | `source_ref` |
+|---|---|
+| Email (`.eml`)        | `Message-ID` (fallback `sha256(From+Date+Subject)[:16]`) |
+| Bank txn              | `sha256(datum + betrag + verwendungszweck + buena_id)[:12]` |
+| Invoice / letter PDF  | `<filename>:<sha256(file_bytes)[:16]>` |
+| Master data row       | natural key (email / id / address) |
+
+## PII redaction at ingestion (not at render)
+
+`connectors/redact.py` is the **only** module that touches raw IBANs,
+full phone numbers, or full email domains on the way *into* the
+database. Every connector calls `redact.iban_last4`, `phone_last4`,
+`email_redact`, or `scrub_text` before yielding a `ConnectorEvent`.
+Tests assert no `r"DE\d{20}"` or full E.164 phone survives.
+
+PII contract:
+
+- IBAN  → `****<last4>`  (e.g. `****1349`)
+- Phone → `+CC *** **<last4>` (country code preserved when present)
+- Email → `<local-part>@example.com` (local part kept; domain replaced)
+
+## Cost ledger
+
+Every LLM call charges `connectors/cost_ledger.py`. The ledger is a
+durable Postgres table (`cost_ledger`, additive migration in
+`connectors/migrations.py`) keyed on `source_label` so a single
+`--max-total-cost-usd` cap governs the entire backfill across CLI
+invocations. Subsequent runs read the persisted state and abort
+immediately if the cap was already hit. Reset is friction-gated:
+`--reset-cost-ledger` prompts `y/N`.
+
+Sub-labels share the same table — e.g. the PDF document-type
+classifier (`pdf_doctype`) gets a `$2` sub-cap inside the broader
+`buena_email` budget.
+
+## Composite layout
+
+`connectors/buena_archive.py` is the only module that knows Buena's
+directory shape. It exposes `load_stammdaten(root)`, `iter_emails`,
+`iter_bank`, `iter_invoices`, `iter_letters`, and
+`iter_incremental_day(day)`. The next customer ships a sibling file
+(`connectors/<customer>_archive.py`) and reuses the primitives.
+
+## Extending
+
+Adding a new customer:
+
+1. Verify their data shape — what files / formats / cardinalities.
+2. Reuse existing primitives where possible
+   (`csv_stammdaten`, `eml_archive`, `camt_bank`,
+   `pdf_invoice_archive`, `pdf_letter_archive`).
+3. Write a new composite `connectors/<customer>_archive.py`.
+4. Add a `<customer>_archive` smoke test (skip when the dataset is
+   absent, like `connectors/tests/test_buena_archive.py`).
+5. Wire a CLI subcommand under `connectors/cli.py` (Step 2+).
+
+---
+
 # FINAL REMINDER
 
 Do not build the most complete system. Build the system that makes judges say:
