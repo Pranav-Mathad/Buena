@@ -3,10 +3,18 @@
 Writes new fact rows and flags any superseded predecessor. The fact table's
 ``superseded_by`` column points at the replacement row (bottom-up chain) —
 this is what :func:`render_markdown` relies on via ``superseded_by IS NULL``.
+
+Phase 9 Step 9.1 expands the applier surface: alongside committing
+facts, it persists a parallel list of uncertainty items (from the
+extractor's ``uncertain[]`` field, the confidence-floor demotion path,
+and the validator's ``needs_review`` verdicts). Both writes live
+in the same transaction so a row in ``uncertainty_events`` is always
+linked to a real ``events`` row.
 """
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -69,4 +77,70 @@ async def apply(
         event_id=str(source_event_id),
         facts_written=written,
     )
+    return written
+
+
+async def apply_uncertainties(
+    session: AsyncSession,
+    *,
+    event_id: UUID,
+    property_id: UUID | None,
+    items: list[dict[str, Any]],
+    building_id: UUID | None = None,
+    liegenschaft_id: UUID | None = None,
+) -> int:
+    """Persist uncertainty items into ``uncertainty_events``.
+
+    Each item is expected to carry ``observation`` (required),
+    ``reason_uncertain`` (required), ``relevant_section``, plus
+    optional ``hypothesis`` and ``relevant_field``. The ``source``
+    field on each item gets passed through; defaults to ``extractor``
+    when missing so the inbox can show provenance.
+
+    Caller commits the surrounding transaction. Returns the number of
+    rows actually inserted (items with empty ``observation`` are
+    skipped to keep the inbox honest).
+    """
+    written = 0
+    for item in items:
+        observation = str(item.get("observation") or "").strip()
+        if not observation:
+            continue
+        await session.execute(
+            text(
+                """
+                INSERT INTO uncertainty_events (
+                  event_id, property_id, building_id, liegenschaft_id,
+                  relevant_section, relevant_field,
+                  observation, hypothesis, reason_uncertain, source, status
+                ) VALUES (
+                  :eid, :pid, :bid, :lid,
+                  :section, :field,
+                  :observation, :hypothesis, :reason, :src, 'open'
+                )
+                """
+            ),
+            {
+                "eid": event_id,
+                "pid": property_id,
+                "bid": building_id,
+                "lid": liegenschaft_id,
+                "section": str(item.get("relevant_section") or "") or None,
+                "field": str(item.get("relevant_field") or "") or None,
+                "observation": observation[:1000],
+                "hypothesis": (
+                    str(item.get("hypothesis") or "")[:1000] or None
+                ),
+                "reason": str(item.get("reason_uncertain") or "(no reason given)")[:500],
+                "src": str(item.get("source") or "extractor"),
+            },
+        )
+        written += 1
+    if written:
+        log.info(
+            "applier.uncertainties_done",
+            event_id=str(event_id),
+            property_id=str(property_id) if property_id else None,
+            written=written,
+        )
     return written

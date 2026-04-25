@@ -48,4 +48,17 @@ Liefere ein einziges JSON-Objekt im vorgegebenen Schema. Ohne Kommentar, ohne Ma
 - Bei einem unklaren Ereignis (Auto-Reply mit gequotetem Original) lieber `facts_to_update: []` als ein unsicherer Fact-Eintrag.
 - Schreibe `value` immer auf der Sprache des Originaltextes (deutsche Mails → deutscher `value`).
 
+### Unsicherheits-Regeln (`uncertain[]`)
+
+Wenn dir etwas potentiell Relevantes auffällt, du dich aber **nicht auf einen konkreten Fakt festlegen kannst** (vage Andeutung, mehrdeutige Referenz, Hörensagen, "ich denke wir sollten mal...", "vielleicht", "irgendwann"), trage es in `uncertain[]` ein — **nicht** in `facts_to_update`.
+
+- **Nicht erfinden. Nicht raten.** Der Nutzer bevorzugt klar "Ich habe etwas Unklares bemerkt" gegenüber falsch-zuversichtlichem "Ich denke das ist so".
+- Format: `{{observation, hypothesis?, reason_uncertain, relevant_section, relevant_field?}}`.
+  - `observation` — was wurde beobachtet (möglichst nahe am Originaltext zitiert).
+  - `hypothesis` — falls ein Kandidatenwert erkennbar ist; sonst leer lassen.
+  - `reason_uncertain` — kurz auf Deutsch, warum es kein Fakt geworden ist (z. B. "vage Andeutung ohne Zeitbezug", "Eigentümer äußert Absicht, kein Beschluss", "Hörensagen über andere Einheit").
+  - `relevant_section` — beste Schätzung der Section, in der ein zukünftiger Fakt landen würde.
+  - `relevant_field` — optional, beste Schätzung des Feldnamens.
+- Beispiele für `uncertain[]`-Kandidaten: "Wir sollten mal über die Miete reden", "vielleicht später kündigen", "Nachbar hat angeblich ein Problem", "irgendwann müssen wir das Dach machen".
+
 Liefere nur valides JSON, das dem Schema entspricht.
