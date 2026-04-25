@@ -123,6 +123,37 @@ CREATE TABLE outbox (
   sent_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Phase 8.1 — Liegenschaft (WEG) tier above buildings.
+-- One liegenschaft can own multiple Häuser; events billed at WEG level
+-- (Hausgeld, Verwaltergebühr, shared contractor fees) attach here, not
+-- to a specific Haus. Routing precedence in route_structured():
+-- property_id (unit) → building_id (Haus) → liegenschaft_id (WEG).
+CREATE TABLE IF NOT EXISTS liegenschaften (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  buena_liegenschaft_id TEXT UNIQUE,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE buildings
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS building_id    UUID REFERENCES buildings(id);
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+ALTER TABLE facts
+  ADD COLUMN IF NOT EXISTS building_id    UUID REFERENCES buildings(id);
+ALTER TABLE facts
+  ADD COLUMN IF NOT EXISTS liegenschaft_id UUID REFERENCES liegenschaften(id);
+CREATE INDEX IF NOT EXISTS idx_events_building
+  ON events (building_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_liegenschaft
+  ON events (liegenschaft_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_facts_building_current
+  ON facts (building_id, section, field) WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS idx_facts_liegenschaft_current
+  ON facts (liegenschaft_id, section, field) WHERE superseded_by IS NULL;
+
 -- Phase 8 — durable LLM-spend ledger.
 -- Persists across CLI invocations so a single budget cap (e.g. $20)
 -- governs the entire Buena backfill, not just one run. Sub-labels
