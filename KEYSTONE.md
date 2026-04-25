@@ -661,10 +661,23 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 0 — Setup
-**Next deliverable:** Backend deployed on Railway. `GET /properties` returns 4 seeded properties with rich markdown.
-**Blockers:** None.
-**Last session notes:** Project initialized. Start by scaffolding the repo and writing `db/schema.sql`.
+**Current phase:** Phase 0 — Setup (**local exit criterion met**). Next: Railway deploy + Phase 1 kickoff.
+**Next deliverable:** Deploy the current Phase 0 stack to Railway; then start Phase 1 (IMAP poller + worker + SSE live markdown).
+**Blockers:** None locally. Railway deploy still pending.
+**Last session notes:**
+- Scaffolded the full Part V tree (empty placeholders for later phases).
+- Wrote `pyproject.toml` (py311+, full dep matrix, ruff E/F/I/N/UP/B @100, `mypy --strict`).
+- `.env.example` covers every Part IV key plus DB + IMAP/Slack/ERP.
+- `docker-compose.yml` runs pgvector pg15; **host port remapped to 5433** to avoid clashing with a local Homebrew Postgres on :5432 (see `DECISIONS.md`). `.env` DSNs updated in lockstep.
+- `backend/db/schema.sql` is verbatim from Part VI.
+- `backend/config.py` (pydantic-settings, cached), `backend/db/session.py` (async SQLAlchemy), `backend/logging.py` (structlog dev/JSON), `backend/main.py` (lifespan + `/health`) all in place.
+- `backend/pipeline/renderer.py` groups current facts (`superseded_by IS NULL`) by section and emits markdown with inline `[source: <event_id>]` links.
+- `backend/api/properties.py` exposes `GET /properties` + `GET /properties/{id}/markdown`.
+- `seed/realistic_data.py` hand-crafted: 4 properties (Berliner 4B + 2A share Maria Schmidt / Bob's Plumbing / pre-1990 building, Hamburg Elbchaussee 88, Munich Leopoldstrasse 45), 29 events spread across 6 months (≥3 heating events per Berliner unit), 62 facts linked via `source_event_id`.
+- `seed/seed.py` applies schema if absent and upserts everything idempotently by natural key. Re-runnable with no duplicates.
+- Self-verified locally: `docker compose up -d` → `python -m seed.seed` → `uvicorn backend.main:app` → `curl /properties` returns 4 rows; `curl /properties/{id}/markdown` returns rich sourced markdown for each of the four.
+- Docs: `README.md` with 5-step setup; `DECISIONS.md` logs Phase 0 calls; `.gitignore` extended.
+- Git state: committing Phase 0 atomically per the Git Hygiene section before starting Phase 1.
 
 ---
 
