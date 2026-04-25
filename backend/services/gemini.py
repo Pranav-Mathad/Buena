@@ -206,6 +206,15 @@ def _configure_client() -> Any:
     return genai
 
 
+# Per-call deadline for the Gemini extraction. Bigger than p99 latency
+# observed in Step 6 (≈ 37 s on Pro under concurrency=4), small enough
+# that a silent hang surfaces as a normal exception inside one event
+# rather than freezing the whole pipeline. Configurable per-call so
+# the rule-fallback path can still take over when an extraction
+# legitimately needs longer.
+GEMINI_EXTRACT_TIMEOUT_S: float = 60.0
+
+
 async def extract_facts(
     *,
     property_name: str,
@@ -215,6 +224,7 @@ async def extract_facts(
     lang: str = "en",
     model_name: str | None = None,
     max_attempts: int = 3,
+    timeout_s: float = GEMINI_EXTRACT_TIMEOUT_S,
 ) -> ExtractionResult:
     """Run the canonical extraction prompt against Gemini.
 
@@ -263,14 +273,23 @@ async def extract_facts(
         try:
             genai = _configure_client()
             gen_model = genai.GenerativeModel(model)
-            response = await asyncio.to_thread(
-                gen_model.generate_content,
-                prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "response_schema": EXTRACTION_SCHEMA,
-                    "temperature": 0.1,
-                },
+            # Wrap the blocking SDK call in an asyncio.wait_for so a
+            # silent server-side hang (which Step 6 surfaced under
+            # concurrency=4 — 4 in-flight calls, no 429, just no return)
+            # raises asyncio.TimeoutError inside this attempt instead of
+            # freezing the worker forever. The retry path below handles
+            # the timeout like any other transient error.
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    gen_model.generate_content,
+                    prompt,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "response_schema": EXTRACTION_SCHEMA,
+                        "temperature": 0.1,
+                    },
+                ),
+                timeout=timeout_s,
             )
             latency_ms = (time.perf_counter() - start) * 1000
             text = (response.text or "").strip()
