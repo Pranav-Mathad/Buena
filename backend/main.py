@@ -14,6 +14,10 @@ import structlog
 from fastapi import FastAPI
 
 from backend.api.admin import router as admin_router
+from backend.api.buildings import (
+    building_router as buildings_router,
+    liegenschaft_router as liegenschaften_router,
+)
 from backend.api.events import router as events_router
 from backend.api.portfolio import router as portfolio_router
 from backend.api.properties import router as properties_router
@@ -51,6 +55,8 @@ app = FastAPI(
 )
 
 app.include_router(properties_router)
+app.include_router(buildings_router)
+app.include_router(liegenschaften_router)
 app.include_router(sse_router)
 app.include_router(events_router)
 app.include_router(uploads_router)
