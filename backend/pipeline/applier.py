@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.pipeline.differ import DiffPlan
+from backend.pipeline.materializer import propagate_after_fact_write
 
 log = structlog.get_logger(__name__)
 
@@ -32,8 +33,16 @@ async def apply(
     property_id: UUID,
     source_event_id: UUID,
     plan: DiffPlan,
+    trigger_summary: str | None = None,
 ) -> int:
-    """Persist every decision in ``plan``; return how many facts were written."""
+    """Persist every decision in ``plan``; return how many facts were written.
+
+    Phase 12 — after the write loop, fan out a materialization update
+    for the property scope. The propagation runs in the same session
+    so it shares this transaction: if rendering fails, every fact
+    write rolls back too, which preserves the "files are never stale
+    relative to facts" invariant.
+    """
     written = 0
     for decision in plan.decisions:
         result = await session.execute(
@@ -70,6 +79,21 @@ async def apply(
                 ),
                 {"new_id": new_id, "old_id": decision.supersedes_id},
             )
+
+    if written > 0:
+        # Trigger summary defaults to the first decision's value when the
+        # caller didn't pass one — gives a human-readable label on the
+        # ``/property_files/changes`` feed without leaking too much.
+        summary = trigger_summary
+        if summary is None and plan.decisions:
+            first = plan.decisions[0]
+            summary = f"{first.section}.{first.field}: {first.value}"
+        await propagate_after_fact_write(
+            session,
+            property_id=property_id,
+            trigger_event_id=source_event_id,
+            trigger_summary=summary,
+        )
 
     log.info(
         "applier.done",

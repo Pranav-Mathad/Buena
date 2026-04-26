@@ -20,6 +20,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
+from backend.pipeline.materializer import (
+    materialize_all,
+    propagate_after_fact_write,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 log = structlog.get_logger(__name__)
@@ -217,6 +221,40 @@ async def reset_buena_cursor() -> CursorStatus:
 
     status = await reset_cursor()
     return CursorStatus(**status)
+
+
+# -----------------------------------------------------------------------------
+# Phase 12 — operational backfill of property/building/liegenschaft files
+# -----------------------------------------------------------------------------
+
+
+class MaterializeAllResponse(BaseModel):
+    """Per-tier write counts returned by ``POST /admin/materialize-all``."""
+
+    properties: int
+    buildings: int
+    liegenschaften: int
+
+
+@router.post("/materialize-all", response_model=MaterializeAllResponse)
+async def materialize_all_endpoint(
+    session: AsyncSession = Depends(get_session),
+) -> MaterializeAllResponse:
+    """Bootstrap the Phase 12 file cache.
+
+    Mirrors ``python -m connectors.cli materialize-all`` but reachable
+    over HTTP — needed on Cloud Run where the CLI can't connect to
+    Cloud SQL directly. Idempotent: re-running just refreshes
+    ``last_rendered_at`` and ``content_md`` for every row.
+
+    The applier hook propagates updates on every fact write going
+    forward, so this endpoint is meant to be called once after the
+    Phase 12 migration lands.
+    """
+    counts = await materialize_all(session)
+    await session.commit()
+    log.info("admin.materialize_all", **counts)
+    return MaterializeAllResponse(**counts)
 
 
 # -----------------------------------------------------------------------------
@@ -476,6 +514,20 @@ async def override_rejection(
             },
         )
         fact_written = True
+        # Phase 12 — operator override that promotes a rejected
+        # proposal to a real fact must refresh the materialized file
+        # in the same transaction.
+        await propagate_after_fact_write(
+            session,
+            property_id=UUID(str(row.property_id)),
+            trigger_event_id=(
+                UUID(str(row.event_id)) if row.event_id else None
+            ),
+            trigger_summary=(
+                f"override of {row.constraint_name}: "
+                f"{row.proposed_section}.{row.proposed_field}"
+            ),
+        )
 
     await session.execute(
         text(
@@ -1200,6 +1252,27 @@ async def resolve_uncertainty(
             {"fid": fact_id, "uid": uncertainty_id},
         )
         new_status = "resolved"
+
+        # Phase 12 — promotion writes a real fact at the uncertainty's
+        # original scope; propagate to the matching tier (and cascade
+        # if it's a building or liegenschaft fact).
+        propagate_kwargs: dict[str, UUID | None] = {
+            "property_id": None,
+            "building_id": None,
+            "liegenschaft_id": None,
+        }
+        propagate_kwargs[scope_column] = UUID(str(scope_value))
+        await propagate_after_fact_write(
+            session,
+            **propagate_kwargs,
+            trigger_event_id=(
+                UUID(str(row.event_id)) if row.event_id else None
+            ),
+            trigger_summary=(
+                f"uncertainty resolved → {row.relevant_section}."
+                f"{row.relevant_field}: {written_value}"
+            ),
+        )
     else:
         await session.execute(
             text(

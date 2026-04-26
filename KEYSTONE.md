@@ -661,9 +661,50 @@ This document becomes invaluable during Q&A. It also prevents oscillation across
 
 **[UPDATE THIS AT THE END OF EVERY SESSION]**
 
-**Current phase:** Phase 10 — File-Is-Product (**MERGED**; tag `phase-10-complete`). Phases 8 → 9 → 10 all closed.
-**Next deliverable:** Open. Default candidates: live IMAP transport probe against a real mailbox; Step 10.1 time-bucketed renderer (Active/Recent/Archive — currently single-tier); demo-script polish (Beat 0 cold-open + onboarding-aloud beat).
+**Current phase:** Phase 12 — Materialized property/building/liegenschaft files (**SHIPPED**; tag `phase-12-complete`). Phases 8 → 9 → 10 → 11 → 12 all closed; deployed live to Cloud Run revision `keystone-be-00019-kpn`.
+**Next deliverable:** Phase 13 — frontend wiring of the materialized-file feed. Default candidates: poll `/property_files/changes` for the live update bell; render `content_md` directly when the structured `/file` view is empty (replaces the "Extraction in progress" fallback); deferred Phase 12 items — diff endpoints (`/property_files/{id}/history`), per-tier `/changes` feeds for buildings/liegenschaften, hero-property repoint on Cloud Run.
 **Blockers:** None.
+
+**Phase 12 results (verified live, all six steps shipped, deployed to Cloud Run):**
+- **Three new materialized tables** added in additive migration `0011_materialized_files`: `property_files` (PK `property_id`), `building_files` (PK `building_id`), `liegenschaft_files` (PK `liegenschaft_id`). Each row carries `content_md TEXT NOT NULL`, `fact_count INT`, `last_rendered_at TIMESTAMPTZ`, `trigger_event_id UUID`, `trigger_scope TEXT`, `trigger_summary TEXT`, `generation_version INT`. Indexes on `last_rendered_at DESC` per table for the `/changes` feeds.
+- **Materializer module** (`backend/pipeline/materializer.py`) wraps the existing renderer (`render_markdown`, `render_building_markdown`, `render_liegenschaft_markdown`). Three async `materialize_*` upserts; one public fan-out helper `propagate_after_fact_write(session, ...)` operating in the caller's transaction; `materialize_all(session)` for the bootstrap path; sync wrapper `run_materialize_all()` for CLI use.
+- **Propagation rule** (KEYSTONE invariant — fact writes and dependent file rows share one transaction):
+  - `property_id` set → property's file refreshed.
+  - `building_id` set → building's file refreshed AND every property under it gets `trigger_scope='building'`.
+  - `liegenschaft_id` set → WEG's file refreshed AND every building + every property under it gets `trigger_scope='liegenschaft'`.
+- **Hooked fact-write paths** (every site that writes to `facts` calls `propagate_after_fact_write` before commit): `backend/pipeline/applier.py:apply` (LLM extractor batch), `backend/pipeline/structured_extractors.py:_write_or_supersede_fact` (bank/invoice deterministic facts at any tier), `backend/pipeline/worker.py` activity insert, `backend/api/properties.py:edit_fact` (operator override), `backend/api/admin.py` (rejection-override + uncertainty-resolve), `backend/services/tavily.py:enrich_property` (web facts).
+- **Read endpoints**:
+  - Existing `GET /properties/{id}/markdown`, `GET /buildings/{id}/markdown`, `GET /liegenschaften/{id}/markdown` now read materialized rows first, fall back to live render on cache miss.
+  - New `GET /property_files/{property_id}` — full row shape.
+  - New `GET /property_files/changes?since=<ISO>&limit=N` — recent regenerations across the portfolio, ordered by `last_rendered_at DESC`, joined with property name. Default limit 50, max 200. URL-encode the `+` in `+00:00` (or use `Z` suffix).
+  - New `GET /buildings/{id}/file`, `GET /liegenschaften/{id}/file` — full row shape per tier.
+- **CLI bootstrap**: `python -m connectors.cli materialize-all` renders every property/building/liegenschaft and upserts the three tables. Idempotent. Used at Phase 12 backfill time and as the sole local recovery path if cache rows are deleted.
+- **Cloud Run deploy**: revision `keystone-be-00019-kpn` (2026-04-26), 100% traffic. Migration auto-applied via Dockerfile `apply_all()` startup call. New endpoint `POST /admin/materialize-all` — operational HTTP equivalent of the CLI, used because the CLI can't reach Cloud SQL directly (Unix socket binding); idempotent.
+
+**Phase 12 verification (all gates passed):**
+- VERIFY 2 (local bootstrap): `materialize-all` → `53 properties / 16 buildings / 1 liegenschaft`. Hero (`509393da`) materialized at 62,523 chars / 175 facts; median ~2,000 chars.
+- VERIFY 3 (per-tier propagation): synthetic property fact → 1 row, scope=`property`. Synthetic building fact → 1 building_file + 18 property_files, **all 18 carrying same `trigger_event_id` and `trigger_scope='building'`**. Synthetic liegenschaft fact → 1 WEG_file + 3 building_files + **52 property_files**, all carrying same `trigger_event_id` and `trigger_scope='liegenschaft'`.
+- VERIFY 4 (read endpoints): `GET /property_files/{hero}` returned full row + 62,523-char content_md; `GET /property_files/changes?since=<1h ago>&limit=10` returned 10 ordered rows; building-fact cascade visible as 1 building + 18 property entries with matched `trigger_event_id`.
+- VERIFY 5 (deployed): Cloud Run `POST /admin/materialize-all` → `56 / 6 / 1`. `GET /property_files/36b4a9ee-…` returned 17 facts + 3,814-char substantive content_md (Stammdaten + Overview + sourced facts). `/changes` feed live.
+
+**Phase 12 curl patterns (against deployed URL):**
+```
+URL=https://keystone-be-782665688317.europe-west10.run.app
+# Bootstrap (one-shot after migration lands)
+curl -X POST $URL/admin/materialize-all
+# Single property file
+curl $URL/property_files/<property_uuid>
+# Recent changes feed (URL-encode the +)
+curl "$URL/property_files/changes?since=2026-04-26T08:00:00Z&limit=20"
+# Building / WEG materialized rows
+curl $URL/buildings/<building_uuid>/file
+curl $URL/liegenschaften/<liegenschaft_uuid>/file
+```
+
+**Phase 11 results (verified live, complete):**
+- **Operator fact override**: `PATCH /properties/{id}/facts/{fact_id}` inserts a new fact row with `human_edited=true`, supersedes the original, preserves `source_event_id` for the trace, fires SSE notification. Differ honors `human_edited` against future extractor proposals (skipped with reason `preserved_human_edit`). Migration 0009 added `facts.human_edited`, `edited_by`, `edited_at`. Frontend: hover-revealed pencil button on each fact (skipped on uncertainty rows); inline modal with autoFocus + character counter + change/empty guards; on save invalidates `property-file`, `properties`, `property-markdown` queries.
+- **Stammdaten + WEG/Building Context in `/file` view**: Phase 12-adjacent bridge work — the structured `GET /properties/{id}/file` endpoint now emits a Stammdaten section (from `properties.metadata` + tenant master record) and a WEG/Building Context section (from `_recent_events_for_scope`) when the property has them, so a property with 0 extracted facts no longer renders as "Extraction in progress" — the master record + parent-tier activity show up instead.
+- **Renderer bugfix surfaced by Phase 12**: `_fetch_facts_by_scope` was missing `occurred_at` on FactRow construction (silent bug since the time-bucketing change). Added two lines (select `e.received_at AS occurred_at`, pass through). Property markdown was unaffected; building/liegenschaft renders crashed on first call. Detected when `materialize-all` exercised all three render paths.
 
 **Phase 10 results (verified live, all five priorities shipped):**
 - **10.2 reprocessing engine** — `backend/services/replay.py`. asyncio.Event pause/resume/stop, Postgres-durable progress (`replay_runs` table, migration 0007), `scheduled_pauses` for validator-beat checkpoints, `reset_property=True` wipes facts/uncertainties/rejections but preserves stammdaten. Six admin endpoints + `POST /admin/demo/replay` thin wrapper reading `KEYSTONE_DEMO_HERO_PROPERTY`.

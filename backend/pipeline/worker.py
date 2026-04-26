@@ -29,6 +29,7 @@ from backend.pipeline.applier import apply_uncertainties
 from backend.pipeline.differ import diff, load_current_facts
 from backend.pipeline.events import get_event_bus
 from backend.pipeline.extractor import extract
+from backend.pipeline.materializer import propagate_after_fact_write
 from backend.pipeline.renderer import render_markdown
 from backend.pipeline.router import route
 from backend.pipeline.semantic_validator import semantic_validate
@@ -395,6 +396,7 @@ async def _process_event_body(
             property_id=property_id,
             source_event_id=event_id,
             plan=validated_plan,
+            trigger_summary=result.summary,
         )
 
         if result.summary:
@@ -414,6 +416,17 @@ async def _process_event_body(
                     "eid": event_id,
                     "conf": max(0.5, min(0.95, 0.7 + len(plan.decisions) * 0.05)),
                 },
+            )
+            # Phase 12 — re-render after the activity row lands so the
+            # cached markdown's "Activity" section reflects the just-
+            # processed event. Cheap when the applier already
+            # propagated for this property in the same transaction
+            # (renderer reads facts table, idempotent).
+            await propagate_after_fact_write(
+                session,
+                property_id=property_id,
+                trigger_event_id=event_id,
+                trigger_summary=result.summary,
             )
 
         await _mark_processed(session, event_id, property_id=property_id)

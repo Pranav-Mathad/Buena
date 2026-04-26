@@ -25,6 +25,7 @@ from backend.api.events import router as events_router
 from backend.api.files import router as files_router
 from backend.api.portfolio import router as portfolio_router
 from backend.api.properties import router as properties_router
+from backend.api.property_files import router as property_files_router
 from backend.api.settings import router as settings_router
 from backend.api.signals import router as signals_router
 from backend.api.source_links import router as source_links_router
@@ -87,6 +88,7 @@ app.add_middleware(
 )
 
 app.include_router(properties_router)
+app.include_router(property_files_router)
 app.include_router(buildings_router)
 app.include_router(liegenschaften_router)
 app.include_router(sse_router)

@@ -14,7 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
 from backend.pipeline.events import get_event_bus
-from backend.pipeline.renderer import render_markdown
+from backend.pipeline.materializer import propagate_after_fact_write
+from backend.pipeline.renderer import (
+    CONTEXT_LABELS,
+    CONTEXT_LIMIT,
+    Stammdaten,
+    _building_for_property,
+    _context_body,
+    _detect_property_language,
+    _fetch_stammdaten,
+    _format_eur,
+    _liegenschaft_for_building,
+    _recent_events_for_scope,
+    render_markdown,
+)
 from backend.services import ask as ask_service
 from backend.services import pioneer_llm
 from backend.services.tavily import enrich_property
@@ -511,16 +524,45 @@ async def property_markdown(
 ) -> PlainTextResponse:
     """Return the canonical markdown document for a property.
 
-    Rendered live from facts + stammdaten + uncertainties on every
-    request. There is no edit path — surgical changes happen at the
-    fact level via re-extraction.
+    Phase 12 — reads the materialized ``property_files`` row when one
+    exists (the common path after the applier hook fired) and falls
+    back to a live render only when the cache is missing. The cache is
+    refreshed atomically on every fact write, so the materialized row
+    is guaranteed to reflect the current fact set.
+
+    The fallback path does not write back from a GET handler; the next
+    fact write at this scope will populate it. ``materialize-all`` is
+    the explicit bootstrap path.
     """
+    cached = (
+        await session.execute(
+            text(
+                "SELECT content_md FROM property_files WHERE property_id = :pid"
+            ),
+            {"pid": property_id},
+        )
+    ).first()
+    if cached is not None:
+        log.info(
+            "properties.markdown.cache_hit",
+            property_id=str(property_id),
+            length=len(cached.content_md),
+        )
+        return PlainTextResponse(
+            content=cached.content_md,
+            media_type="text/markdown; charset=utf-8",
+        )
+
     try:
         body = await render_markdown(session, property_id)
     except ValueError as exc:
         log.info("properties.markdown.not_found", property_id=str(property_id))
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    log.info("properties.markdown.render", property_id=str(property_id), length=len(body))
+    log.info(
+        "properties.markdown.cache_miss_render",
+        property_id=str(property_id),
+        length=len(body),
+    )
     return PlainTextResponse(content=body, media_type="text/markdown; charset=utf-8")
 
 
@@ -565,6 +607,117 @@ _AUTHORITATIVE_DOCUMENT_TYPES: frozenset[str] = frozenset(
 )
 
 
+def _build_stammdaten_section(
+    s: Stammdaten, lang: str
+) -> PropertyFileSection | None:
+    """Emit a Stammdaten section mirroring the markdown view.
+
+    Stammdaten lives outside the events/facts pipeline (it's the
+    authoritative lease/owner registry loaded at ingest), so each row
+    here carries ``source='stammdaten'`` and no ``fact_id`` — the edit
+    affordance stays hidden because there's no fact row to override.
+    """
+    labels = CONTEXT_LABELS[lang]
+    rows: list[tuple[str, str]] = []
+
+    if s.unit_label:
+        rows.append((labels["unit"], s.unit_label))
+    if s.lage:
+        rows.append(("Lage" if lang == "de" else "Location", s.lage))
+    if s.size_qm is not None:
+        size_str = f"{s.size_qm:.1f} m²".replace(".0 ", " ")
+        rows.append((labels["size_qm"], size_str))
+    if s.rooms is not None:
+        rooms_str = f"{s.rooms:.1f}".rstrip("0").rstrip(".") or "0"
+        rows.append((labels["rooms"], rooms_str))
+    if s.owner_name:
+        rows.append((labels["owner"], s.owner_name))
+    if s.tenant_name:
+        rows.append((labels["tenant"], s.tenant_name))
+        if s.mietbeginn:
+            rows.append((labels["lease_start"], s.mietbeginn))
+        rows.append(
+            (
+                labels["lease_end"],
+                s.mietende if s.mietende else labels["lease_open_ended"],
+            )
+        )
+        kalt = _format_eur(s.kaltmiete)
+        if kalt:
+            rows.append((labels["rent_cold"], kalt))
+        nk = _format_eur(s.nk_vorauszahlung)
+        if nk:
+            rows.append((labels["operating_costs"], nk))
+        kaution = _format_eur(s.kaution)
+        if kaution:
+            rows.append((labels["deposit"], kaution))
+
+    facts: list[PropertyFileFact] = []
+    if not s.tenant_name:
+        facts.append(
+            PropertyFileFact(
+                value=labels["no_active_tenant"],
+                source="stammdaten",
+                date="",
+                section="stammdaten",
+                field="tenant",
+            )
+        )
+    for label, value in rows:
+        facts.append(
+            PropertyFileFact(
+                value=f"{label}: {value}",
+                source="stammdaten",
+                date="",
+                section="stammdaten",
+                field=label.lower().replace(" ", "_"),
+            )
+        )
+
+    if not facts:
+        return None
+    return PropertyFileSection(
+        title=labels["stammdaten"],
+        facts=facts,
+        is_context=False,
+    )
+
+
+def _build_context_section(
+    events: list[dict[str, str | int]],
+    *,
+    title: str,
+) -> PropertyFileSection | None:
+    """Turn recent building/liegenschaft events into a context section.
+
+    Each event becomes a read-only fact: source pill = the event source
+    (``email``/``bank``/``invoice``), event_id wires the source modal,
+    no ``fact_id`` (these aren't facts — they're parent-tier activity).
+    """
+    facts: list[PropertyFileFact] = []
+    for ev in events:
+        received_iso = str(ev.get("received_at") or "")
+        date_short = received_iso[:10] if received_iso else ""
+        facts.append(
+            PropertyFileFact(
+                value=_context_body(ev),
+                source=str(ev.get("source") or ""),
+                date=date_short,
+                date_iso=received_iso or None,
+                section="context",
+                field=str(ev.get("kategorie") or ""),
+                event_id=str(ev.get("id") or "") or None,
+            )
+        )
+    if not facts:
+        return None
+    return PropertyFileSection(
+        title=title,
+        facts=facts,
+        is_context=True,
+    )
+
+
 @router.get("/{property_id}/file", response_model=PropertyFile)
 async def property_file(
     property_id: UUID,
@@ -576,6 +729,11 @@ async def property_file(
     with a ``[source]`` button on each fact that opens the originating
     event. Open ``uncertainty_events`` are appended as a ``Needs Review``
     section so the user sees gaps explicitly rather than silently.
+
+    The view is a true superset of the markdown: Stammdaten, Building
+    Context, and WEG Context are surfaced here too so a property with
+    zero extracted facts still renders its master record + parent-tier
+    activity instead of an empty placeholder.
     """
     meta_row = (
         await session.execute(
@@ -711,6 +869,47 @@ async def property_file(
             )
         )
 
+    # Stammdaten + parent-tier context — same data the markdown view
+    # surfaces. Detect language once so labels match the property's
+    # dominant event language.
+    lang = await _detect_property_language(session, property_id)
+
+    stammdaten = await _fetch_stammdaten(session, property_id)
+    stammdaten_section = (
+        _build_stammdaten_section(stammdaten, lang) if stammdaten else None
+    )
+    if stammdaten_section is not None:
+        # Stammdaten is the master record — prepend so it reads first.
+        sections.insert(0, stammdaten_section)
+
+    building_id, _ = await _building_for_property(session, property_id)
+    if building_id is not None:
+        building_events = await _recent_events_for_scope(
+            session,
+            scope="building",
+            scope_id=building_id,
+            limit=CONTEXT_LIMIT,
+        )
+        building_section = _build_context_section(
+            building_events, title=CONTEXT_LABELS[lang]["building_context"]
+        )
+        if building_section is not None:
+            sections.append(building_section)
+
+        liegenschaft_id, _ = await _liegenschaft_for_building(session, building_id)
+        if liegenschaft_id is not None:
+            weg_events = await _recent_events_for_scope(
+                session,
+                scope="liegenschaft",
+                scope_id=liegenschaft_id,
+                limit=CONTEXT_LIMIT,
+            )
+            weg_section = _build_context_section(
+                weg_events, title=CONTEXT_LABELS[lang]["weg_context"]
+            )
+            if weg_section is not None:
+                sections.append(weg_section)
+
     log.info(
         "properties.file.render",
         property_id=str(property_id),
@@ -842,6 +1041,16 @@ async def edit_fact(
             """
         ),
         {"new_id": inserted.id, "old_id": current.id},
+    )
+
+    edit_summary = f"{body.edited_by} edited {current.section}.{current.field}"
+    await propagate_after_fact_write(
+        session,
+        property_id=property_id,
+        building_id=current.building_id,
+        liegenschaft_id=current.liegenschaft_id,
+        trigger_event_id=current.source_event_id,
+        trigger_summary=edit_summary,
     )
     await session.commit()
 

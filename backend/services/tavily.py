@@ -22,6 +22,7 @@ import structlog
 from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.pipeline.events import insert_event
+from backend.pipeline.materializer import propagate_after_fact_write
 
 log = structlog.get_logger(__name__)
 
@@ -189,6 +190,16 @@ async def enrich_property(property_id: UUID, name: str, address: str) -> UUID | 
                 "UPDATE events SET processed_at = now() WHERE id = :eid"
             ),
             {"eid": event_id},
+        )
+
+        # Phase 12 — refresh the materialized property file so the
+        # web-sourced market_snapshot + regulation_watch facts land in
+        # the cached markdown atomically with the inserts.
+        await propagate_after_fact_write(
+            session,
+            property_id=property_id,
+            trigger_event_id=event_id,
+            trigger_summary="Tavily enrichment: market snapshot + regulation watch",
         )
         await session.commit()
 

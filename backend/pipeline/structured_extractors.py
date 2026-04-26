@@ -31,6 +31,8 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.pipeline.materializer import propagate_after_fact_write
+
 log = structlog.get_logger(__name__)
 
 
@@ -148,6 +150,19 @@ async def _write_or_supersede_fact(
             ),
             {"new_id": new_id, "old_id": current.id},
         )
+
+    # Phase 12 — propagate to the materialized files. Bank/invoice are
+    # the only paths that write building- or liegenschaft-scoped facts,
+    # so the cascade rule lives here too. Same session = same
+    # transaction = atomic with the fact write.
+    await propagate_after_fact_write(
+        session,
+        property_id=property_id,
+        building_id=building_id,
+        liegenschaft_id=liegenschaft_id,
+        trigger_event_id=source_event_id,
+        trigger_summary=f"{section}.{field}: {value}",
+    )
     return True
 
 

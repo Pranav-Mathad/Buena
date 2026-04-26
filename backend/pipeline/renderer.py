@@ -633,7 +633,8 @@ async def _fetch_facts_by_scope(
     )
     sql = f"""
         SELECT f.section, f.field, f.value, f.source_event_id, f.confidence,
-               f.created_at, e.source AS source
+               f.created_at, e.source AS source,
+               e.received_at AS occurred_at
         FROM facts f
         LEFT JOIN events e ON e.id = f.source_event_id
         WHERE f.{column} = :sid
@@ -650,6 +651,7 @@ async def _fetch_facts_by_scope(
             source_event_id=row.source_event_id,
             confidence=float(row.confidence),
             source=row.source,
+            occurred_at=row.occurred_at,
         )
         for row in result.all()
     ]

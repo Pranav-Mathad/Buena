@@ -35,6 +35,7 @@ from connectors.buena_event_loader import (
     run_re_route,
 )
 from connectors.buena_loader import load_from_disk
+from backend.pipeline.materializer import run_materialize_all
 
 log = structlog.get_logger("connectors.cli")
 
@@ -271,6 +272,27 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
     return 5 if summary.aborted_on_cost_cap else 0
 
 
+def _cmd_materialize_all(args: argparse.Namespace) -> int:
+    """Handle the ``materialize-all`` subcommand.
+
+    Calls the renderer for every property/building/liegenschaft and
+    upserts the rendered markdown into the matching ``*_files`` table.
+    Idempotent — re-running just refreshes ``last_rendered_at`` and the
+    ``content_md`` snapshot. Used as the Phase 12 bootstrap path so the
+    cache exists before the applier hook starts propagating updates.
+    """
+    counts = run_materialize_all()
+    if args.json:
+        print(json.dumps(counts, indent=2))
+    else:
+        print(
+            f"materialized {counts['properties']} properties, "
+            f"{counts['buildings']} buildings, "
+            f"{counts['liegenschaften']} liegenschaften."
+        )
+    return 0
+
+
 def _cmd_re_route(args: argparse.Namespace) -> int:
     """Handle the one-time ``re-route`` subcommand.
 
@@ -410,6 +432,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reroute.add_argument("--json", action="store_true")
     reroute.set_defaults(func=_cmd_re_route)
+
+    materialize = sub.add_parser(
+        "materialize-all",
+        help=(
+            "Phase 12 bootstrap: render every property / building / "
+            "liegenschaft and store the markdown in the matching "
+            "*_files cache table. Idempotent."
+        ),
+    )
+    materialize.add_argument("--json", action="store_true")
+    materialize.set_defaults(func=_cmd_materialize_all)
 
     return parser
 

@@ -310,6 +310,65 @@ _MIGRATIONS: list[tuple[str, str]] = [
         );
         """,
     ),
+    (
+        "0011_materialized_files",
+        """
+        -- Phase 12 — materialized markdown per scope.
+        -- The renderer (backend/pipeline/renderer.py) is still the
+        -- canonical source of the markdown shape; these tables cache
+        -- the rendered output so reads avoid re-rendering on every
+        -- GET, and (more importantly) so events at any tier can fan
+        -- out to dependent files atomically with the fact write that
+        -- triggered them. Three separate tables (instead of one
+        -- polymorphic table) because each scope has a distinct PK
+        -- target with FK-cascade-on-delete semantics, and because
+        -- range scans (``WHERE building_id = X``) read cleaner.
+        CREATE TABLE IF NOT EXISTS property_files (
+          property_id UUID PRIMARY KEY
+            REFERENCES properties(id) ON DELETE CASCADE,
+          content_md TEXT NOT NULL,
+          fact_count INT NOT NULL DEFAULT 0,
+          last_rendered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          trigger_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
+          trigger_scope TEXT,
+          trigger_summary TEXT,
+          generation_version INT NOT NULL DEFAULT 1,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_property_files_rendered_at
+          ON property_files (last_rendered_at DESC);
+
+        CREATE TABLE IF NOT EXISTS building_files (
+          building_id UUID PRIMARY KEY
+            REFERENCES buildings(id) ON DELETE CASCADE,
+          content_md TEXT NOT NULL,
+          fact_count INT NOT NULL DEFAULT 0,
+          last_rendered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          trigger_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
+          trigger_scope TEXT,
+          trigger_summary TEXT,
+          generation_version INT NOT NULL DEFAULT 1,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_building_files_rendered_at
+          ON building_files (last_rendered_at DESC);
+
+        CREATE TABLE IF NOT EXISTS liegenschaft_files (
+          liegenschaft_id UUID PRIMARY KEY
+            REFERENCES liegenschaften(id) ON DELETE CASCADE,
+          content_md TEXT NOT NULL,
+          fact_count INT NOT NULL DEFAULT 0,
+          last_rendered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          trigger_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
+          trigger_scope TEXT,
+          trigger_summary TEXT,
+          generation_version INT NOT NULL DEFAULT 1,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_liegenschaft_files_rendered_at
+          ON liegenschaft_files (last_rendered_at DESC);
+        """,
+    ),
 ]
 
 
