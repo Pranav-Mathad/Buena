@@ -3,9 +3,6 @@
 Polls the configured mailbox every tick (APScheduler, ~10s per KEYSTONE
 Phase 1). Each new message becomes an ``email`` event, idempotent on
 ``Message-ID`` so replaying the inbox after a restart is safe.
-
-If IMAP credentials are missing/placeholder we log once and no-op — the demo
-can still run end-to-end via ``POST /debug/trigger_event``.
 """
 
 from __future__ import annotations
@@ -27,7 +24,17 @@ log = structlog.get_logger(__name__)
 def _imap_configured() -> bool:
     """Return True when IMAP env is real enough to attempt a connection."""
     s = get_settings()
-    return bool(s.imap_host and s.imap_user and s.imap_password) and s.imap_password != "replace-me"
+    configured = bool(
+        s.imap_host and s.imap_user and s.imap_password
+    ) and s.imap_password != "replace-me"
+
+    log.info(
+        "imap.config.check",
+        host=s.imap_host,
+        user=s.imap_user,
+        configured=configured,
+    )
+    return configured
 
 
 def _flatten_body(msg: Message) -> str:
@@ -38,19 +45,26 @@ def _flatten_body(msg: Message) -> str:
             if part.get_content_type() == "text/plain" and not part.is_multipart():
                 payload = part.get_payload(decode=True) or b""
                 try:
-                    parts.append(payload.decode(part.get_content_charset() or "utf-8", "replace"))
+                    parts.append(
+                        payload.decode(
+                            part.get_content_charset() or "utf-8", "replace"
+                        )
+                    )
                 except LookupError:
                     parts.append(payload.decode("utf-8", "replace"))
         if parts:
             return "\n".join(parts).strip()
+
     payload = msg.get_payload(decode=True) or b""
     if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", "replace").strip()
+        return payload.decode(
+            msg.get_content_charset() or "utf-8", "replace"
+        ).strip()
     return str(payload)
 
 
 def _render_event_text(msg: Message) -> str:
-    """Flatten ``From/Subject/body`` into the raw_content the extractor expects."""
+    """Flatten From/Subject/body into raw_content."""
     from_ = msg.get("From", "")
     subject = msg.get("Subject", "")
     body = _flatten_body(msg)
@@ -58,17 +72,20 @@ def _render_event_text(msg: Message) -> str:
 
 
 async def _ingest(message_id: str, raw: bytes) -> bool:
-    """Parse a raw RFC822 message and insert it as an event. Returns ``inserted``."""
+    """Parse a raw RFC822 message, insert + process it."""
     parsed = email.message_from_bytes(raw)
     content = _render_event_text(parsed)
+
     metadata: dict[str, Any] = {
         "from": parsed.get("From"),
         "subject": parsed.get("Subject"),
         "date": parsed.get("Date"),
     }
+
     factory = get_sessionmaker()
+
     async with factory() as session:
-        _, inserted = await insert_event(
+        event_id, inserted = await insert_event(
             session,
             source="email",
             source_ref=message_id,
@@ -76,41 +93,89 @@ async def _ingest(message_id: str, raw: bytes) -> bool:
             metadata=metadata,
         )
         await session.commit()
+
+    log.info(
+        "imap.ingest.result",
+        message_id=message_id,
+        inserted=inserted,
+    )
+
+    if inserted:
+        from backend.pipeline.worker import process_specific
+
+        try:
+            await process_specific(event_id)
+        except Exception:
+            log.exception("imap.process.error", event_id=str(event_id))
+
     return inserted
 
 
 async def poll_once() -> int:
-    """Fetch new messages once. Returns the count of newly inserted events."""
+    """Fetch new messages once."""
+    log.info("imap.poll.start")
+
     if not _imap_configured():
-        log.debug("imap.skip", reason="not_configured")
+        log.warning("imap.skip", reason="not_configured")
         return 0
+
     settings = get_settings()
     inserted = 0
+
     try:
-        with IMAPClient(settings.imap_host, port=settings.imap_port, ssl=True) as client:
+        log.info(
+            "imap.connecting",
+            host=settings.imap_host,
+            port=settings.imap_port,
+        )
+
+        with IMAPClient(
+            settings.imap_host,
+            port=settings.imap_port,
+            ssl=True,
+        ) as client:
             client.login(settings.imap_user, settings.imap_password)
+
+            log.info("imap.login.success")
+
             client.select_folder(settings.imap_mailbox, readonly=False)
+
+            log.info("imap.folder.selected", mailbox=settings.imap_mailbox)
+
+            # 🔥 DEBUG MODE: change to ALL to confirm emails exist
             uids = client.search(["UNSEEN"])
+            log.info("imap.search.result", count=len(uids))
+
             if not uids:
                 return 0
+
             fetched = client.fetch(uids, ["RFC822", "ENVELOPE"])
+
             for uid, data in fetched.items():
                 raw = data.get(b"RFC822")
                 envelope = data.get(b"ENVELOPE")
+
                 message_id = (
                     envelope.message_id.decode("utf-8", "replace")
                     if envelope and envelope.message_id
                     else f"uid-{uid}"
                 )
+
                 if not raw:
+                    log.warning("imap.empty.raw", uid=uid)
                     continue
+
                 try:
                     if await _ingest(message_id, raw):
                         inserted += 1
                         client.add_flags(uid, [b"\\Seen"])
-                except Exception:  # noqa: BLE001 — one bad message shouldn't kill the loop
-                    log.exception("imap.ingest.error", message_id=message_id)
-    except Exception:  # noqa: BLE001 — surface the error but keep scheduler alive
+                except Exception:
+                    log.exception(
+                        "imap.ingest.error",
+                        message_id=message_id,
+                    )
+
+    except Exception:
         log.exception("imap.poll.error")
         return 0
 
