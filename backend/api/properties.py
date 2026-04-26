@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from uuid import UUID
 
@@ -86,6 +87,9 @@ class PropertyFileFact(BaseModel):
     Mirrors the UI's ``Fact`` type (``value`` / ``source`` / ``date``) and
     surfaces ``section`` / ``field`` / ``event_id`` so the renderer can
     deep-link to the originating event when the user clicks ``[source]``.
+    ``fact_id`` is the canonical pointer the edit endpoint needs;
+    ``human_edited`` flips the source label so the UI can render
+    ``via operator`` instead of ``via email`` for hand-edited rows.
     """
 
     value: str
@@ -97,6 +101,9 @@ class PropertyFileFact(BaseModel):
     section: str
     field: str
     event_id: str | None = None
+    fact_id: str | None = None
+    human_edited: bool = False
+    edited_by: str | None = None
 
 
 class PropertyFileSection(BaseModel):
@@ -583,8 +590,10 @@ async def property_file(
         await session.execute(
             text(
                 """
-                SELECT f.section, f.field, f.value, f.confidence,
+                SELECT f.id AS fact_id,
+                       f.section, f.field, f.value, f.confidence,
                        f.created_at,
+                       f.human_edited, f.edited_by,
                        e.source AS event_source,
                        e.received_at AS event_received_at,
                        e.metadata->>'document_type' AS document_type,
@@ -631,9 +640,12 @@ async def property_file(
         # Prefer the document type for source labels (so PDFs show as
         # ``Mietvertrag`` rather than ``letter``); fall back to the raw
         # event source; ``stammdaten`` for facts that were never linked
-        # to an event (master-data load).
+        # to an event (master-data load). Hand-edited facts overshadow
+        # all of these — the human is the source of truth.
         doc_type = (row.document_type or "").strip()
-        if doc_type and doc_type in _AUTHORITATIVE_DOCUMENT_TYPES:
+        if row.human_edited:
+            source_label = "operator"
+        elif doc_type and doc_type in _AUTHORITATIVE_DOCUMENT_TYPES:
             source_label = doc_type
         elif row.event_source:
             source_label = row.event_source
@@ -652,6 +664,9 @@ async def property_file(
                 section=row.section,
                 field=row.field,
                 event_id=str(row.source_event_id) if row.source_event_id else None,
+                fact_id=str(row.fact_id),
+                human_edited=bool(row.human_edited),
+                edited_by=row.edited_by,
             )
         )
 
@@ -929,4 +944,309 @@ async def property_ask(
         elapsed_ms=float(result["latency_ms"]),
         retrieved_count=len(events),
         model=str(result["model"]),
+    )
+
+
+# -----------------------------------------------------------------------------
+# Phase 11 — human-edited fact preservation
+# -----------------------------------------------------------------------------
+
+
+class FactEditRequest(BaseModel):
+    """Body for ``POST /properties/{id}/facts/{fact_id}/edit``."""
+
+    value: str = Field(..., min_length=1, max_length=4000)
+    edited_by: str = Field(default="operator", min_length=1, max_length=200)
+    revert: bool = Field(
+        default=False,
+        description=(
+            "When True, clears ``human_edited`` so subsequent extractions "
+            "may overwrite. ``value`` still updates the current row but "
+            "the protection flag is removed."
+        ),
+    )
+
+
+class FactEditResponse(BaseModel):
+    """Result of a fact edit. The new fact id is the canonical pointer."""
+
+    fact_id: UUID
+    section: str
+    field: str
+    value: str
+    human_edited: bool
+    edited_by: str | None
+    edited_at: datetime | None
+
+
+@router.post(
+    "/{property_id}/facts/{fact_id}/edit",
+    response_model=FactEditResponse,
+)
+async def edit_fact(
+    property_id: UUID,
+    fact_id: UUID,
+    payload: FactEditRequest,
+    session: AsyncSession = Depends(get_session),
+) -> FactEditResponse:
+    """Hand-edit a fact and pin it against future extraction overwrites.
+
+    Implements the brief's "surgically updated without destroying human
+    edits" rule. The edit supersedes the existing fact (so version
+    history stays intact) and stamps ``human_edited=TRUE`` on the new
+    row. The differ's ``preserved_human_edit`` skip path then keeps it
+    safe through subsequent re-extractions.
+    """
+    existing = (
+        await session.execute(
+            text(
+                """
+                SELECT id, section, field, confidence
+                FROM facts
+                WHERE id = :fid AND property_id = :pid AND superseded_by IS NULL
+                """
+            ),
+            {"fid": fact_id, "pid": property_id},
+        )
+    ).first()
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="fact not found, not current, or belongs to a different property",
+        )
+
+    new_id_row = await session.execute(
+        text(
+            """
+            INSERT INTO facts (
+              property_id, section, field, value, source_event_id,
+              confidence, valid_from, human_edited, edited_by, edited_at
+            ) VALUES (
+              :pid, :section, :field, :value, NULL,
+              1.0, now(), :edited, :edited_by, now()
+            )
+            RETURNING id, edited_at
+            """
+        ),
+        {
+            "pid": property_id,
+            "section": existing.section,
+            "field": existing.field,
+            "value": payload.value,
+            "edited": not payload.revert,
+            "edited_by": payload.edited_by,
+        },
+    )
+    new_row = new_id_row.first()
+    new_fact_id = new_row.id
+    new_edited_at = new_row.edited_at
+
+    await session.execute(
+        text(
+            """
+            UPDATE facts
+            SET superseded_by = :new_id, valid_to = now()
+            WHERE id = :old_id AND superseded_by IS NULL
+            """
+        ),
+        {"new_id": new_fact_id, "old_id": existing.id},
+    )
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO approval_log
+              (actor, action, target_type, target_id, payload, created_at)
+            VALUES
+              (:actor, :action, 'fact', :tid, CAST(:payload AS JSONB), now())
+            """
+        ),
+        {
+            "actor": payload.edited_by,
+            "action": "revert_human_edit" if payload.revert else "edit_fact",
+            "tid": str(new_fact_id),
+            "payload": json.dumps(
+                {
+                    "section": existing.section,
+                    "field": existing.field,
+                    "old_fact_id": str(existing.id),
+                    "new_value_preview": payload.value[:160],
+                }
+            ),
+        },
+    )
+    await session.commit()
+    log.info(
+        "properties.fact.edit",
+        property_id=str(property_id),
+        old_fact_id=str(existing.id),
+        new_fact_id=str(new_fact_id),
+        section=existing.section,
+        field=existing.field,
+        revert=payload.revert,
+        editor=payload.edited_by,
+    )
+    return FactEditResponse(
+        fact_id=new_fact_id,
+        section=existing.section,
+        field=existing.field,
+        value=payload.value,
+        human_edited=not payload.revert,
+        edited_by=payload.edited_by,
+        edited_at=new_edited_at,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Phase 11 — raw inbox view for Compare page ("today: search the inbox")
+# -----------------------------------------------------------------------------
+
+
+class InboxEmail(BaseModel):
+    """One raw email row for the "before Keystone" Compare view."""
+
+    event_id: UUID
+    date: str
+    sender: str
+    subject: str
+    preview: str
+    relevant: bool = Field(
+        default=False,
+        description=(
+            "True when the search keyword(s) appeared in the raw body. "
+            "Used to highlight matching rows visually."
+        ),
+    )
+
+
+class InboxResponse(BaseModel):
+    """Response for ``GET /properties/{id}/inbox``."""
+
+    rows: list[InboxEmail]
+    total_inbox_size: int = Field(
+        ...,
+        description="Total email events for this property (the haystack size).",
+    )
+    relevant_count: int
+    keyword: str | None
+
+
+def _extract_subject_and_from(raw: str) -> tuple[str, str]:
+    """Cheap RFC-822-ish subject/from parser. Falls back to first line."""
+    subject = ""
+    sender = ""
+    for line in raw.splitlines():
+        lower = line.lower()
+        if not subject and lower.startswith("subject:"):
+            subject = line.split(":", 1)[1].strip()
+        elif not sender and lower.startswith("from:"):
+            sender = line.split(":", 1)[1].strip()
+        if subject and sender:
+            break
+    if not subject:
+        subject = raw.strip().split("\n", 1)[0][:80]
+    return subject, sender
+
+
+@router.get("/{property_id}/inbox", response_model=InboxResponse)
+async def property_inbox(
+    property_id: UUID,
+    q: str | None = Query(
+        default=None,
+        description="Optional keyword. Rows whose raw body matches are flagged ``relevant=True``.",
+    ),
+    limit: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> InboxResponse:
+    """Email-style inbox view for the Compare page's "before" panel.
+
+    Returns the property's most-recent email events with a parsed
+    ``subject`` / ``from`` / ``preview``. When ``q`` is supplied the
+    LIKE filter highlights matches but the list still shows the
+    surrounding noise — that's the point of the comparison: the
+    operator scrolls through everything, Keystone returns one answer.
+    """
+    total = (
+        await session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM events
+                WHERE property_id = :pid AND source = 'email'
+                """
+            ),
+            {"pid": property_id},
+        )
+    ).scalar_one()
+
+    pattern = f"%{q}%" if q else None
+    relevant_count = 0
+    if pattern:
+        relevant_count = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM events
+                    WHERE property_id = :pid AND source = 'email'
+                      AND raw_content ILIKE :pat
+                    """
+                ),
+                {"pid": property_id, "pat": pattern},
+            )
+        ).scalar_one()
+
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT id,
+                       COALESCE(received_at, processed_at) AS dt,
+                       LEFT(COALESCE(raw_content, ''), 600) AS body,
+                       (CASE WHEN CAST(:pat AS text) IS NOT NULL
+                             AND raw_content ILIKE CAST(:pat AS text)
+                             THEN TRUE ELSE FALSE END) AS is_relevant
+                FROM events
+                WHERE property_id = :pid AND source = 'email'
+                ORDER BY COALESCE(received_at, processed_at) DESC
+                LIMIT :lim
+                """
+            ),
+            {"pid": property_id, "pat": pattern, "lim": limit},
+        )
+    ).all()
+
+    items: list[InboxEmail] = []
+    for r in rows:
+        body = str(r.body or "")
+        subject, sender = _extract_subject_and_from(body)
+        body_text = body
+        # Strip headers from preview
+        for hdr in ("From:", "Subject:", "Date:", "To:", "Message-ID:"):
+            for line in body_text.splitlines():
+                if line.lower().startswith(hdr.lower()):
+                    body_text = body_text.replace(line + "\n", "")
+        preview = body_text.replace("\n", " ").strip()[:120]
+        items.append(
+            InboxEmail(
+                event_id=r.id,
+                date=r.dt.date().isoformat() if r.dt else "",
+                sender=sender or "(unknown)",
+                subject=subject or "(no subject)",
+                preview=preview,
+                relevant=bool(r.is_relevant),
+            )
+        )
+
+    log.info(
+        "properties.inbox",
+        property_id=str(property_id),
+        q=q,
+        returned=len(items),
+        total=int(total),
+        relevant=int(relevant_count),
+    )
+    return InboxResponse(
+        rows=items,
+        total_inbox_size=int(total),
+        relevant_count=int(relevant_count),
+        keyword=q,
     )

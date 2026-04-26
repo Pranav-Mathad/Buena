@@ -274,6 +274,24 @@ _MIGRATIONS: list[tuple[str, str]] = [
           WHERE target_id IS NOT NULL;
         """,
     ),
+    (
+        "0009_facts_human_edited",
+        """
+        -- Phase 11 — preserve human edits to facts. The brief calls
+        -- this out: "surgically updated without destroying human
+        -- edits." Re-extraction respects ``human_edited=TRUE`` and
+        -- skips writing a new value over the operator's correction.
+        -- The override path (``POST /facts/{id}/edit?force=true``) can
+        -- still flip the flag back when needed.
+        ALTER TABLE facts
+          ADD COLUMN IF NOT EXISTS human_edited BOOLEAN NOT NULL DEFAULT FALSE,
+          ADD COLUMN IF NOT EXISTS edited_by TEXT,
+          ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS idx_facts_human_edited
+          ON facts (property_id, section, field)
+          WHERE human_edited = TRUE AND superseded_by IS NULL;
+        """,
+    ),
 ]
 
 

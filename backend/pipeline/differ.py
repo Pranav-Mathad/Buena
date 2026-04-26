@@ -63,6 +63,7 @@ async def load_current_facts(
         text(
             """
             SELECT f.id, f.section, f.field, f.value, f.confidence, f.created_at,
+                   f.human_edited,
                    e.source AS source
             FROM facts f
             LEFT JOIN events e ON e.id = f.source_event_id
@@ -79,6 +80,7 @@ async def load_current_facts(
             "confidence": float(row.confidence),
             "source": row.source or "debug",
             "created_at": row.created_at,
+            "human_edited": bool(row.human_edited),
         }
     return out
 
@@ -126,6 +128,16 @@ async def diff(
         key = (section, field)
 
         if key in current:
+            # Phase 11 — human edits are sticky. The brief's
+            # "surgically updated without destroying human edits"
+            # rule means an extractor proposal cannot overwrite a
+            # fact a property manager has hand-corrected. Override
+            # is still possible via the API's force=true path.
+            if current[key].get("human_edited"):
+                skipped.append(
+                    (f"{section}.{field}", "preserved_human_edit")
+                )
+                continue
             replace, reason = _should_replace(event_source, confidence, current[key], value)
             if not replace:
                 skipped.append((f"{section}.{field}", reason))
