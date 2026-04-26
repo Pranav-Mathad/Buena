@@ -90,9 +90,18 @@ DECIDE ON A STATUS
   IDs, full lease termination logic. ``answer`` MUST be null.
   ``reasoning`` names what would be needed (e.g. "lives in the ERP").
 
-LANGUAGE
-Answer in the same language as the question. If German, German;
-if English, English.
+LANGUAGE — STRICT MATCH
+Detect the language of the QUESTION above. Then write BOTH ``answer``
+and ``reasoning`` in that exact language.
+- If the question is in German, both fields are in German. Quote
+  German source text verbatim where helpful (names, addresses, "WE",
+  "Kaltmiete").
+- If the question is in English, both fields are in English. You may
+  quote short German proper nouns verbatim, but the surrounding prose
+  is English.
+- Never mix languages mid-sentence beyond proper-noun quotes. Do not
+  translate proper nouns, addresses, or German legal terms when the
+  question is in German.
 
 JSON SCHEMA
 {{

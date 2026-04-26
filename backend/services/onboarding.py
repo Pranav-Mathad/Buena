@@ -37,11 +37,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.pipeline.renderer import (
     UncertaintyRow,
-    _detect_property_language,
     _fetch_current_facts,
     _fetch_open_uncertainties,
 )
-from backend.services import gemini
+from backend.services import gemini, pioneer_llm
 
 log = structlog.get_logger(__name__)
 
@@ -52,7 +51,7 @@ log = structlog.get_logger(__name__)
 TOP_N: int = 3
 TOP_N_PATTERNS: int = 5
 ACTIVITY_WINDOW_DAYS: int = 365
-ONBOARDING_CACHE_VERSION: int = 1
+ONBOARDING_CACHE_VERSION: int = 2
 
 
 @dataclass(frozen=True)
@@ -742,39 +741,57 @@ async def _render_key_context(
         )
         return [title, "", cached, ""]
 
-    if not gemini.is_available():
-        msg = (
-            "Briefing skipped — Gemini API key not configured. "
-            "All deterministic sections above are still complete."
-            if lang == "en"
-            else "Zusammenfassung übersprungen — Gemini-API-Key nicht konfiguriert. "
-            "Die deterministischen Abschnitte oben sind weiterhin vollständig."
-        )
-        return [title, "", f"_{msg}_", ""]
+    facts_summary = _summarise_facts(facts)
+    uncertainties_summary = _summarise_uncertainties(uncertainties)
+    rejections_summary = _summarise_rejections(rejections)
+    activity_summary = _summarise_activity(activity)
 
-    try:
-        briefing = await gemini.draft_onboarding_briefing(
-            property_name=header.name,
-            facts_summary=_summarise_facts(facts),
-            uncertainties_summary=_summarise_uncertainties(uncertainties),
-            rejections_summary=_summarise_rejections(rejections),
-            activity_summary=_summarise_activity(activity),
-            lang=lang,
-        )
-    except gemini.GeminiUnavailable as exc:
-        log.warning(
-            "onboarding.briefing.unavailable",
-            property_id=str(property_id),
-            error=str(exc),
-        )
+    briefing: str | None = None
+
+    # Pioneer (Claude) is the primary path. The briefing always renders
+    # in English — Pioneer's prompt enforces that regardless of how the
+    # source events are written.
+    if pioneer_llm.is_available():
+        try:
+            briefing = await pioneer_llm.draft_onboarding_briefing(
+                property_name=header.name,
+                facts_summary=facts_summary,
+                uncertainties_summary=uncertainties_summary,
+                rejections_summary=rejections_summary,
+                activity_summary=activity_summary,
+            )
+        except pioneer_llm.PioneerUnavailable as exc:
+            log.warning(
+                "onboarding.briefing.pioneer_unavailable",
+                property_id=str(property_id),
+                error=str(exc)[:200],
+            )
+
+    # Gemini is a fallback for environments where Pioneer is missing.
+    if briefing is None and gemini.is_available():
+        try:
+            briefing = await gemini.draft_onboarding_briefing(
+                property_name=header.name,
+                facts_summary=facts_summary,
+                uncertainties_summary=uncertainties_summary,
+                rejections_summary=rejections_summary,
+                activity_summary=activity_summary,
+                lang="en",
+            )
+        except gemini.GeminiUnavailable as exc:
+            log.warning(
+                "onboarding.briefing.gemini_unavailable",
+                property_id=str(property_id),
+                error=str(exc)[:200],
+            )
+
+    if briefing is None:
         msg = (
-            "Briefing unavailable — Gemini call failed; "
-            "deterministic sections remain accurate."
-            if lang == "en"
-            else "Zusammenfassung nicht verfügbar — Gemini-Aufruf fehlgeschlagen; "
-            "deterministische Abschnitte bleiben gültig."
+            "Briefing unavailable — neither Pioneer nor Gemini is "
+            "reachable. All deterministic sections above are still "
+            "complete."
         )
-        return [title, "", f"_{msg}_", ""]
+        return [title, "", msg, ""]
 
     await _write_cache(
         session, property_id, key=cache_key, briefing=briefing
@@ -815,9 +832,14 @@ async def render_onboarding(
     if header is None:
         raise ValueError(f"Property {property_id} not found")
 
-    # Prefer the parent's cached language detector so phrasing matches the
-    # property's source-event majority.
-    lang = await _detect_property_language(session, property_id)
+    # Briefings always render in English regardless of the property's
+    # source-event majority. The briefing is read by the Hausverwaltung
+    # operator (English-speaking team), not by the tenant — keeping the
+    # output language fixed avoids confusing a new property manager who
+    # opens a German-only property file and gets a German briefing.
+    # The original event-language detection still drives the property
+    # markdown's section titles via the renderer, just not this briefing.
+    lang = "en"
 
     facts = await _fetch_current_facts(session, property_id)
     uncertainties = await _fetch_open_uncertainties(session, property_id)

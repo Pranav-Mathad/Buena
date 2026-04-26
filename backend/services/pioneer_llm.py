@@ -215,3 +215,150 @@ async def extract_facts(
     raise PioneerUnavailable(
         f"extract_facts failed after {max_attempts} attempts: {last_error!r}"
     )
+
+
+# -----------------------------------------------------------------------------
+# Onboarding briefing
+# -----------------------------------------------------------------------------
+
+
+_BRIEFING_SYSTEM_HINT = (
+    "You are briefing a Hausverwaltung operator who is opening a property "
+    "for the first time. Plain prose only — no markdown formatting "
+    "(**, *, _, `, #), no headings, no markdown links. Output one bullet "
+    "per line, prefix each with '- '. Always write in English regardless "
+    "of the source-event language; the operator team reads English."
+)
+
+
+_BRIEFING_PROMPT = """You are briefing a property manager who is reading {property_name} for the first time.
+
+Write 5 to 7 bullets. Each bullet is at most 25 words. The reader has 60 seconds.
+
+HARD RULES
+- Honesty over completeness. If a key piece is missing, say so plainly. Use the literal prefix "Gap:" and name what is missing.
+- Do not invent dates, amounts, names, or facts. If something is uncertain, treat it as a gap, not as a fact.
+- Lead with what is operationally relevant TODAY (open issues, recent changes), then context, then risks to watch.
+- Plain prose, no markdown formatting, no preamble like "Here is the briefing".
+- One bullet per line, prefix each with "- ".
+- Always write in English, even when the underlying facts are in German. You may quote short German phrases (proper nouns, "Kaltmiete", street names) verbatim, but the surrounding prose is English.
+
+CURRENT FACTS (authoritative — already validated)
+{facts_summary}
+
+OPEN UNCERTAINTIES (noticed but not committed — call out as gaps)
+{uncertainties_summary}
+
+VALIDATOR REJECTIONS (proposed but rejected — note as known conflicts)
+{rejections_summary}
+
+RECENT EVENT ACTIVITY (last 12 months, by category)
+{activity_summary}
+
+Write the bullets now."""
+
+
+async def draft_onboarding_briefing(
+    *,
+    property_name: str,
+    facts_summary: str,
+    uncertainties_summary: str,
+    rejections_summary: str,
+    activity_summary: str,
+    model_name: str | None = None,
+    max_attempts: int = 2,
+    timeout_s: float = 45.0,
+) -> str:
+    """Render the onboarding briefing bullets via Claude (Pioneer).
+
+    Always English regardless of source-event language — the briefing
+    is read by the operator, not the tenant. Returns the bullet block
+    as plain text (one ``- `` line per bullet, no markdown formatting,
+    no surrounding heading).
+
+    Raises :class:`PioneerUnavailable` if every attempt fails so the
+    caller can fall back to a deterministic placeholder.
+    """
+    settings = get_settings()
+    if not is_available():
+        raise PioneerUnavailable("PIONEER_API_KEY not set")
+
+    model = model_name or PIONEER_DEFAULT_MODEL
+    no_facts = "(no facts yet)"
+    none_label = "(none)"
+    no_activity = "(no recent activity)"
+    prompt = _BRIEFING_PROMPT.format(
+        property_name=property_name,
+        facts_summary=facts_summary or no_facts,
+        uncertainties_summary=uncertainties_summary or none_label,
+        rejections_summary=rejections_summary or none_label,
+        activity_summary=activity_summary or no_activity,
+    )
+    digest = _prompt_hash(prompt)
+
+    headers = {
+        "Authorization": f"Bearer {settings.pioneer_api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _BRIEFING_SYSTEM_HINT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        start = time.perf_counter()
+        try:
+            log.info(
+                "pioneer_llm.briefing.start",
+                model=model,
+                attempt=attempt,
+                prompt_hash=digest,
+                prompt_chars=len(prompt),
+            )
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
+                response = await client.post(
+                    f"{PIONEER_BASE_URL}/chat/completions",
+                    headers=headers,
+                    json=body,
+                )
+            response.raise_for_status()
+            payload = response.json()
+            text = payload["choices"][0]["message"].get("content") or ""
+            text = text.strip()
+            if not text:
+                raise PioneerUnavailable("empty briefing response")
+            latency_ms = (time.perf_counter() - start) * 1000
+            log.info(
+                "pioneer_llm.briefing.ok",
+                model=model,
+                latency_ms=round(latency_ms, 1),
+                attempt=attempt,
+                chars=len(text),
+                prompt_hash=digest,
+            )
+            return text
+        except PioneerUnavailable:
+            raise
+        except Exception as exc:  # noqa: BLE001 — retry on transient errors
+            last_error = exc
+            latency_ms = (time.perf_counter() - start) * 1000
+            log.warning(
+                "pioneer_llm.briefing.retry",
+                model=model,
+                attempt=attempt,
+                latency_ms=round(latency_ms, 1),
+                error=str(exc)[:200],
+                prompt_hash=digest,
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(0.4 * attempt)
+
+    raise PioneerUnavailable(
+        f"draft_onboarding_briefing failed after {max_attempts} attempts: "
+        f"{last_error!r}"
+    )
