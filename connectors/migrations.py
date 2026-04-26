@@ -292,6 +292,24 @@ _MIGRATIONS: list[tuple[str, str]] = [
           WHERE human_edited = TRUE AND superseded_by IS NULL;
         """,
     ),
+    (
+        "0010_property_markdown_overrides",
+        """
+        -- Phase 11 — operator-edited property markdown. The renderer
+        -- still composes the canonical view on every request, but if
+        -- a row exists here for a property the API serves the
+        -- override verbatim. Switching back to auto-generated is a
+        -- single DELETE on this table — no destructive ops.
+        CREATE TABLE IF NOT EXISTS property_markdown_overrides (
+          property_id UUID PRIMARY KEY
+            REFERENCES properties(id) ON DELETE CASCADE,
+          markdown_text TEXT NOT NULL,
+          edited_by TEXT,
+          edited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """,
+    ),
 ]
 
 

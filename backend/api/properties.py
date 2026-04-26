@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from uuid import UUID
 
@@ -508,7 +507,12 @@ async def property_markdown(
     property_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> PlainTextResponse:
-    """Return the rendered markdown document for a single property."""
+    """Return the canonical markdown document for a property.
+
+    Rendered live from facts + stammdaten + uncertainties on every
+    request. There is no edit path — surgical changes happen at the
+    fact level via re-extraction.
+    """
     try:
         body = await render_markdown(session, property_id)
     except ValueError as exc:
@@ -929,156 +933,6 @@ async def property_ask(
         elapsed_ms=float(result["latency_ms"]),
         retrieved_count=len(events),
         model=str(result["model"]),
-    )
-
-
-# -----------------------------------------------------------------------------
-# Phase 11 — human-edited fact preservation
-# -----------------------------------------------------------------------------
-
-
-class FactEditRequest(BaseModel):
-    """Body for ``POST /properties/{id}/facts/{fact_id}/edit``."""
-
-    value: str = Field(..., min_length=1, max_length=4000)
-    edited_by: str = Field(default="operator", min_length=1, max_length=200)
-    revert: bool = Field(
-        default=False,
-        description=(
-            "When True, clears ``human_edited`` so subsequent extractions "
-            "may overwrite. ``value`` still updates the current row but "
-            "the protection flag is removed."
-        ),
-    )
-
-
-class FactEditResponse(BaseModel):
-    """Result of a fact edit. The new fact id is the canonical pointer."""
-
-    fact_id: UUID
-    section: str
-    field: str
-    value: str
-    human_edited: bool
-    edited_by: str | None
-    edited_at: datetime | None
-
-
-@router.post(
-    "/{property_id}/facts/{fact_id}/edit",
-    response_model=FactEditResponse,
-)
-async def edit_fact(
-    property_id: UUID,
-    fact_id: UUID,
-    payload: FactEditRequest,
-    session: AsyncSession = Depends(get_session),
-) -> FactEditResponse:
-    """Hand-edit a fact and pin it against future extraction overwrites.
-
-    Implements the brief's "surgically updated without destroying human
-    edits" rule. The edit supersedes the existing fact (so version
-    history stays intact) and stamps ``human_edited=TRUE`` on the new
-    row. The differ's ``preserved_human_edit`` skip path then keeps it
-    safe through subsequent re-extractions.
-    """
-    existing = (
-        await session.execute(
-            text(
-                """
-                SELECT id, section, field, confidence
-                FROM facts
-                WHERE id = :fid AND property_id = :pid AND superseded_by IS NULL
-                """
-            ),
-            {"fid": fact_id, "pid": property_id},
-        )
-    ).first()
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail="fact not found, not current, or belongs to a different property",
-        )
-
-    new_id_row = await session.execute(
-        text(
-            """
-            INSERT INTO facts (
-              property_id, section, field, value, source_event_id,
-              confidence, valid_from, human_edited, edited_by, edited_at
-            ) VALUES (
-              :pid, :section, :field, :value, NULL,
-              1.0, now(), :edited, :edited_by, now()
-            )
-            RETURNING id, edited_at
-            """
-        ),
-        {
-            "pid": property_id,
-            "section": existing.section,
-            "field": existing.field,
-            "value": payload.value,
-            "edited": not payload.revert,
-            "edited_by": payload.edited_by,
-        },
-    )
-    new_row = new_id_row.first()
-    new_fact_id = new_row.id
-    new_edited_at = new_row.edited_at
-
-    await session.execute(
-        text(
-            """
-            UPDATE facts
-            SET superseded_by = :new_id, valid_to = now()
-            WHERE id = :old_id AND superseded_by IS NULL
-            """
-        ),
-        {"new_id": new_fact_id, "old_id": existing.id},
-    )
-
-    await session.execute(
-        text(
-            """
-            INSERT INTO approval_log
-              (actor, action, target_type, target_id, payload, created_at)
-            VALUES
-              (:actor, :action, 'fact', :tid, CAST(:payload AS JSONB), now())
-            """
-        ),
-        {
-            "actor": payload.edited_by,
-            "action": "revert_human_edit" if payload.revert else "edit_fact",
-            "tid": str(new_fact_id),
-            "payload": json.dumps(
-                {
-                    "section": existing.section,
-                    "field": existing.field,
-                    "old_fact_id": str(existing.id),
-                    "new_value_preview": payload.value[:160],
-                }
-            ),
-        },
-    )
-    await session.commit()
-    log.info(
-        "properties.fact.edit",
-        property_id=str(property_id),
-        old_fact_id=str(existing.id),
-        new_fact_id=str(new_fact_id),
-        section=existing.section,
-        field=existing.field,
-        revert=payload.revert,
-        editor=payload.edited_by,
-    )
-    return FactEditResponse(
-        fact_id=new_fact_id,
-        section=existing.section,
-        field=existing.field,
-        value=payload.value,
-        human_edited=not payload.revert,
-        edited_by=payload.edited_by,
-        edited_at=new_edited_at,
     )
 
 
