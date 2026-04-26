@@ -22,6 +22,17 @@ dependencies = [
     "httpx>=0.27",
     "jinja2>=3.1",
     "langdetect>=1.0",
+    "langchain>=0.3",
+    "langchain-core",
+    "langchain-community",
+    "langchain-postgres",
+    "langgraph>=0.2",
+    "gliner2>=0.0.1",
+    "torch>=2.0",
+    "openai",
+    "sentence-transformers",
+    "pypdf",
+    "pandas",
 ]
 
 [project.optional-dependencies]
