@@ -20,6 +20,7 @@ Web-sourced facts (Tavily) get a 🌐 badge.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
@@ -97,6 +98,8 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "size_qm": "Size",
         "rooms": "Rooms",
         "no_active_tenant": "No active tenant on file",
+        "older_label": "Older entries",
+        "older_subtitle": "Compact pointers — click any item to open the original",
     },
     "de": {
         "building_context": "Hauskontext",
@@ -120,11 +123,28 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "size_qm": "Wohnfläche",
         "rooms": "Zimmer",
         "no_active_tenant": "Kein aktiver Mieter erfasst",
+        "older_label": "Ältere Einträge",
+        "older_subtitle": "Kompakte Verweise — anklicken öffnet das Original",
     },
 }
 
 #: How many recent events to surface in the per-tier context blocks.
 CONTEXT_LIMIT: int = 5
+
+
+#: Anything older than this in event-time gets the compact one-line
+#: render (year/month + short value + ``[open detail]`` link). Recent
+#: facts inside the cutoff keep the full detailed render with
+#: confidence and inline source. Picked at one year so the markdown
+#: stays bounded for a property with decades of history; ten years of
+#: events compresses to a few dozen pointer lines instead of pages of
+#: prose.
+ACTIVE_CUTOFF_DAYS: int = 365
+
+#: Maximum characters of the value text we keep when emitting a
+#: compact line. Anything longer gets ``…`` appended; the full text
+#: is one click away via the source link.
+COMPACT_VALUE_PREVIEW_CHARS: int = 100
 
 
 @dataclass(frozen=True)
@@ -145,6 +165,11 @@ class FactRow:
     source_event_id: UUID | None
     confidence: float
     source: str | None
+    # ``occurred_at`` is the original event's ``received_at`` — the moment
+    # the fact came into the world, NOT when extraction happened. The
+    # renderer buckets on this so a 20-year-old letter extracted today
+    # still gets the compact render.
+    occurred_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -293,12 +318,17 @@ async def _fetch_stammdaten(
 
 
 async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list[FactRow]:
-    """Return all current (non-superseded) facts for the property."""
+    """Return all current (non-superseded) facts for the property.
+
+    Pulls the originating event's ``received_at`` alongside each fact
+    so the renderer can bucket on event-time (not extraction-time).
+    """
     result = await session.execute(
         text(
             """
             SELECT f.section, f.field, f.value, f.source_event_id, f.confidence,
-                   f.created_at, e.source AS source
+                   f.created_at, e.source AS source,
+                   e.received_at AS occurred_at
             FROM facts f
             LEFT JOIN events e ON e.id = f.source_event_id
             WHERE f.property_id = :pid
@@ -316,6 +346,7 @@ async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list
             source_event_id=row.source_event_id,
             confidence=float(row.confidence),
             source=row.source,
+            occurred_at=row.occurred_at,
         )
         for row in result.all()
     ]
@@ -384,14 +415,35 @@ def _format_stammdaten_block(s: Stammdaten, lang: str) -> list[str]:
     return out
 
 
-def _format_fact_line(fact: FactRow) -> str:
-    """Render a single fact as a bullet with inline source + optional web badge.
+def _is_compact(fact: FactRow, *, now: datetime | None = None) -> bool:
+    """Return True when the fact's originating event is older than the cutoff.
 
-    Phase 10 Step 10.4: source links resolve to ``/events/<id>/source``,
-    which redirects to the right surface for the event's source type
-    (PDF → ``/files/<path>``, email → ``/raw``, bank → ``/detail``).
-    The renderer never has to know which is which — the dispatch lives
-    in :mod:`backend.api.source_links`.
+    Compact lines collapse to a single short bullet so the markdown
+    file stays bounded for properties with decades of history; recent
+    facts keep the full detail render.
+    """
+    occurred = fact.occurred_at
+    if occurred is None:
+        return False
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    return (reference - occurred) > timedelta(days=ACTIVE_CUTOFF_DAYS)
+
+
+def _truncate(text_value: str, *, limit: int = COMPACT_VALUE_PREVIEW_CHARS) -> str:
+    """One-line preview of a fact value, ellipsised if it overflows."""
+    cleaned = " ".join(text_value.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _format_fact_line_active(fact: FactRow) -> str:
+    """Detailed render for facts inside the active window.
+
+    Same shape as the original Phase 10 line — value verbatim,
+    confidence inline, full source link + optional web badge.
     """
     source = (
         f"[source: {fact.source_event_id}](/events/{fact.source_event_id}/source)"
@@ -407,6 +459,42 @@ def _format_fact_line(fact: FactRow) -> str:
         f"- **{_format_field(fact.field)}:** {fact.value} "
         f"_(confidence {fact.confidence:.2f})_ {source}{badge}"
     )
+
+
+def _format_fact_line_compact(fact: FactRow) -> str:
+    """One-line pointer render for facts past the active cutoff.
+
+    Reads as ``YYYY-MM — Field name: short preview… [open detail](link)``
+    so a 20-year-old letter gets one line instead of a full block. The
+    ``[open detail]`` link points to the same source-resolving endpoint
+    the active line uses, so clicking it in the UI opens the original
+    event without touching the markdown document.
+    """
+    if fact.occurred_at is not None:
+        occurred = fact.occurred_at
+        if occurred.tzinfo is None:
+            occurred = occurred.replace(tzinfo=timezone.utc)
+        date_str = occurred.strftime("%Y-%m")
+    else:
+        date_str = "unknown"
+
+    detail_link = (
+        f"[open detail](/events/{fact.source_event_id}/source)"
+        if fact.source_event_id is not None
+        else "_(no source on file)_"
+    )
+    preview = _truncate(fact.value)
+    return (
+        f"- *{date_str}* — **{_format_field(fact.field)}:** {preview} "
+        f"{detail_link}"
+    )
+
+
+def _format_fact_line(fact: FactRow, *, now: datetime | None = None) -> str:
+    """Dispatcher between active (detailed) and compact (one-liner) renders."""
+    if _is_compact(fact, now=now):
+        return _format_fact_line_compact(fact)
+    return _format_fact_line_active(fact)
 
 
 async def _building_for_property(
@@ -644,7 +732,11 @@ def _emit_sections(
     can see what was noticed.
     """
     titles = SECTION_TITLES_DE if lang == "de" else SECTION_TITLES
-    needs_review_label = CONTEXT_LABELS[lang]["needs_review"]
+    labels = CONTEXT_LABELS[lang]
+    needs_review_label = labels["needs_review"]
+    older_label = labels["older_label"]
+    older_subtitle = labels["older_subtitle"]
+    now = datetime.now(timezone.utc)
 
     def _title(section: str) -> str:
         label = titles.get(section)
@@ -668,11 +760,36 @@ def _emit_sections(
         unc = uncertainty_by_section.get(section, [])
         if not rows and not unc:
             return
+        # Split each section's rows into the active (detailed) bucket
+        # and the compact pointer bucket. Active rows render in their
+        # natural fact ordering at the top; compact rows fall under a
+        # ``### Older entries`` subheading newest-first (so the most
+        # recent of the old facts is closest to the boundary).
+        active_rows: list[FactRow] = []
+        compact_rows: list[FactRow] = []
+        for fact in rows:
+            (compact_rows if _is_compact(fact, now=now) else active_rows).append(fact)
+        compact_rows.sort(
+            key=lambda f: (
+                f.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
+            ),
+            reverse=True,
+        )
+
         lines.append(f"## {_title(section)}")
         lines.append("")
-        lines.extend(_format_fact_line(fact) for fact in rows)
+        if active_rows:
+            lines.extend(_format_fact_line_active(fact) for fact in active_rows)
+        if compact_rows:
+            if active_rows:
+                lines.append("")
+            lines.append(f"### {older_label}")
+            lines.append("")
+            lines.append(f"_{older_subtitle}_")
+            lines.append("")
+            lines.extend(_format_fact_line_compact(fact) for fact in compact_rows)
         if unc:
-            if rows:
+            if active_rows or compact_rows:
                 lines.append("")
             lines.append(f"### {needs_review_label}")
             lines.append("")
