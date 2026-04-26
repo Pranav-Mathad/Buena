@@ -77,7 +77,8 @@ async def building_markdown(
     cached = (
         await session.execute(
             text(
-                "SELECT content_md FROM building_files WHERE building_id = :bid"
+                "SELECT content_md, last_rendered_at FROM building_files "
+                "WHERE building_id = :bid"
             ),
             {"bid": building_id},
         )
@@ -91,6 +92,10 @@ async def building_markdown(
         return PlainTextResponse(
             content=cached.content_md,
             media_type="text/markdown; charset=utf-8",
+            headers={
+                "Cache-Control": "public, max-age=30",
+                "ETag": f'"{int(cached.last_rendered_at.timestamp())}"',
+            },
         )
 
     try:
@@ -163,7 +168,7 @@ async def liegenschaft_markdown(
     cached = (
         await session.execute(
             text(
-                "SELECT content_md FROM liegenschaft_files "
+                "SELECT content_md, last_rendered_at FROM liegenschaft_files "
                 "WHERE liegenschaft_id = :lid"
             ),
             {"lid": liegenschaft_id},
@@ -178,6 +183,10 @@ async def liegenschaft_markdown(
         return PlainTextResponse(
             content=cached.content_md,
             media_type="text/markdown; charset=utf-8",
+            headers={
+                "Cache-Control": "public, max-age=30",
+                "ETag": f'"{int(cached.last_rendered_at.timestamp())}"',
+            },
         )
 
     try:

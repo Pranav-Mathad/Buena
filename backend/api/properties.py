@@ -532,12 +532,16 @@ async def property_markdown(
 
     The fallback path does not write back from a GET handler; the next
     fact write at this scope will populate it. ``materialize-all`` is
-    the explicit bootstrap path.
+    the explicit bootstrap path. 30-second public Cache-Control + ETag
+    based on ``last_rendered_at`` give browsers free perceived speed
+    without staleness risk (SSE / polling already invalidate on real
+    change).
     """
     cached = (
         await session.execute(
             text(
-                "SELECT content_md FROM property_files WHERE property_id = :pid"
+                "SELECT content_md, last_rendered_at FROM property_files "
+                "WHERE property_id = :pid"
             ),
             {"pid": property_id},
         )
@@ -551,6 +555,10 @@ async def property_markdown(
         return PlainTextResponse(
             content=cached.content_md,
             media_type="text/markdown; charset=utf-8",
+            headers={
+                "Cache-Control": "public, max-age=30",
+                "ETag": f'"{int(cached.last_rendered_at.timestamp())}"',
+            },
         )
 
     try:

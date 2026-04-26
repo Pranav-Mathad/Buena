@@ -369,6 +369,27 @@ _MIGRATIONS: list[tuple[str, str]] = [
           ON liegenschaft_files (last_rendered_at DESC);
         """,
     ),
+    (
+        "0012_property_files_content_index",
+        """
+        -- Phase 12+ — structured index emitted alongside content_md
+        -- so programmatic consumers (LLM agents, the JSON ``/index``
+        -- endpoint, future cross-property dashboards) can read the
+        -- file's shape without reparsing markdown. Same data the
+        -- frontmatter summarizes, just in a typed shape. JSONB
+        -- columns TOAST automatically; reads of content_md are
+        -- unaffected.
+        ALTER TABLE property_files
+          ADD COLUMN IF NOT EXISTS content_index JSONB
+            NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE building_files
+          ADD COLUMN IF NOT EXISTS content_index JSONB
+            NOT NULL DEFAULT '{}'::jsonb;
+        ALTER TABLE liegenschaft_files
+          ADD COLUMN IF NOT EXISTS content_index JSONB
+            NOT NULL DEFAULT '{}'::jsonb;
+        """,
+    ),
 ]
 
 

@@ -16,6 +16,7 @@ spend, no matter how often it fires.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from uuid import UUID
 
@@ -27,7 +28,7 @@ from backend.db.session import get_sessionmaker
 from backend.pipeline.renderer import (
     render_building_markdown,
     render_liegenschaft_markdown,
-    render_markdown,
+    render_property_full,
 )
 
 log = structlog.get_logger(__name__)
@@ -86,12 +87,18 @@ async def materialize_property(
     trigger_scope: str = "property",
     trigger_summary: str | None = None,
 ) -> int:
-    """Render and upsert the property's markdown row. Returns 1 on write."""
+    """Render and upsert the property's markdown + content_index row.
+
+    Phase 12+ — calls :func:`render_property_full` so the materialized
+    row carries both ``content_md`` (human/agent reading) and
+    ``content_index`` (typed JSON for programmatic consumers). Returns
+    1 on write, 0 if the property doesn't exist.
+    """
     if trigger_scope not in _VALID_TRIGGER_SCOPES:
         raise ValueError(f"trigger_scope {trigger_scope!r} not in {_VALID_TRIGGER_SCOPES}")
 
     try:
-        md = await render_markdown(session, property_id)
+        result = await render_property_full(session, property_id)
     except ValueError:
         log.warning(
             "materializer.property.missing",
@@ -104,15 +111,17 @@ async def materialize_property(
         text(
             """
             INSERT INTO property_files (
-              property_id, content_md, fact_count, last_rendered_at,
+              property_id, content_md, content_index, fact_count,
+              last_rendered_at,
               trigger_event_id, trigger_scope, trigger_summary,
               generation_version
             ) VALUES (
-              :pid, :md, :fc, now(),
+              :pid, :md, CAST(:idx AS JSONB), :fc, now(),
               :eid, :scope, :summary, :ver
             )
             ON CONFLICT (property_id) DO UPDATE SET
               content_md = EXCLUDED.content_md,
+              content_index = EXCLUDED.content_index,
               fact_count = EXCLUDED.fact_count,
               last_rendered_at = EXCLUDED.last_rendered_at,
               trigger_event_id = EXCLUDED.trigger_event_id,
@@ -123,7 +132,8 @@ async def materialize_property(
         ),
         {
             "pid": property_id,
-            "md": md,
+            "md": result.markdown,
+            "idx": json.dumps(result.content_index),
             "fc": fact_count,
             "eid": trigger_event_id,
             "scope": trigger_scope,
