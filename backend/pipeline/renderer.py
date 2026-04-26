@@ -83,6 +83,20 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "open_building": "Open building view",
         "open_weg": "Open WEG view",
         "needs_review": "Needs Review",
+        "stammdaten": "Stammdaten",
+        "stammdaten_subtitle": "Master record from the lease/owner registry",
+        "unit": "Unit",
+        "tenant": "Current tenant",
+        "owner": "Owner",
+        "lease_start": "Lease start",
+        "lease_end": "Lease end",
+        "lease_open_ended": "open-ended",
+        "rent_cold": "Cold rent",
+        "operating_costs": "Operating costs prepayment",
+        "deposit": "Deposit",
+        "size_qm": "Size",
+        "rooms": "Rooms",
+        "no_active_tenant": "No active tenant on file",
     },
     "de": {
         "building_context": "Hauskontext",
@@ -92,6 +106,20 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "open_building": "Hausansicht öffnen",
         "open_weg": "WEG-Ansicht öffnen",
         "needs_review": "Zu prüfen",
+        "stammdaten": "Stammdaten",
+        "stammdaten_subtitle": "Stammdaten aus dem Mietvertrags- und Eigentümerregister",
+        "unit": "Einheit",
+        "tenant": "Aktueller Mieter",
+        "owner": "Eigentümer",
+        "lease_start": "Mietbeginn",
+        "lease_end": "Mietende",
+        "lease_open_ended": "unbefristet",
+        "rent_cold": "Kaltmiete",
+        "operating_costs": "Nebenkosten-Vorauszahlung",
+        "deposit": "Kaution",
+        "size_qm": "Wohnfläche",
+        "rooms": "Zimmer",
+        "no_active_tenant": "Kein aktiver Mieter erfasst",
     },
 }
 
@@ -117,6 +145,31 @@ class FactRow:
     source_event_id: UUID | None
     confidence: float
     source: str | None
+
+
+@dataclass(frozen=True)
+class Stammdaten:
+    """Master-record snapshot for a property.
+
+    Stammdaten lives outside the events/facts pipeline — it's the
+    authoritative lease/owner registry loaded once at ingest. Surfacing
+    it in the markdown closes the gap where a freshly-onboarded
+    property has no extracted facts yet but still has a real tenant,
+    rent, and lease window on file.
+    """
+
+    unit_label: str | None
+    size_qm: float | None
+    rooms: float | None
+    lage: str | None
+    tenant_name: str | None
+    tenant_active: bool
+    mietbeginn: str | None
+    mietende: str | None
+    kaltmiete: float | None
+    nk_vorauszahlung: float | None
+    kaution: float | None
+    owner_name: str | None
 
 
 async def _detect_property_language(
@@ -171,6 +224,74 @@ async def _fetch_header(session: AsyncSession, property_id: UUID) -> PropertyHea
     return PropertyHeader(name=row.name, address=row.address)
 
 
+async def _fetch_stammdaten(
+    session: AsyncSession, property_id: UUID
+) -> Stammdaten | None:
+    """Pull the master-record snapshot for a property.
+
+    Joins ``properties.metadata`` (unit dimensions), the active row in
+    ``tenants`` (tenant identity + lease + rent), and ``owners.name``.
+    Returns ``None`` only if the property itself doesn't exist; an
+    otherwise empty stammdaten object still renders ("no active tenant
+    on file") so operators can see what's missing.
+    """
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    p.metadata AS p_meta,
+                    o.name     AS owner_name,
+                    t.name     AS tenant_name,
+                    t.metadata AS t_meta
+                FROM properties p
+                LEFT JOIN owners o ON o.id = p.owner_id
+                LEFT JOIN LATERAL (
+                    SELECT t.name, t.metadata
+                    FROM tenants t
+                    WHERE t.property_id = p.id
+                    ORDER BY
+                        (t.metadata->>'active' = 'true') DESC,
+                        (t.metadata->>'mietende') DESC NULLS FIRST,
+                        t.move_in_date DESC NULLS LAST
+                    LIMIT 1
+                ) t ON TRUE
+                WHERE p.id = :pid
+                """
+            ),
+            {"pid": property_id},
+        )
+    ).first()
+    if row is None:
+        return None
+
+    p_meta = dict(row.p_meta or {})
+    t_meta = dict(row.t_meta or {})
+
+    def _num(v: object) -> float | None:
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    return Stammdaten(
+        unit_label=p_meta.get("einheit_nr") or p_meta.get("buena_eh_id"),
+        size_qm=_num(p_meta.get("wohnflaeche_qm")),
+        rooms=_num(p_meta.get("zimmer")),
+        lage=p_meta.get("lage") or None,
+        tenant_name=row.tenant_name,
+        tenant_active=bool(t_meta.get("active")) or t_meta.get("mietende") in (None, ""),
+        mietbeginn=t_meta.get("mietbeginn") or None,
+        mietende=t_meta.get("mietende") or None,
+        kaltmiete=_num(t_meta.get("kaltmiete")),
+        nk_vorauszahlung=_num(t_meta.get("nk_vorauszahlung")),
+        kaution=_num(t_meta.get("kaution")),
+        owner_name=row.owner_name,
+    )
+
+
 async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list[FactRow]:
     """Return all current (non-superseded) facts for the property."""
     result = await session.execute(
@@ -203,6 +324,64 @@ async def _fetch_current_facts(session: AsyncSession, property_id: UUID) -> list
 def _format_field(field: str) -> str:
     """Turn ``snake_case`` field names into human-readable titles."""
     return field.replace("_", " ").strip().capitalize()
+
+
+def _format_eur(value: float | None) -> str | None:
+    """Render a euro amount with thousand separators, or ``None``."""
+    if value is None:
+        return None
+    return f"€{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _format_stammdaten_block(s: Stammdaten, lang: str) -> list[str]:
+    """Emit ``## Stammdaten`` lines. Empty values are skipped silently."""
+    labels = CONTEXT_LABELS[lang]
+    rows: list[tuple[str, str]] = []
+
+    if s.unit_label:
+        rows.append((labels["unit"], s.unit_label))
+    if s.lage:
+        rows.append(("Lage" if lang == "de" else "Location", s.lage))
+    if s.size_qm is not None:
+        size_str = f"{s.size_qm:.1f} m²".replace(".0 ", " ")
+        rows.append((labels["size_qm"], size_str))
+    if s.rooms is not None:
+        rooms_str = f"{s.rooms:.1f}".rstrip("0").rstrip(".") or "0"
+        rows.append((labels["rooms"], rooms_str))
+    if s.owner_name:
+        rows.append((labels["owner"], s.owner_name))
+
+    if s.tenant_name:
+        rows.append((labels["tenant"], s.tenant_name))
+        if s.mietbeginn:
+            rows.append((labels["lease_start"], s.mietbeginn))
+        rows.append(
+            (
+                labels["lease_end"],
+                s.mietende if s.mietende else labels["lease_open_ended"],
+            )
+        )
+        kalt = _format_eur(s.kaltmiete)
+        if kalt:
+            rows.append((labels["rent_cold"], kalt))
+        nk = _format_eur(s.nk_vorauszahlung)
+        if nk:
+            rows.append((labels["operating_costs"], nk))
+        kaution = _format_eur(s.kaution)
+        if kaution:
+            rows.append((labels["deposit"], kaution))
+
+    out: list[str] = [
+        f"## {labels['stammdaten']}",
+        "",
+        f"_{labels['stammdaten_subtitle']}_",
+        "",
+    ]
+    if not s.tenant_name:
+        out.append(f"- **{labels['tenant']}:** {labels['no_active_tenant']}")
+    out.extend(f"- **{label}:** {value}" for label, value in rows)
+    out.append("")
+    return out
 
 
 def _format_fact_line(fact: FactRow) -> str:
@@ -530,6 +709,7 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
 
     facts = await _fetch_current_facts(session, property_id)
     uncertainties = await _fetch_open_uncertainties(session, property_id)
+    stammdaten = await _fetch_stammdaten(session, property_id)
     lang = await _detect_property_language(session, property_id)
     labels = CONTEXT_LABELS[lang]
     log.debug(
@@ -537,10 +717,13 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
         property_id=str(property_id),
         fact_count=len(facts),
         uncertainty_count=len(uncertainties),
+        has_stammdaten=stammdaten is not None,
         lang=lang,
     )
 
     lines: list[str] = [f"# {header.name}", "", f"_{header.address}_", ""]
+    if stammdaten is not None:
+        lines.extend(_format_stammdaten_block(stammdaten, lang))
     _emit_sections(facts, lines, lang=lang, uncertainties=uncertainties)
 
     # Building Context

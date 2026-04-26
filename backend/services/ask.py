@@ -35,14 +35,6 @@ log = structlog.get_logger(__name__)
 
 
 @dataclass
-class _Fact:
-    section: str
-    field: str
-    value: str
-    date: str
-
-
-@dataclass
 class _EventRef:
     id: str
     source: str
@@ -66,10 +58,17 @@ QUESTION
 {question}
 \"\"\"
 
-CURRENT FACTS (most recent first)
-{facts_block}
+PROPERTY FILE (the canonical, condensed markdown record for this
+property — Stammdaten at top, then sectioned facts with confidence and
+source links, then Building / WEG context. This is your primary
+source: everything Keystone knows about this property is here.)
+\"\"\"
+{property_file}
+\"\"\"
 
-RECENT EVENTS (last 90 days, newest first)
+RECENT EVENTS (last 90 days, newest first — raw snippets to support
+direct quotation. The event ids match the [source: ...] links in the
+PROPERTY FILE above. Cite these ids in cited_event_ids.)
 {events_block}
 
 DECIDE ON A STATUS
@@ -102,13 +101,6 @@ JSON SCHEMA
 }}"""
 
 
-def _format_facts_block(facts: list[_Fact]) -> str:
-    if not facts:
-        return "  (no facts on file)"
-    lines: list[str] = []
-    for f in facts[:30]:
-        lines.append(f"  - [{f.section}.{f.field}] {f.value} (as of {f.date})")
-    return "\n".join(lines)
 
 
 def _format_events_block(events: list[_EventRef]) -> str:
@@ -125,12 +117,18 @@ async def answer_question(
     *,
     property_name: str,
     question: str,
-    recent_facts: list[dict[str, Any]],
+    property_file_markdown: str,
     recent_events: list[dict[str, Any]],
     model_name: str | None = None,
     timeout_s: float = 30.0,
 ) -> dict[str, Any]:
     """Ask Claude (via Pioneer) a property-scoped question.
+
+    The model reads the canonical rendered markdown for the property
+    (stammdaten + sectioned facts + uncertainties + parent-tier
+    context) plus a small block of raw recent-event snippets that
+    enable direct quotation. Whatever the markdown contains is
+    answerable; whatever it doesn't, the model says "I don't know".
 
     Returns parsed JSON dict with status/answer/confidence/reasoning
     plus the cited / partial-context event-id lists. The API layer
@@ -143,13 +141,12 @@ async def answer_question(
     if not pioneer_llm.is_available():
         raise pioneer_llm.PioneerUnavailable("PIONEER_API_KEY not set")
 
-    facts = [_Fact(**f) for f in recent_facts]
     events = [_EventRef(**e) for e in recent_events]
 
     prompt = PROMPT_TEMPLATE.format(
         property_name=property_name,
         question=question.strip() or "(empty question)",
-        facts_block=_format_facts_block(facts),
+        property_file=property_file_markdown.strip() or "(empty property file)",
         events_block=_format_events_block(events),
     )
 
@@ -173,7 +170,7 @@ async def answer_question(
         model=model,
         property=property_name,
         prompt_chars=len(prompt),
-        fact_count=len(facts),
+        property_file_chars=len(property_file_markdown),
         event_count=len(events),
     )
 

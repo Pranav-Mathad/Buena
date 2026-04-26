@@ -811,38 +811,15 @@ class AskResponse(BaseModel):
 
 async def _fetch_ask_context(
     session: AsyncSession, property_id: UUID
-) -> tuple[
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-    dict[str, dict[str, str]],
-]:
-    """Pull facts + events + a lookup table that maps event_id → citation shape."""
-    fact_rows = (
-        await session.execute(
-            text(
-                """
-                SELECT f.section, f.field, f.value,
-                       COALESCE(f.created_at, now()) AS dt
-                FROM facts f
-                WHERE f.property_id = :pid
-                  AND f.superseded_by IS NULL
-                ORDER BY f.created_at DESC
-                LIMIT 30
-                """
-            ),
-            {"pid": property_id},
-        )
-    ).all()
-    facts = [
-        {
-            "section": str(r.section),
-            "field": str(r.field),
-            "value": str(r.value),
-            "date": r.dt.date().isoformat(),
-        }
-        for r in fact_rows
-    ]
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
+    """Pull recent events for citation + a lookup mapping event_id → citation shape.
 
+    The canonical context for the LLM is the rendered property markdown
+    (fetched separately via :func:`render_markdown`). This helper only
+    returns the raw event snippets that let Pioneer quote source text
+    directly; the citation_lookup joins those event ids back to the
+    ``{id, channel, date, snippet}`` shape the frontend expects.
+    """
     event_rows = (
         await session.execute(
             text(
@@ -879,7 +856,7 @@ async def _fetch_ask_context(
             "date": r.rec.date().isoformat() if r.rec else "",
             "snippet": snippet[:240],
         }
-    return facts, events, citation_lookup
+    return events, citation_lookup
 
 
 @router.post("/{property_id}/ask", response_model=AskResponse)
@@ -898,13 +875,21 @@ async def property_ask(
     if meta_row is None:
         raise HTTPException(status_code=404, detail="property not found")
 
-    facts, events, citation_lookup = await _fetch_ask_context(session, property_id)
+    events, citation_lookup = await _fetch_ask_context(session, property_id)
+    try:
+        property_file_markdown = await render_markdown(session, property_id)
+    except ValueError as exc:
+        # Should be unreachable — the property existence check above
+        # already 404s — but guard anyway so we never feed a half-built
+        # prompt to Pioneer.
+        log.warning("properties.ask.render_failed", error=str(exc))
+        raise HTTPException(status_code=404, detail="property not found") from exc
 
     try:
         result = await ask_service.answer_question(
             property_name=str(meta_row.name),
             question=payload.question,
-            recent_facts=facts,
+            property_file_markdown=property_file_markdown,
             recent_events=events,
         )
     except pioneer_llm.PioneerUnavailable as exc:
