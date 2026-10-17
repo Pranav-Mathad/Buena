@@ -2,6 +2,12 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-10-17: the manual trigger endpoint accepts raw_content
+Context: ``POST /debug/trigger_event`` required ``body`` (plus optional ``from`` and ``subject``) and composed ``raw_content`` from them. Everywhere else the event payload is called ``raw_content``: the ``events`` table, ``ConnectorEvent``, the eval ground truth. Posting ``{"raw_content": ...}`` was the natural guess and returned a 422 about a missing ``body``; posting both fields silently ignored ``raw_content``.
+Decision: The endpoint accepts exactly one of ``raw_content`` (stored verbatim, as a connector would) or ``body`` (composed with ``from``/``subject`` into the IMAP layout). Both or neither is a 422 that names the rule; ``from``/``subject`` alongside ``raw_content`` is also a 422. Documentation shows the ``raw_content`` form.
+Reason: Matching the event model removes a translation step for anyone injecting test events, and refusing ambiguous payloads replaces a silent drop with an error. Keeping ``body`` costs nothing and keeps existing scripts working.
+Revisit if: The endpoint grows other event sources with structured payloads (bank rows, invoices); at that point it should take a ``ConnectorEvent``-shaped body directly.
+
 ## 2026-10-17: a human decision on a signal holds for a cooldown period
 Context: The evaluator deduplicated candidates only against *pending* signals with the same ``(property_id, type, subtype)``. Rules are stateless and keep matching the same facts, so once a signal was approved or rejected, the next 30-second tick raised an identical pending signal (observed: approved at T, duplicate pending at T+60s). The original dedupe entry below described re-firing after a decision as intended; in practice it undid every decision an operator made.
 Decision: Signals carry a ``natural_key`` column, ``type|<property id or 'portfolio'>|<subtype or topic>``, written by the evaluator and backfilled for existing rows (migration ``0013_signal_natural_key``). A candidate is skipped while a signal with the same key is pending, or was resolved (approved or rejected) within ``signal_resolution_cooldown_days`` (default 7). After the cooldown the finding can be raised again if the rule still matches. Signals proposed through the API or MCP keep a NULL key and are not deduplicated by the evaluator.
