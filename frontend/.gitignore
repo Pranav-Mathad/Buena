@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment files: only the example is committed
+.env
+.env.*
+!.env.example
