@@ -1,9 +1,9 @@
 {
   "liegenschaft": {
     "id": "LIE-001",
-    "name": "WEG Immanuelkirchstraße 26",
-    "strasse": "Immanuelkirchstraße 26",
-    "plz": "10405",
+    "name": "WEG Musterstraße 26",
+    "strasse": "Musterstraße 26",
+    "plz": "10115",
     "ort": "Berlin",
     "baujahr": 1928,
     "sanierung": 2008,

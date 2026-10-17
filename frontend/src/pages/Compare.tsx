@@ -58,7 +58,7 @@ const Compare = () => {
   const heroId =
     properties.find((p) => p.isHero)?.id ?? HERO_PROPERTY_ID;
   const heroName =
-    properties.find((p) => p.isHero)?.name ?? "Immanuelkirchstraße 26 WE 29";
+    properties.find((p) => p.isHero)?.name ?? "Musterstraße 26 WE 29";
 
   const keyword = useMemo(() => extractKeyword(question), [question]);
 

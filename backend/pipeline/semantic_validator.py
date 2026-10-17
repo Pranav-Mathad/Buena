@@ -82,7 +82,7 @@ DEFINITIONS
     "Anna Schmidt"
   • event claims rent €5000 when stammdaten says kaltmiete €1100
   • event refers to address "Hauptstraße 12" when the property file
-    shows "Immanuelkirchstraße 26"
+    shows "Musterstraße 26"
 - "Novel" information (new maintenance issue, new bank payment, new
   email request) is NOT a contradiction. Do not flag novel claims.
 - "Stammdaten" entries (master record at top of the file) are

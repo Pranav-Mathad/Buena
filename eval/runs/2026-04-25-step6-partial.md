@@ -66,7 +66,7 @@ ships.
   dead-letter ceiling. The four zombie events from the hang are
   still inserted with `processed_at IS NULL` — they'd retry on next
   invocation under the existing `_should_retry` logic.
-- **Hero property** (`Immanuelkirchstraße 26 WE 29`,
+- **Hero property** (`Musterstraße 26 WE 29`,
   `509393da-6806-49ef-9e59-3da0213008cd`) gets a *complete* targeted
   pass via `scripts/hero_backfill.py` so the Phase 10 onboarding
   view reads as rich. Hero choice rationale + ID logged in

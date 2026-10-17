@@ -173,7 +173,7 @@ async def route_text_event(
        This is intentionally before the property attempt: a Mahnung
        from an insurer or a Bauamt Brandschutz request should land at
        the WEG even though the body mentions the building's
-       ``Immanuelkirchstraße 26`` address (which the property
+       ``Musterstraße 26`` address (which the property
        token-overlap fallback would otherwise greedily claim).
     2. :func:`route` — alias substring + token-overlap → property.
     3. ``HAUS-NN`` mention in the body → building.

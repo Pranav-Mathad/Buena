@@ -18,8 +18,9 @@ safe to commit:
   by the Building Context renderer.
 * Operational numbers (``kaltmiete``, ``kaution``, ``wohnflaeche_qm``,
   ``miteigentumsanteil``) preserved — needed for realistic demo math.
-* Liegenschaft demo address (Immanuelkirchstraße 26, 10405 Berlin) preserved
-  — already public in KEYSTONE.md and the beginner's guide.
+* Liegenschaft street and postcode REPLACED with a fixed fictional
+  address (``DEMO_STREET`` / ``DEMO_PLZ`` below). Unit and building names
+  are derived from it, so routing aliases stay internally consistent.
 * Person/company names, emails, phones, IBANs, street addresses, tax IDs
   REPLACED with deterministic synthetic German values. The verwalter
   (Buena's real partner property manager) is also replaced.
@@ -157,13 +158,17 @@ def _steuernummer(row_id: str) -> str:
     return f"{a:02d}/{b:03d}/{c:05d}"
 
 
+DEMO_STREET = "Musterstraße 26"
+DEMO_PLZ = "10115"
+
+
 def synthesize_liegenschaft(src: dict[str, Any]) -> dict[str, Any]:
-    """Keep public address fields, replace all verwalter PII."""
+    """Replace the WEG address and all verwalter PII; keep building shape."""
     return {
         "id": src["id"],
-        "name": src["name"],
-        "strasse": src["strasse"],
-        "plz": src["plz"],
+        "name": f"WEG {DEMO_STREET}",
+        "strasse": DEMO_STREET,
+        "plz": DEMO_PLZ,
         "ort": src["ort"],
         "baujahr": src.get("baujahr"),
         "sanierung": src.get("sanierung"),

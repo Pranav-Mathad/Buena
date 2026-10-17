@@ -15,7 +15,7 @@ Hausverwaltung`;
 const DraftReply = () => {
   const [example, setExample] = useState<DraftExample | null>(null);
   const [form, setForm] = useState({
-    property: "Immanuelkirchstraße 26 WE 29",
+    property: "Musterstraße 26 WE 29",
     channel: "Email" as "Email" | "Slack",
     tone: "Neutral",
     subject: "",
@@ -120,7 +120,7 @@ const DraftReply = () => {
                   onChange={(e) => setForm({ ...form, property: e.target.value })}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
                 >
-                  <option>Immanuelkirchstraße 26 WE 29</option>
+                  <option>Musterstraße 26 WE 29</option>
                   <option>Berliner Straße 12, 4B</option>
                   <option>Berliner Straße 12, 2A</option>
                   <option>Müllerstraße 7, EG</option>

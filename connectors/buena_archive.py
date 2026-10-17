@@ -147,7 +147,7 @@ TENANT_COLUMN_MAP = ColumnMap(
 
 
 def _short_address(strasse: str, hausnr: str) -> str:
-    """e.g. ``"Immanuelkirchstr. 26 · WE 01"``-style — passes through unchanged."""
+    """e.g. ``"Musterstr. 26 · WE 01"``-style — passes through unchanged."""
     if not strasse:
         return hausnr
     if hausnr and hausnr not in strasse:

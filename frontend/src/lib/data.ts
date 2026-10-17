@@ -13,8 +13,8 @@ export type Property = {
 export const properties: Property[] = [
   {
     id: "509393da-6806-49ef-9e59-3da0213008cd",
-    name: "Immanuelkirchstraße 26 WE 29",
-    address: "Immanuelkirchstraße 26, 10405 Berlin",
+    name: "Musterstraße 26 WE 29",
+    address: "Musterstraße 26, 10115 Berlin",
     stats: { events: 92, facts: 11, needsReview: 2 },
     status: "active",
     openIssues: 3,
@@ -68,8 +68,8 @@ export type Section = {
 
 export const propertyFile = {
   id: "509393da-6806-49ef-9e59-3da0213008cd",
-  name: "Immanuelkirchstraße 26 WE 29",
-  address: "Immanuelkirchstraße 26, 10405 Berlin",
+  name: "Musterstraße 26 WE 29",
+  address: "Musterstraße 26, 10115 Berlin",
   sections: [
     {
       title: "Overview",
@@ -220,12 +220,12 @@ export const compareQuestions = [
 export const recentActivity = [
   { time: "2h ago", text: "Wasserschaden gemeldet", property: "WE 29" },
   { time: "4h ago", text: "Mietminderung 15% angekündigt", property: "WE 29" },
-  { time: "yesterday", text: "Hausgeldzahlung erhalten", property: "Liegenschaft Immanuelkirchstr." },
+  { time: "yesterday", text: "Hausgeldzahlung erhalten", property: "Liegenschaft Musterstr." },
   { time: "yesterday", text: "Brandschutznachweis erneuert", property: "Berliner Str. 12" },
   { time: "2 days ago", text: "Lärmbeschwerde eingegangen", property: "WE 29" },
 ];
 
-export const briefingMarkdown = `**Briefing — Immanuelkirchstr. 26 WE 29**
+export const briefingMarkdown = `**Briefing — Musterstr. 26 WE 29**
 
 Stand: 2026-04-25, basierend auf 92 Ereignissen seit Einzug.
 
@@ -254,7 +254,7 @@ export const draftExamples: DraftExample[] = [
     key: "door",
     label: "Door not working (4th tenant)",
     incoming: {
-      property: "Immanuelkirchstraße 26 WE 29",
+      property: "Musterstraße 26 WE 29",
       channel: "Email",
       tone: "Neutral",
       subject: "Eingangstür kaputt!",
@@ -284,7 +284,7 @@ Hausverwaltung`,
     key: "rent",
     label: "Rent increase question",
     incoming: {
-      property: "Immanuelkirchstraße 26 WE 29",
+      property: "Musterstraße 26 WE 29",
       channel: "Email",
       tone: "Neutral",
       subject: "Frage zur Miethöhe",
@@ -307,7 +307,7 @@ Hausverwaltung`,
     key: "heating",
     label: "Heating outage (new)",
     incoming: {
-      property: "Immanuelkirchstraße 26 WE 29",
+      property: "Musterstraße 26 WE 29",
       channel: "Email",
       tone: "Warm",
       subject: "Heizung ausgefallen",
