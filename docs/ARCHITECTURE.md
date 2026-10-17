@@ -277,9 +277,9 @@ decision is not undone on the next run. New signals get a drafted message from
 `backend/signals/drafter.py` (LLM, or a template that always states the
 observation, the risk, a concrete next step and a deadline).
 
-Approval goes through an approval broker protocol (`backend/services/entire.py`,
-currently `EntireBroker` with a `LocalEntireBroker` implementation) that writes
-the outbox row. `POST /signals/propose` lets external tools, including the MCP
+Approval goes through the `ApprovalBroker` protocol
+(`backend/services/approval.py`); the shipped `LocalApprovalBroker` writes the
+outbox row in the approval's transaction and sends nothing. `POST /signals/propose` lets external tools, including the MCP
 server, file a signal; it is always created as `pending` and tagged as
 externally proposed.
 

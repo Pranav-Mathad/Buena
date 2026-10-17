@@ -1,10 +1,11 @@
-"""Entire-compatible approval layer.
+"""Approval broker: what happens to a signal's message once a human approves it.
 
-Per KEYSTONE Part IV, the approval inbox is "Entire-powered". Until the
-Entire SDK is available (or swapped in), we ship a Protocol-based
-``EntireBroker`` interface and a ``LocalEntireBroker`` reference
-implementation that writes to Postgres. Callers (the signals API) depend on
-the Protocol, so adding a real Entire adapter is a one-file change.
+The signals API depends only on the :class:`ApprovalBroker` protocol. The
+shipped implementation, :class:`LocalApprovalBroker`, records the message in
+the ``outbox`` table and sends nothing; a broker that actually delivers email
+or Slack messages can be installed with :func:`set_broker` without touching
+callers. Whatever the implementation, it should still write the outbox row so
+every approved action stays auditable.
 """
 
 from __future__ import annotations
@@ -32,8 +33,8 @@ class DispatchResult:
 
 
 @runtime_checkable
-class EntireBroker(Protocol):
-    """Swap-in point for the real Entire SDK when we have the keys."""
+class ApprovalBroker(Protocol):
+    """Dispatches the message of an approved signal."""
 
     name: str
 
@@ -47,19 +48,18 @@ class EntireBroker(Protocol):
         subject: str | None,
         body: str,
     ) -> DispatchResult:
-        """Broker the message after the human approves the signal."""
+        """Deliver (or record) the message for an approved signal."""
         ...
 
 
-class LocalEntireBroker:
-    """Reference implementation — writes to the ``outbox`` table.
+class LocalApprovalBroker:
+    """Writes the message to ``outbox`` in the caller's transaction; sends nothing.
 
-    The pitch line stays accurate ("Entire-compatible approval layer") because
-    the signature + semantics mirror what the real SDK would do: atomically
-    persist a message and return a reference for it.
+    Runs inside the approval request's session, so the outbox row, the status
+    change and the ``approval_log`` entry commit together.
     """
 
-    name = "local-entire-broker"
+    name = "local-outbox"
 
     async def dispatch(
         self,
@@ -90,7 +90,7 @@ class LocalEntireBroker:
         )
         row = result.one()
         log.info(
-            "entire.dispatch.local",
+            "approval.dispatch.local",
             signal_id=str(signal_id),
             channel=channel,
             recipient=recipient,
@@ -104,15 +104,15 @@ class LocalEntireBroker:
         )
 
 
-_broker: EntireBroker = LocalEntireBroker()
+_broker: ApprovalBroker = LocalApprovalBroker()
 
 
-def get_broker() -> EntireBroker:
-    """Return the configured broker. Single-source-of-truth for dep injection."""
+def get_broker() -> ApprovalBroker:
+    """Return the installed broker."""
     return _broker
 
 
-def set_broker(broker: EntireBroker) -> None:
-    """Install a different broker. Intended for tests / the real SDK swap."""
+def set_broker(broker: ApprovalBroker) -> None:
+    """Install a different broker, e.g. a test double or a delivering implementation."""
     global _broker
     _broker = broker

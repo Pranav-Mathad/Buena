@@ -1064,7 +1064,7 @@ names a deadline and a concrete action.
 **Context.** Approved actions need dispatching somewhere. An external approval
 service was considered; it was not available.
 
-**Decision.** `backend/services/entire.py` defines a `runtime_checkable`
+**Decision.** `backend/services/entire.py` (now `approval.py`) defines a `runtime_checkable`
 broker protocol and ships a local implementation that writes the outbox row.
 `set_broker()` lets tests or another implementation replace it without
 touching callers.
@@ -1074,6 +1074,10 @@ change, and nothing claims an integration that does not exist.
 
 **Revisit if.** A real dispatcher (email, Slack) is added; it should still write
 the outbox row for auditability.
+
+**Status.** 2026-10-17: renamed from `entire.py`/`EntireBroker` to
+`approval.py`/`ApprovalBroker` with `LocalApprovalBroker`, and the unused
+`ENTIRE_*` settings removed. The protocol and behaviour are unchanged.
 
 ## 2026-04-24: web enrichment writes its facts directly
 

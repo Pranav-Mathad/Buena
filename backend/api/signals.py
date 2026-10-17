@@ -1,15 +1,15 @@
-"""Approval inbox — list / approve / reject / edit / evaluate.
+"""Approval inbox: list, inspect, evaluate, approve, reject and edit signals.
 
-Shape matches what the Lovable UI will bind to:
-
-- ``GET /signals`` — list with filters (``status``, ``severity``, ``type``).
-- ``GET /signals/{id}`` — single signal with its proposed_action + evidence.
-- ``POST /signals/evaluate`` — manually fire the rule evaluator (demo trigger).
-- ``POST /signals/{id}/approve`` — dispatch via the Entire-compatible broker,
-  write outbox row + approval log entry, flip status to ``resolved``.
-- ``POST /signals/{id}/reject`` — log rejection, flip status to ``rejected``.
-- ``POST /signals/{id}/edit`` — allow the human to edit the drafted message
-  before approval; writes an ``approval_log`` row with ``decision='edited'``.
+- ``GET /signals``: list with filters (``status``, ``severity``, ``type``).
+- ``GET /signals/{id}``: one signal with its proposed action and evidence.
+- ``POST /signals/evaluate``: run the rule evaluator now instead of waiting
+  for the next scheduled run.
+- ``POST /signals/{id}/approve``: dispatch through the approval broker
+  (``backend.services.approval``), write the outbox row and an
+  ``approval_log`` entry, and set the status to ``resolved``.
+- ``POST /signals/{id}/reject``: log the rejection and set ``rejected``.
+- ``POST /signals/{id}/edit``: edit the drafted message before approval;
+  writes an ``approval_log`` row with ``decision='edited'``.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
-from backend.services.entire import get_broker
+from backend.services.approval import get_broker
 from backend.signals.evaluator import evaluate_all
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -326,7 +326,7 @@ async def approve_signal(
     signal_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> ActionResponse:
-    """Dispatch via the Entire-compatible broker, log, and resolve."""
+    """Dispatch through the approval broker, log the decision, resolve the signal."""
     row = (
         await session.execute(
             text(
