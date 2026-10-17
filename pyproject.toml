@@ -38,7 +38,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["backend*", "seed*", "mcp_server*", "mock_erp*"]
+include = ["backend*", "seed*", "mcp_server*"]
 
 [tool.ruff]
 line-length = 100

@@ -1,9 +1,11 @@
 """Tiny stand-in for an ERP rent-ledger API.
 
-Runs as a standalone FastAPI service on port 8001 (docker-compose / `uvicorn
-mock_erp.main:app --port 8001`). Reads its state from :file:`data.json` on
-every request so you can edit the file live during the demo to simulate a
-new payment arriving.
+Runs as a standalone FastAPI service on port 8001
+(``uvicorn tools.mock_erp.main:app --port 8001``). Reads its state from
+:file:`data.json` on every request, so editing the file is enough to
+simulate a new payment arriving. Point the backend at it with
+``MOCK_ERP_URL=http://localhost:8001``; when that variable is unset the
+backend does not poll at all.
 
 Endpoints:
 

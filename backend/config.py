@@ -66,7 +66,9 @@ class Settings(BaseSettings):
     imap_password: str = Field(default="")
     imap_mailbox: str = Field(default="INBOX")
     slack_signing_secret: str = Field(default="")
-    mock_erp_url: str = Field(default="http://localhost:8001")
+    # Base URL of an ERP payments feed (see tools/mock_erp). Empty disables
+    # the ERP poller entirely, so a default install makes no outbound calls.
+    mock_erp_url: str = Field(default="")
 
     # --- Phase 10 demo ---
     # Hero property the no-arg ``POST /admin/demo/replay`` runs against.
