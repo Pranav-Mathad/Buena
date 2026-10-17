@@ -13,7 +13,6 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
 
 from backend.api.admin import router as admin_router
 from backend.api.buildings import (
@@ -96,8 +95,3 @@ async def health() -> dict[str, str]:
     """Liveness probe used by Docker / Railway and local smoke tests."""
     return {"status": "ok"}
 
-
-@app.get("/aikido.txt", response_class=PlainTextResponse, tags=["system"])
-async def aikido_verification() -> str:
-    """Serve the Aikido domain verification string."""
-    return "validation.aikido.e29d600660a740cc0f0e7cabb18d4b0a"

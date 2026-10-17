@@ -945,6 +945,8 @@ the mode at least makes the fallback explicit.
 
 **Revisit if.** CI publishes scan results; read those instead.
 
+**Status.** Superseded on 2026-10-17: the badge, `/settings/security`, the `/aikido.txt` verification route and the scanner key were removed. A badge that reports "passing" from a local git SHA when the scanner is not configured asserts something nothing verified; security scanning belongs in CI.
+
 ## 2026-04-24: approval-rate weighting is computed locally
 
 **Context.** The settings page shows how operator decisions change signal

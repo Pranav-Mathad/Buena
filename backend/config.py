@@ -56,8 +56,6 @@ class Settings(BaseSettings):
     entire_api_key: str = Field(default="")
     entire_base_url: str = Field(default="https://api.entire.example")
     pioneer_api_key: str = Field(default="")
-    aikido_api_key: str = Field(default="")
-    gradium_api_key: str = Field(default="")
 
     # --- IMAP / Slack / Mock ERP (used by later phases) ---
     imap_host: str = Field(default="imap.gmail.com")
