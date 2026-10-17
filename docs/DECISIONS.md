@@ -1,370 +1,1164 @@
-# DECISIONS
+# Decisions
 
-Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
+This is Keystone's architecture decision record (ADR) log: one entry per
+non-obvious choice, newest first. Each entry gives the context that forced a
+decision, what was chosen, why, and the condition under which it should be
+revisited. Entries are never deleted; when a later decision replaces an
+earlier one, the earlier entry gets a **Status** line pointing forward. Some
+of the most useful entries record mistakes: a provider call that hung without
+erroring, an audit table whose inserts had been failing silently, and a test
+that nearly wiped a live spend ledger. They are kept because they explain why
+the code looks the way it does.
 
-## 2026-10-17: CORS origins come only from configuration
-Context: ``backend/main.py`` appended five hardcoded hosts from the original frontend builder to the configured origins, and set ``allow_origin_regex`` to accept any ``*.lovable.app`` or ``*.lovableproject.com`` origin. With ``allow_credentials=True``, any site hosted on that platform could make credentialed browser requests to the API.
-Decision: ``KEYSTONE_CORS_ORIGINS`` is the only source of allowed origins, parsed by ``Settings.cors_origin_list()``. No hardcoded hosts, no regex. The default still covers local frontends; a deployment names its frontend origin explicitly.
-Reason: An allow-list belongs in configuration, where a deployment can see and change it. A wildcard combined with credentials grants trust to every tenant of a third-party hosting platform, which is not a decision the code should make on an operator's behalf.
-Revisit if: The API gains real authentication with tokens rather than cookies; ``allow_credentials`` could then be turned off.
+Format: **Context**, **Decision**, **Reason**, **Revisit if**, and optionally
+**Status**.
 
-## 2026-10-17: the manual trigger endpoint accepts raw_content
-Context: ``POST /debug/trigger_event`` required ``body`` (plus optional ``from`` and ``subject``) and composed ``raw_content`` from them. Everywhere else the event payload is called ``raw_content``: the ``events`` table, ``ConnectorEvent``, the eval ground truth. Posting ``{"raw_content": ...}`` was the natural guess and returned a 422 about a missing ``body``; posting both fields silently ignored ``raw_content``.
-Decision: The endpoint accepts exactly one of ``raw_content`` (stored verbatim, as a connector would) or ``body`` (composed with ``from``/``subject`` into the IMAP layout). Both or neither is a 422 that names the rule; ``from``/``subject`` alongside ``raw_content`` is also a 422. Documentation shows the ``raw_content`` form.
-Reason: Matching the event model removes a translation step for anyone injecting test events, and refusing ambiguous payloads replaces a silent drop with an error. Keeping ``body`` costs nothing and keeps existing scripts working.
-Revisit if: The endpoint grows other event sources with structured payloads (bank rows, invoices); at that point it should take a ``ConnectorEvent``-shaped body directly.
+## 2026-10-17: committed data is synthetic, including eval ground truth
+
+**Context.** The source dataset (`Extracted/`) is gitignored, but derived
+material had leaked into committed files: the real street address of the
+sample building, three real IBANs in connector tests and docstrings, two real
+contractor names and two real email addresses in tests, a real tenant name in
+frontend fixtures, and person and company names in the 30 eval emails.
+
+**Decision.** Every committed value derived from the dataset is synthetic. The
+building address is a fictional one (`Musterstraße 26, 10115 Berlin`), and
+`scripts/synthesize_demo_stammdaten.py` writes it rather than copying the
+source. Names in the eval set are replaced deterministically: entities that
+exist in the master data get the same synthetic name `Extracted_demo` already
+uses for that row (seeded by `sha256(row_id)`), everything else is seeded by
+`sha256(original name)`. Test IBANs keep their last four digits so redaction
+assertions are unchanged, and are assembled at runtime so no IBAN-shaped
+literal is committed. Entity IDs (`EH-`, `HAUS-`, `LIE-`, `MIE-`, `EIG-`,
+`DL-`) are unchanged because routing depends on them.
+
+**Reason.** A public repository should not depend on anyone's judgement about
+whether a third party's dataset is safe to publish. Deterministic replacement
+keeps the eval set and `Extracted_demo` consistent with each other and makes the
+substitution reproducible. The eval run reports were produced before
+pseudonymisation and are kept unchanged.
+
+**Revisit if.** New fixtures are derived from real data. A pre-commit check
+for the old address and for `DE` + 20 digits outside `Extracted_demo/` guards
+against regressions.
+
+## 2026-10-17: the ERP poller is opt-in
+
+**Context.** The scheduler polled `MOCK_ERP_URL` every 30 seconds with a
+default of `http://localhost:8001`. A default install has no ERP, so it logged
+a connection error every 30 seconds.
+
+**Decision.** `MOCK_ERP_URL` defaults to empty, and the `erp_poll` job is only
+registered when it is set. The mock ERP service moved to `tools/mock_erp/`,
+outside the packaged backend.
+
+**Reason.** An optional integration should cost nothing when it is not
+configured: no job, no outbound calls, no log noise.
+
+**Revisit if.** A real ERP integration replaces the mock.
 
 ## 2026-10-17: a human decision on a signal holds for a cooldown period
-Context: The evaluator deduplicated candidates only against *pending* signals with the same ``(property_id, type, subtype)``. Rules are stateless and keep matching the same facts, so once a signal was approved or rejected, the next 30-second tick raised an identical pending signal (observed: approved at T, duplicate pending at T+60s). The original dedupe entry below described re-firing after a decision as intended; in practice it undid every decision an operator made.
-Decision: Signals carry a ``natural_key`` column, ``type|<property id or 'portfolio'>|<subtype or topic>``, written by the evaluator and backfilled for existing rows (migration ``0013_signal_natural_key``). A candidate is skipped while a signal with the same key is pending, or was resolved (approved or rejected) within ``signal_resolution_cooldown_days`` (default 7). After the cooldown the finding can be raised again if the rule still matches. Signals proposed through the API or MCP keep a NULL key and are not deduplicated by the evaluator.
-Reason: An explicit key column makes the dedupe rule one indexed lookup and keeps it out of JSONB path expressions. A cooldown, rather than suppressing forever, matches how operators work: a rejected boiler warning should not reappear tomorrow, but if the complaints continue for weeks it deserves another look.
-Revisit if: Operators want a per-type cooldown (lease reminders and maintenance patterns likely want different windows) or an explicit "snooze until" on reject. Both fit on the same key.
+
+**Context.** The evaluator deduplicated candidates only against *pending*
+signals with the same `(property_id, type, subtype)`. Rules are stateless and
+keep matching the same facts, so once a signal was approved or rejected, the
+next 30-second run raised an identical pending signal (observed: approved at
+T, duplicate pending at T+60s). The original dedupe entry (2026-04-24)
+described re-raising after a decision as intended; in practice it undid every
+operator decision.
+
+**Decision.** Signals carry a `natural_key` column,
+`type|<property id or 'portfolio'>|<subtype or topic>`, written by the
+evaluator and backfilled for existing rows by migration
+`0013_signal_natural_key`. A candidate is skipped while a signal with the same
+key is pending, or was resolved (approved or rejected) within
+`SIGNAL_RESOLUTION_COOLDOWN_DAYS` (default 7). After the cooldown the finding
+can be raised again if the rule still matches. Signals proposed through the
+API or MCP keep a NULL key and are not deduplicated by the evaluator.
+
+**Reason.** An explicit key column makes the dedupe rule one indexed lookup and
+keeps it out of JSONB path expressions. A cooldown, rather than suppressing
+forever, matches how operators work: a rejected boiler warning should not
+reappear tomorrow, but if the complaints continue for weeks it deserves another
+look.
+
+**Revisit if.** Operators want per-type cooldowns (lease reminders and
+maintenance patterns likely want different windows) or an explicit "snooze
+until" on reject. Both fit on the same key.
+
+## 2026-10-17: the manual trigger endpoint accepts `raw_content`
+
+**Context.** `POST /debug/trigger_event` required `body` (plus optional `from`
+and `subject`) and composed `raw_content` from them. Everywhere else the event
+payload is called `raw_content`: the `events` table, `ConnectorEvent`, the
+eval ground truth. Posting `{"raw_content": ...}` returned a 422 about a
+missing `body`, and posting both fields silently ignored `raw_content`.
+
+**Decision.** The endpoint accepts exactly one of `raw_content` (stored
+verbatim, as a connector would) or `body` (composed with `from` and `subject`
+into the IMAP layout). Both or neither is a 422 that names the rule, as is
+`from` or `subject` alongside `raw_content`. Documentation uses the
+`raw_content` form.
+
+**Reason.** Matching the event model removes a translation step for anyone
+injecting test events, and refusing ambiguous payloads replaces a silent drop
+with an error. Keeping `body` costs nothing and keeps existing scripts working.
+
+**Revisit if.** The endpoint needs structured sources (bank rows, invoices);
+it should then take a `ConnectorEvent`-shaped body directly.
+
+## 2026-10-17: CORS origins come only from configuration
+
+**Context.** `backend/main.py` appended five hardcoded hosts from the original
+frontend builder to the configured origins, and set `allow_origin_regex` to
+accept any `*.lovable.app` or `*.lovableproject.com` origin. With
+`allow_credentials=True`, any site hosted on that platform could make
+credentialed browser requests to the API.
+
+**Decision.** `KEYSTONE_CORS_ORIGINS` is the only source of allowed origins,
+parsed by `Settings.cors_origin_list()`. No hardcoded hosts and no regex. The
+default still covers local frontends; a deployment names its frontend origin
+explicitly.
+
+**Reason.** An allow-list belongs in configuration, where a deployment can see
+and change it. A wildcard combined with credentials extends trust to every
+tenant of a third-party hosting platform, which is not a decision the code
+should make on an operator's behalf.
+
+**Revisit if.** The API gains token-based authentication; `allow_credentials`
+could then be turned off.
+
+## 2026-10-17: the test suite must leave its database unchanged
+
+**Context.** After a suite run, `GET /properties` on a developer database
+showed a "Test Cap Apt 1" property. The email-backfill tests inserted a
+property and building and never removed them, and the eval runner test created
+a real `step5_eval` cost-ledger row. Tests run against the same Postgres
+developers use for the app, so every leak shows up in the product.
+
+**Decision.** Tests that create rows own their cleanup in yield fixtures or
+`finally` blocks, so cleanup also runs when an assertion fails. The backfill
+tests get a fixture that creates a uniquely named property, building and
+ledger label and deletes them plus every event they produced. The eval runner
+test stubs the ledger, since it tests scoring, not spend. A session-scoped
+fixture in `conftest.py` counts rows in 17 core tables before and after the
+run and errors if any count changed.
+
+**Reason.** A rolled-back outer transaction per test was the alternative. It
+does not fit this code: the worker, loaders and cost ledger open their own
+sessions or psycopg2 connections and commit, so they would escape it. Explicit
+cleanup plus a guard that fails the run makes a new leak visible on the first
+run that introduces it.
+
+**Revisit if.** The application gains a single injectable session factory used
+everywhere, including the synchronous psycopg2 paths; a per-test transaction
+with savepoints would then make isolation automatic.
 
 ## 2026-10-17: onboarding test asserts the current degraded-briefing notice
-Context: ``test_render_onboarding_empty_property`` asserted "Briefing skipped", the notice from when Gemini was the only briefing backend. The notice was later reworded to "Briefing unavailable" when a second backend was added, and the test was not updated, so the suite carried one known failure.
-Decision: The test asserts "Briefing unavailable", the text the code emits when no LLM backend is reachable.
-Reason: The wording change was intentional; the test was stale, not the code. A suite with a standing red test teaches people to ignore red.
-Revisit if: The notice text changes again when the LLM backends move behind one provider interface.
 
-## 2026-10-17: the test suite must leave the database it runs against unchanged
-Context: After a suite run, ``GET /properties`` on a developer database showed a "Test Cap Apt 1" property. The email-backfill tests inserted a property and building and never removed them, and the eval runner test created a real ``step5_eval`` cost-ledger row. Tests run against the same Postgres developers use for the app, so every leak is visible in the product.
-Decision: Tests that create rows own their cleanup in yield fixtures or ``finally`` blocks, so cleanup also runs when an assertion fails. The backfill tests get a fixture that creates a uniquely named property, building and ledger label and deletes them plus every event they produced. The eval runner test stubs the ledger, since it tests scoring, not spend. A session-scoped autouse fixture in ``conftest.py`` counts rows in the core tables before and after the run and errors if any count changed.
-Reason: Wrapping each test in a rolled-back transaction was the alternative. It does not fit this code: the worker, loaders and cost ledger open their own sessions or psycopg2 connections and commit, so they would escape an outer transaction. Explicit cleanup plus a guard that fails the run makes a new leak visible on the first run that introduces it.
-Revisit if: The application gains a single injectable session factory used everywhere, including the sync psycopg2 paths. Then a per-test transaction with savepoints would make isolation automatic.
+**Context.** `test_render_onboarding_empty_property` asserted "Briefing
+skipped", the notice from when Gemini was the only briefing backend. The
+notice was reworded to "Briefing unavailable" when a second backend was added,
+and the test was not updated, so the suite carried one known failure.
+
+**Decision.** The test asserts the text the code emits when no LLM backend is
+reachable.
+
+**Reason.** The wording change was intentional; the test was stale, not the
+code. A suite with a standing red test teaches people to ignore red.
+
+**Revisit if.** The notice changes again when the LLM backends move behind one
+provider interface.
 
 ## 2026-10-17: database tests fail loudly and get a fresh engine per test
-Context: The end-to-end pipeline test passed on its own but skipped in a full run. The application caches one async engine per process (``backend.db.session.get_engine``), and its asyncpg pool binds to the event loop that first used it. pytest-asyncio gives each test a new loop, so a later test reused a pool attached to a closed loop and failed with "attached to a different loop". Each DB test guarded itself with ``try: SELECT 1 / except Exception: skip``, which turned that failure into a skip. Nine test files carried the same guard; eight happened to clear the engine cache first and the pipeline test did not.
-Decision: A root ``conftest.py`` gives every test a fresh engine (cache cleared before, engine disposed after) and provides a ``db`` fixture that checks connectivity once per session, applies the schema and migrations, and fails with instructions when Postgres is unreachable. All nine per-file guards are removed. The pipeline test now builds its own property, processes only its own event with ``process_specific`` instead of draining the queue, and needs no seed data, so it runs on an empty CI database.
-Reason: A skipped integration test reads as green in a one-line summary, which is how this one went unnoticed. Tests that need only the database must run whenever the suite runs; tests that need the private dataset or API keys still skip, with the reason in the skip message. The fixture lives at the repository root because the backend, connectors and eval suites all need it.
-Revisit if: The suite moves to a session-scoped event loop (pytest-asyncio ``loop_scope="session"``); a single shared engine would then be safe and cheaper than one per test.
 
-## 2026-04-26 — Phase 12: materialize property/building/liegenschaft markdown into tables (instead of render-on-GET)
-Context: KEYSTONE has rendered the canonical markdown live on every ``GET /properties/{id}/markdown`` since Phase 1. That kept the file "always fresh," but blocked two things the PM wanted: (1) a portfolio-wide *what-changed-since* feed for a live-update bell, which can't be built off render-on-GET because nothing remembers when each property's view last changed; and (2) propagation — a building-tier event needs to refresh every property file under that building, but render-on-GET fires only when *that* property is read, so a tenant who hasn't opened their unit's view sees stale facts.
-Decision: Add three additive tables — ``property_files``, ``building_files``, ``liegenschaft_files`` — keyed on the scope id. Every fact write fans out to update the matching row(s) atomically with the write (see the propagation-cascade decision below). Reads of the existing ``/markdown`` endpoints check the table first and fall back to a live render on cache miss; the live render is now a fallback path, not the primary path. New top-level resource ``/property_files/{id}`` returns the full row including ``trigger_event_id`` and ``trigger_summary``; new ``/property_files/changes?since=<ISO>&limit=N`` is the polling feed Phase 13 will wire to the bell.
-Reason: The materialized layer enables both PM asks at the cost of three additive tables and one fan-out helper. Keeping the renderer untouched (the existing ``backend.pipeline.renderer.render_*`` functions are reused verbatim) means the LLM/non-LLM split stays clean — the renderer is deterministic, no LLM in the materialize step, no surprise spend. The "render on every read" cost we used to pay is now amortized: writes pay it once, reads serve from cache.
-Revisit if: A renderer change starts producing materially different markdown that needs a re-materialize sweep. Bump ``GENERATION_VERSION`` in ``backend/pipeline/materializer.py`` and add a CLI flag (``materialize-all --re-render-stale-version``) that re-renders rows whose stored version is below the constant. Or if Cloud SQL row-write latency from the cascading propagation becomes a bottleneck — at that point, batch the upsert per scope tier instead of per row.
+**Context.** The end-to-end pipeline test passed on its own but skipped in a
+full run. The application caches one async engine per process
+(`backend.db.session.get_engine`), and its asyncpg pool binds to the event
+loop that first used it. pytest-asyncio gives each test a new loop, so a later
+test reused a pool attached to a closed loop and failed with "attached to a
+different loop". Each DB test guarded itself with
+`try: SELECT 1 / except Exception: skip`, which turned that failure into a
+skip. Nine test files carried the same guard; eight happened to clear the
+engine cache first and the pipeline test did not.
 
-## 2026-04-26 — Phase 12: three separate tables (property_files/building_files/liegenschaft_files), not one polymorphic ``files`` table
-Context: A polymorphic ``files`` table with ``(scope_type TEXT, scope_id UUID, content_md, ...)`` is the obvious alternative — one schema, one set of indexes, one materialize function. Three tables means more SQL surface area.
-Decision: Three tables. Each scope's PK is a typed FK to its parent (``properties.id`` / ``buildings.id`` / ``liegenschaften.id``) with ``ON DELETE CASCADE``; range scans like ``WHERE building_id = X`` for the propagation queries don't need a discriminator predicate.
-Reason: Three reasons. (1) FK cascade-on-delete is per-table and per-typed-column — a polymorphic ``scope_id`` would need application-level cleanup on every delete, which is exactly the kind of subtle "we'll fix it later" landmine that breaks at the worst time. (2) The propagation queries are scope-specific — "every property under this building" reads cleaner against ``properties`` than against ``files WHERE scope_type='property'``. (3) Adding a fourth tier (e.g. portfolio_files for a future multi-customer roll-up) is one new table, not a new enum value with corresponding constraints across the codebase.
-Revisit if: We add five+ tiers. At that point the duplication burden tips and the polymorphic table becomes worth the application-level deletion code.
+**Decision.** A root `conftest.py` gives every test a fresh engine (cache
+cleared before, engine disposed after) and provides a `db` fixture that checks
+connectivity once per session, applies the schema and migrations, and fails
+with instructions when Postgres is unreachable. All nine guards are removed.
+The pipeline test builds its own property, processes only its own event with
+`process_specific` instead of draining the queue, and needs no seed data, so it
+runs on an empty CI database.
 
-## 2026-04-26 — Phase 12: fact-write + materialize share one transaction (KEYSTONE invariant: files are never stale relative to facts)
-Context: Two implementation choices for the propagation hook. (1) Sync — call ``propagate_after_fact_write`` inside the caller's session before commit; an exception in the renderer rolls back the whole write. (2) Async — enqueue a background job that re-materializes after the fact write has committed; cheaper write latency, but the cache can be momentarily stale.
-Decision: Sync, in the caller's session. ``propagate_after_fact_write(session, ...)`` takes the existing ``AsyncSession`` and never opens its own; never commits; raises out on renderer failure. Caller commits or rolls back the whole transaction.
-Reason: The PM's request was "the file reflects the facts always." Async propagation means a window — bounded but real — where ``GET /property_files/{id}`` returns content that disagrees with ``SELECT ... FROM facts``. That disagreement is the exact thing a markdown-as-source-of-truth product cannot have. The cost is paid in two places: (a) write latency now includes one renderer call per affected scope, (b) renderer bugs become fact-write bugs (the Phase 12 ``_fetch_facts_by_scope`` ``occurred_at`` bug was discovered exactly this way and surfaced as a clean rollback rather than a silent stale cache). Both costs are acceptable for the truthfulness guarantee.
-Revisit if: A future renderer change makes per-scope render time exceed ~500 ms and the synchronous fan-out starts blocking ingest noticeably. At that point the right fix is to make the renderer faster (it's reading already-indexed tables — should always be fast), not to break the invariant. Only if that fails: introduce an async propagator with a strict "stale-tolerated, eventually-consistent" SLO and document that ``/property_files`` reads can lag by N seconds.
+**Reason.** A skipped integration test reads as green in a one-line summary,
+which is how this one went unnoticed. Tests that need only the database must
+run whenever the suite runs; tests that need the private dataset or API keys
+still skip, with the reason in the message. The fixture lives at the
+repository root because the backend, connectors and eval suites all use it.
 
-## 2026-04-26 — Phase 12: 52-property liegenschaft propagation as the documented scaling boundary
-Context: Buena's data is 1 WEG → 3 buildings → 52 properties. A single liegenschaft-tier event (Hausgeld payment, WEG invoice, modernization decision) propagates to *every* property under the WEG. That's 52 renderer calls in one transaction.
-Decision: Accept the cost as the documented scaling boundary for Buena's volume. The renderer is deterministic; per-property render is ~5–10 ms reading already-indexed facts/events; total fan-out per WEG event is ~250–500 ms. Visible in VERIFY 3 logs (52 ``renderer.fetch`` calls per WEG fact write).
-Reason: For Buena's actual volume — a few WEG-tier events per day, eclipsed by the hundred-plus per-property events — this is fine. Optimising prematurely (per-tier batched upsert, deferred render via job queue) would add code paths whose value can't be measured against the current volume. The cost is auditable in ``DECISIONS.md`` (here) and in the materializer's own ``log.info`` so anyone investigating a slow ingestion will see exactly where the time went.
-Revisit if: A customer ships a Liegenschaft with 500+ properties (an entire residential block / Wohnungsgesellschaft), at which point the fan-out is 5+ seconds per WEG event. Fix path: batch the upsert across all properties under the WEG into a single ``INSERT ... ON CONFLICT`` with a ``UNNEST`` of ``(property_id, content_md, ...)`` rows; render concurrently with ``asyncio.gather``. This is a real optimisation worth doing, but only when there's a concrete customer on the bench needing it.
+**Revisit if.** The suite moves to a session-scoped event loop; one shared
+engine would then be safe and cheaper than one per test.
 
-## 2026-04-26 — Phase 12: frontend wiring deferred to Phase 13
-Context: The ``/property_files/changes`` feed is meant to power a frontend bell that polls "what changed since I last looked." Wiring that polling, plus replacing the "Extraction in progress" empty-state with a direct render of ``content_md`` from the materialized table, is a UI surface change.
-Decision: Phase 12 ships the data layer only. Phase 13 will wire the frontend.
-Reason: The user's plan explicitly fenced frontend wiring out of Phase 12 ("WHAT THIS DOES NOT INCLUDE: Frontend wiring (defer to Phase 13)"). Splitting the two phases gives Phase 12 a clean shape — schema + materialize + propagate + read endpoints, all backend, all verifiable via ``curl`` — and lets Phase 13 design the polling cadence + bell UX without Phase 12's deploy timing constraining it.
-Revisit if: The user finds that a backend without a frontend wire-up of the feed is hard to reason about. The minimal Phase 13 surface is small: one ``useQuery`` against ``/property_files/changes`` polling at 30 s, one ``content_md`` rendering branch in ``PropertyDetail.tsx`` when ``/file`` returns empty sections — both straightforward additions to the existing UI patterns.
+## 2026-04-26: materialize rendered files into tables instead of rendering on every read
 
-## 2026-04-25 — Phase 10 Step 10.6: latent ``approval_log`` schema mismatch
-Context: Verifying the existing ``POST /admin/rejected/{id}/override`` audit trail end-to-end (per the user's "you have this — verify it works" review note) failed at the first INSERT. Phase 9.2's override endpoint writes ``approval_log (actor, action, target_type, target_id, payload)`` — but Phase 5's original schema is ``(signal_id, user_id, decision, edits)``. The columns the Phase 9.2 INSERT references simply don't exist; the override path has been broken since 9.2 shipped, and no test exercised it before now because Phase 9.2's tests focused on the validator side, not the override side.
-Decision: Migration 0008_approval_log_generic adds (actor, action, target_type, target_id, payload) as nullable columns alongside the original ones, plus drops NOT NULL on ``decision`` so signal-approvals (which still use it) and trust-layer actions can share the table cleanly. New endpoint (``POST /uncertainties/{id}/resolve``) and the existing override path now both write rows that round-trip correctly. Backward compatible — existing signal-approval INSERTs are untouched.
-Reason: The shared-table approach beats either splitting tables (``trust_audit_log`` vs ``approval_log``) or rewriting the existing inserts to cram everything into ``edits``. One audit table for all human decisions matches the operator mental model — they're going to look in *one place* to find "who decided what and when."
-Revisit if: We start needing per-decision-type indexes that don't fit the generic shape, or want decision-type FK constraints (e.g., ``target_id`` strictly typed as UUID per ``target_type``). At that point, switch to a discriminated union with ``CHECK`` constraints.
+**Context.** The property markdown was rendered live on every
+`GET /properties/{id}/markdown`. That kept it fresh but blocked two
+requirements: a portfolio-wide "what changed since" feed, which needs to know
+when each file last changed, and propagation, since a building-level event
+must refresh every property file under that building even if nobody reads it.
 
-## 2026-04-25 — Phase 10 Step 10.4: source links route through a redirect, not direct file URLs
-Context: Source links in the rendered markdown (every ``[source: <id>]`` bullet) need to actually open the originating document. Naive choice: render ``/files/<original_path>`` directly for PDFs and ``/events/<id>/raw`` for emails. Problem: the renderer doesn't know the source type per fact unless we widen ``FactRow`` to carry it everywhere, and even then, future source types (Slack pulls, ERP detail pages, web archives) would force renderer changes.
-Decision: All fact-source links go to ``/events/<id>/source``, a redirect dispatcher that looks up the event and 307s to the right surface (``/files/<path>`` for PDFs, ``/events/<id>/raw`` for emails, ``/events/<id>/detail`` for bank). The renderer never has to know which is which.
-Reason: One stable link string in rendered markdown across source-type evolutions. The redirect indirection is also where path-traversal protection lives — if a future source captured a malicious ``original_path``, the ``/files`` route still refuses it. Cost: one extra HTTP hop per click. Benefit: the markdown stays valid forever even as source-type handling changes.
-Revisit if: We start serving rendered markdown to a context where the redirect can't follow (e.g., a static export). At that point, render the resolved URL at write time and accept the renderer-knows-source coupling.
+**Decision.** Three additive tables, `property_files`, `building_files` and
+`liegenschaft_files`, keyed on the scope id. Every fact write updates the
+affected rows atomically with the write (see the same-transaction entry
+below). The `/markdown` endpoints read the table first and render live only on
+a cache miss. `GET /property_files/{id}` returns the full row including
+`trigger_event_id` and `trigger_summary`; `GET /property_files/changes?since=`
+is the polling feed.
 
-## 2026-04-25 — Phase 10 Step 10.3: read-time briefing regen, no write-side hooks
-Context: Plan called for caching the Gemini Pro briefing on ``properties.metadata.onboarding`` and regenerating on fact insertion or uncertainty resolution. Two implementation choices: hook into the worker's apply-time write path (regen runs synchronously after every fact write), or hash the latest mutation timestamps + regen lazily on the next read.
-Decision: Hash-based read-time invalidation. Cache key = sha1(last_fact_at, last_uncertainty_at, last_rejection_at). Any mutation flips the hash; the next ``GET /admin/properties/{id}/onboarding`` regenerates; subsequent reads are free until the next mutation.
-Reason: Write-path Gemini calls would push 24-second p50 onboarding latency onto every event ingestion — that's a ten-thousand-times worse trade than the alternative. Read-time regen pays the cost only when an operator actually opens the view, and only after something material changed. The cache invalidation is provably correct (any of the three mutation kinds bumps the hash).
-Revisit if: We start sending push-style notifications when an onboarding briefing has gone stale (then we'd want to know *at write time* that an open view needs a refresh). At that point, add a ``LISTEN/NOTIFY`` channel on the cache key, not a synchronous regen.
+**Reason.** Both requirements are met with three tables and one fan-out
+helper. The existing render functions are reused unchanged, so materializing
+stays deterministic and LLM-free: no spend, no matter how often it runs. The
+render cost moves from every read to each write.
 
-## 2026-04-25 — Phase 10 Step 10.3: briefing language matches property's source-event majority
-Context: First live render against hero (WE 29 — German property) emitted a perfect 7-bullet briefing in *English* while the rest of the rendered markdown was German. The Gemini Pro prompt was English-only.
-Decision: Two prompt templates (``ONBOARDING_PROMPT_DE`` and ``ONBOARDING_PROMPT_EN``); ``backend.services.onboarding.render_onboarding`` passes the property's detected language through. The German prompt uses ``Lücke:`` as the explicit gap-marker prefix (parallel to the English ``Gap:``).
-Reason: A German property manager reading their own property's file in English breaks the demo's whole "this is your file" trust narrative. Cost: one extra prompt template to maintain. Benefit: native-language rendering for Buena's primary cohort, which is most of the demo's substance.
-Revisit if: We add a third locale or someone reports a property whose source-event mix is bilingual. The detector falls back to English on ties — that's a deliberate "least surprise" choice but worth re-checking against real usage.
+**Revisit if.** A renderer change produces materially different output and
+needs a re-render sweep (bump `GENERATION_VERSION` in
+`backend/pipeline/materializer.py` and re-render rows below it), or row-write
+latency from cascading propagation becomes a bottleneck (batch the upsert per
+tier).
 
-## 2026-04-25 — Phase 10 IMAP: live transport remains untested offline
-Context: User asked to verify live IMAP polling on real Buena-style emails before Phase 10 closes. The poller's ingestion path (parsing real German .eml, writing events idempotently on Message-ID, no-op safety when creds are missing) is fully tested with 4 tests against real ``Extracted/emails/`` files. The actual IMAP transport (``imapclient.IMAPClient`` connect/login/select/search/fetch loop in ``poll_once``) requires a live IMAP server.
-Decision: Ship Phase 10 without an offline test of the transport. Document the gap.
-Reason: ``imapclient`` is a mature library; the wrapper is ~10 lines of standard usage; the parsed payload it hands to ``_ingest`` *is* tested on real Buena .eml content. Spending the time to mock-IMAP-server everything would push other higher-impact work (operator action endpoints, document linking) without changing risk meaningfully.
-Revisit if: We hit a real IMAP issue in production (charset edge case, OAuth instead of password, IDLE-mode push instead of polling). At that point, set up a containerised dovecot for integration tests rather than mocking imapclient internals.
+## 2026-04-26: three file tables, not one polymorphic table
 
-## 2026-04-25 — Phase 9 Step 9.1: defer ``POST /uncertainties/{id}/resolve`` to post-hackathon
-Context: Step 9.1 ships uncertainty as first-class output — extractor emits ``uncertain[]``, validator's ``needs_review`` verdicts route here, sub-floor confidence (< 0.7) facts demote here, renderer surfaces a "Needs Review" / "Zu prüfen" subsection per section, and ``GET /admin/properties/{id}/uncertainties`` lists everything. The original plan also called for ``POST /uncertainties/{id}/resolve`` (promote to fact, dismiss with reason).
-Decision: Ship the read-only path only. ``POST /resolve`` is **deferred** to post-hackathon. The validator's hard-reject path already has ``POST /admin/rejected/{id}/override`` from Step 9.2, so the override surface is demonstrable; the uncertainty surface is purely read-only for now.
-Reason: Hackathon time discipline. The demo's value is in *seeing* the system render an honest "I noticed something I can't commit to" subsection — that's the trust-layer narrative. Judges won't click through to resolve uncertainties; they'll read the rendered markdown and move on. Building the resolution surface costs ~1 hour (write fact + audit log + state transitions + test) for zero demo lift. Phase 10 work has higher marginal return on the same hour.
-Revisit if: Real users start consuming the uncertainty inbox in production, or the demo script grows a beat where a judge does click "resolve" on an uncertainty. The pattern from ``POST /rejected/{id}/override`` is directly transferable — the resolution endpoint is essentially the same shape.
+**Context.** A single `files` table with `(scope_type, scope_id, content_md,
+...)` is the obvious alternative: one schema, one index set, one materialize
+function.
 
-## 2026-04-25 — Phase 8 Step 6: stop, pivot to hero-property backfill, defer Steps 7-9
-Context: Step 6's full 6,546-email backfill silent-hung at minute 5:24 with `concurrency=4` after 251 events / 85 facts / 100 successful Gemini Pro calls / $0.4868 spent. All 4 worker tasks ended up blocked on simultaneous Pro calls that never returned (no 429, no exception, no log). DB state and cost ledger were both frozen at the moment of hang for >10 minutes before the silence-watchdog tripped and the kill ladder fired. Forensics in `docs/eval-runs/2026-04-25-step6-partial.md`.
-Decision: Do *not* restart at sequential. Take what we have — 251 events, 85 facts, three-tier routing working on real WEG topology, eval framework with measured 73 % category accuracy — as Phase 8 substance. Run a *targeted* hero-property backfill (`scripts/hero_backfill.py`) so the demo's onboarding view reads as rich. Skip Phase 8 Steps 7, 8, 9 entirely (Step 7+8 stayed staged on disk for post-hackathon, Step 9 is unstarted). Tag `phase-8-complete` and immediately start `phase-9/trust-layer` Step 9.2 (constraint validator).
-Reason: Hackathon time discipline. Spending the next 6+ hours getting the rest of the 6,546 emails through (sequential rate is ~1 event / 12 s) displaces Phase 9 (trust layer) and Phase 10 (replay + onboarding) — both PM-prioritised. Volume isn't a demo requirement; the replay engine in Phase 10 reads directly from the `.eml` archive, not the DB. The hero property's *complete* coverage is what the demo actually needs.
-Revisit if: Post-hackathon. The full backfill resumes cleanly from the existing $0.4868 / $20 ledger (or with `--reset-cost-ledger`); source-ref idempotency means already-processed events are skipped. Sequential re-run: ~6.5 h, ~$9.30 additional. Or address the silent-hang properly first — see the next DECISIONS entry.
+**Decision.** Three tables. Each primary key is a typed foreign key to its
+parent (`properties.id`, `buildings.id`, `liegenschaften.id`) with
+`ON DELETE CASCADE`.
 
-## 2026-04-25 — Phase 8 Step 6: 60-second timeout on `extract_facts` (silent-hang mitigation)
-Context: The concurrency=4 hang above wasn't really *about* concurrency. A single Gemini Pro call can silent-hang too — the Google SDK's `generate_content` is a blocking call wrapped in `asyncio.to_thread`, and if the server-side response never arrives, that thread waits forever. Concurrency=4 just made the failure surface 4× faster.
-Decision: Wrap the call site in `asyncio.wait_for(timeout=60.0)`. p99 latency observed in Step 6 was 37 s, so 60 s is comfortable headroom. On timeout the existing retry/exception path kicks in, and after `max_attempts=3` the rule fallback fires. Default is exposed as `GEMINI_EXTRACT_TIMEOUT_S` so future tuning is one-line.
-Reason: Genuine product hygiene worth shipping regardless of phase. Without the timeout, *any* future production rollout — sequential, concurrent, scheduled, on-demand — has a "permanent freeze on a single bad call" failure mode. With it, the worst case is a 60 s pause on one event's attempt; the retry handles it; the operator sees one warning log and the pipeline keeps moving.
-Revisit if: We see legitimate Gemini calls that need > 60 s (raise the ceiling per-call) or want to surface timeouts as `failed_events` rows for the admin inbox in Step 9 (currently the rule fallback runs and the event leaves the queue cleanly).
+**Reason.** Cascading deletes need a typed foreign key; a polymorphic
+`scope_id` would need application-level cleanup on every delete, the kind of
+deferred chore that fails at the worst time. The propagation queries ("every
+property under this building") read naturally against typed tables. A fourth
+tier would be one new table rather than a new enum value threaded through
+constraints.
 
-## 2026-04-25 — Phase 8 Step 6: hero property = WE 29 (`509393da-6806-49ef-9e59-3da0213008cd`)
-Context: Demo's onboarding view (Phase 10 Step 10.3) needs one property with rich extracted facts so the file-builds-itself beat reads as substantive. Among the 99 property-routed events from the partial Step 6 pass, top three candidates were GE 37 (9 events / 6 facts), WE 29 (8 events / 6 facts), and WE 50 (6 events / 7 facts).
-Decision: **`KEYSTONE_DEMO_HERO_PROPERTY = 509393da-6806-49ef-9e59-3da0213008cd`** (`Musterstraße 26 WE 29`). Most balanced cross-section of facts: maint=2 / lease=1 / fin=3, all sections populated. `scripts/hero_backfill.py` runs the targeted re-extraction filtered by the property's specific aliases (`EH-029`, `WE 29`, `4. OG mitte` — drops `HAUS-14` and the bare street prefix because they're building-wide, not unit-specific).
-Reason: WE 29 has the cleanest narrative arc. GE 37 has higher event count but it's a `Gewerbe` (commercial unit) — most demo viewers will read "apartment" and connect more directly to a `WE` (Wohneinheit). WE 50 has highest fact density but only 6 events — less to visibly stream during the replay beat. WE 29 is the median story.
-Revisit if: The hero backfill produces < 30 events (cut-off where the onboarding "60-second briefing" looks thin), in which case fall back to GE 37 with a one-line "kommerziell" framing in the narrative. Or if a richer property surfaces post-hackathon with the full backfill complete.
+**Revisit if.** The number of tiers grows past four or five, where the
+duplication outweighs the cleanup code.
 
-## 2026-04-25 — Phase 8 Step 6: cost-ledger reset_label has no test-vs-prod separation (Phase 9+ hardening)
-Context: While the live Buena backfill was running with label `step6_email_backfill`, I started `pytest connectors/tests/` to sanity-check Step 7+8 drafts. The cost-cap test calls `cost_ledger.reset_label('step6_email_backfill')` to set up its starting state — which would have **deleted the live ledger row** mid-run, causing the backfill's next `cost_ledger.charge` to raise `RuntimeError("cost_ledger has no row for label=…")` and crash with several thousand more emails to process. Caught and killed pytest before damage. Today's quick fix: tests monkeypatch the label to a per-test unique `step6_test_<uuid>`, so concurrent runs are now isolated.
-Decision: Quick fix landed today. Defer the structural fix — making `cost_ledger.reset_label()` refuse any label whose name doesn't start with a recognised test prefix (`test_*`, `_test_*`, etc.) at runtime — to Phase 9 hardening. Production labels (`step5_eval`, `step6_email_backfill`, `step7_incremental`, `pdf_doctype`) would be opt-in via `reset_label(..., allow_production=True)` with the friction-gated `y/N` prompt that already lives in the CLI.
-Reason: Today's test isolation patch closes the immediate landmine. The structural guard is a real bug (any future test author can repeat the same near-miss) but isn't blocking Phase 8. Putting the guard in Phase 9 lets us land it next to the trust-layer / admin-overrides surface where the same "production data needs friction" theme is being designed.
-Revisit if: Anyone — me, future contributors, or CI — touches `reset_label()` from a test file again. Or if Phase 9 ships before this guard does (move it forward).
+## 2026-04-26: fact writes and file updates share one transaction
 
-## 2026-04-25 — Phase 8 Step 6: backfill concurrency=4 with bounded cost-cap overshoot
-Context: The Buena email archive is 6,546 .eml files. Sequential extraction at ~3 minutes per 50 emails meant ~6.5 hours for the full pass. Concurrent extraction is the obvious speedup, but `cost_ledger.charge` is a read-modify-write — naive parallelism could double-spend by reading the same `cumulative_usd` from two workers and both passing the cap check before either UPDATE lands.
-Decision: Run 4 parallel extraction workers. Serialize `cost_ledger.charge` behind a single `asyncio.Lock` so the read-modify-write is atomic at the application level (Postgres `FOR UPDATE` already serializes at the DB level — the asyncio lock is belt-and-suspenders, and makes the contract obvious in the loader). Worst-case overshoot when the cap is breached mid-flight is bounded by `concurrency × max_call_cost`. With `concurrency=4` and `max_call_cost ≈ $0.005` (a Pro call on a long German email at ~3k prompt + 200 completion tokens), the bound is **$0.02**. The cap is $20.00, so the overshoot is < 0.1% — auditable.
-Reason: 4× wall-clock improvement (≈1.5 h vs 6.5 h) for a $0.02 worst-case cost ceiling that's well within tolerance. Going higher (`concurrency=8`) would shave another ~30 min but doubles the overshoot bound and runs into Gemini per-minute rate-limit territory; we'll revisit if signal-discovery (Step 8) needs a faster-moving extraction pass.
-Revisit if: Gemini publishes higher per-minute rate limits, OR the backfill needs to repeat under a tighter cost cap, OR a real concurrency bug surfaces (cost-ledger deadlock, double-charge in logs, race on the `failed_events` UPSERT that we missed). Per the launch directive, any concurrency-related surprise in the first 5 minutes triggers a kill-and-revert-to-sequential.
+**Context.** Propagation could run synchronously in the writer's session (a
+renderer error rolls back the fact write) or asynchronously after commit
+(cheaper writes, but a window where the file disagrees with the facts).
 
-## 2026-04-25 — Phase 8 Step 5: lease F1 = 0.62 driven by `lease.termination_notice` over-firing on owner-communication emails
-Context: After Gemini Pro shipped on the German-first prompt, lease F1 was 0.62 — driven entirely by 5 spurious `lease.termination_notice` emissions on emails whose ground-truth category was `owner_communication` (sale intent, modernization consent, WEG governance). The model conflates "the relationship is changing" (owner side) with "the tenancy is ending" (lease side).
-Decision: Ship as-is at 0.62, above the VERIFY 5 acceptance floor of 0.50. No prompt patch in Step 5; the residual is logged as a known limitation.
-Reason: Step 5's quality bar is a floor, not a target — meeting it is the gate, exceeding it is gravy. Tightening the prompt today risks regressing other categories without a corresponding eval expansion to detect the regression. Better to leave the eval set as the witness and revisit when there's signal-discovery (Step 8) or production usage data showing this creates false signals.
-Revisit if: Step 8 signal-discovery surfaces `lease.termination_notice` as a high-recall but low-precision rule, OR production usage shows owner-communication emails routinely triggering tenant-change downstream actions. Fix by adding to the German prompt: "Only emit `lease.termination_notice` when the *tenant* is signaling end of tenancy. Owner-side intent (sale, modernization, WEG governance) is `owner_communication`, not lease."
+**Decision.** Synchronous. `propagate_after_fact_write(session, ...)` takes the
+caller's `AsyncSession`, never opens or commits its own, and raises on renderer
+failure.
 
-## 2026-04-25 — Phase 8 Step 5: compliance ↔ owner_communication category bleed on WEG-related emails
-Context: 2 of 30 ground-truth `compliance` emails (Brandschutznachweis, Mietpreisbremse-adjacent topics) classified as `owner_communication` because the prompt's section-mapping pulls WEG-touching topics toward owner_communication. Within the F1 = 1.00 band on `compliance` (the other 2 hit), but the category-accuracy miss is real.
-Decision: Within the 70% category-accuracy band; not patched in Step 5. Logged as a Step 8 lookback item.
-Reason: Same reasoning as the lease residual — the band is met, the failure mode is identifiable, and prompt-tuning without an expanded eval set risks unmeasured collateral. The category bleed is consistent (always pulls toward owner_communication, never the reverse), so it's tractable when we get to it.
-Revisit if: Step 8 signal-discovery includes a compliance-class signal (Brandschutz, Bauamt deadlines, Mietpreisbremse review) AND owner-communication emails are bleeding into the trigger set. Fix in the German prompt by explicitly listing compliance triggers (Brandschutznachweis, Bauamt, Mietpreisbremse, Vermessungsprotokoll) above the WEG-governance triggers in the section-routing list.
+**Reason.** The file is the product's source of truth; a window in which
+`GET /property_files/{id}` contradicts `SELECT ... FROM facts` is exactly what
+it cannot have. The costs are write latency (one render per affected scope)
+and renderer bugs becoming write failures. The second proved useful: a
+renderer bug that dropped `occurred_at` for building and Liegenschaft scopes
+surfaced as a clean rollback the first time all three render paths ran,
+instead of as a silently stale cache.
 
-## 2026-04-25 — Phase 8 Step 5: value-string fidelity ~3 % (paraphrase, not source-quote)
-Context: After the calibration metric was corrected to (section, field) match, the eval re-run showed 79 % observed accuracy in the 0.90–1.00 confidence bucket on key placement — but the per-section `value_match_rate` column is mostly 0.00 (max 0.40 on liegenschaft_financials). The model paraphrases the value: "Heizung defekt, kein Warmwasser seit gestern" becomes "Heating system malfunction reported; tenant lacks hot water since yesterday." Right slot, different words.
-Decision: Accept for Phase 8. The key-placement accuracy is what the trust layer is built on; paraphrase is a Phase 9 concern when we surface facts in markdown to humans who'll want to see source-language verbatim quotes.
-Reason: Phase 8 is product-quality on extraction; Phase 9 is the trust layer where source-fidelity becomes load-bearing (a fact rendered as paraphrase loses the auditability that the trust layer is selling). Forcing verbatim quotes today would either over-constrain the model (regressing recall) or require a post-hoc string-snap pass we don't have a primitive for yet.
-Revisit if: Phase 9 trust-layer prompt-tuning: add a "value MUST be a verbatim substring of the source event when possible; only paraphrase when the source spans multiple sentences or contains markup that would corrupt the value field" clause. Validate by re-running the eval and watching `value_match_rate` rise (target ≥ 0.6 on the dense buckets).
+**Revisit if.** Per-scope render time exceeds roughly 500 ms. Make the
+renderer faster first (it reads indexed tables); only if that fails, introduce
+asynchronous propagation with a documented staleness bound.
 
-## 2026-04-25 — Phase 8.1 Step 3b: forward-looking PDF placeholder text ("awaiting extraction")
-Context: The connectors emitted `[INVOICE: filename.pdf] (text not extracted)` for PDF events whose body wasn't parsed at backfill time (we deliberately skip pdfplumber on the 329 PDFs in Step 3 to keep the cost ledger free for Steps 4-6). The phrasing reads like an error to a human glancing at the WEG Context block.
-Decision: The connectors now emit `Invoice {filename} — awaiting extraction` (or `Letter {filename} — …`) for the no-body case, and the renderer's `_context_body` reformats existing rows to the same wording when `metadata.head_chars == 0`. New ingest writes the new text directly; existing 194 invoice rows display via the renderer fix without a re-write.
-Reason: Phase 9's trust-layer ethos says the system should be honest about its epistemic state. "Awaiting extraction" is forward-looking and accurate — we know there's content there, we haven't processed it yet. It's not a failure mode to apologise for.
-Revisit if: We start extracting PDF text on backfill (Steps 4-6 may opt-in) — at that point the renderer will fall through to the snippet path automatically once `head_chars > 0`.
+## 2026-04-26: Liegenschaft-wide fan-out is the documented scaling boundary
 
-## 2026-04-25 — Phase 8.1 Step 3b: 13 closed-lease MIE rows are *known acceptable* unrouted, not a routing bug
-Context: After re-route, 13 events remain unrouted with the diagnostic `refs (none) kat=miete unresolved`. They are bank rows referencing `MIE-NNN` where the matching tenant has `mietende` set (lease ended). Step 2's loader correctly skipped the closed-lease tenant from `relationships(occupied_by)` because the active-only invariant — so the router can't resolve the `MIE-NNN` to a current property.
-Decision: This is *expected* behaviour, not a routing miss. Logged here so a future operator reading the unrouted inbox doesn't waste cycles trying to fix it. If a property manager genuinely needs closed-lease historical routing, the right move is a Phase 9+ feature (e.g. an `historical_tenancies` table or an opt-in `include_closed=True` flag on the loader) — not loosening Step 2's invariant.
-Reason: The active-only constraint protects the property markdown's "who lives here today" answer. Including closed-lease tenants in `occupied_by` would corrupt that for every per-property reader. Keeping 13 events unrouted is the cheapest, most honest representation.
-Revisit if: A customer ships a meaningful number of historical-tenant events that need attribution to a unit (e.g. for late-payment reconstruction across tenancies) — at that point design a parallel `historical_occupied_by` edge that the router can consult after the active-only path misses.
+**Context.** The sample dataset is one Liegenschaft, three buildings and 52
+units. A Liegenschaft-level event propagates to every property under it: 52
+renders in one transaction.
 
-## 2026-04-25 — Phase 8.1 Step 3b: three-tier ownership hierarchy (Liegenschaft → Building → Property)
-Context: After Step 3a shipped, the live verify revealed 100% of Buena invoices and 12.5% of bank rows landing unrouted. Investigation showed Buena's events span three ownership tiers (1 WEG → 3 Häuser → 52 units), but the schema only modelled per-property attribution. WEG-billed events have a *known* correct attribution; routing them to "unrouted" was hiding truth, not surfacing a gap.
-Decision: Add `liegenschaften` table + `buildings.liegenschaft_id` FK + `events.{building_id, liegenschaft_id}` + `facts.{building_id, liegenschaft_id}` (additive migration `0002_liegenschaft_hierarchy`). Router gains precedence rules for HAUS-N alias → building and WEG keyword/kategorie/invoice → liegenschaft. Renderer ends property markdown with **Building Context** and **WEG Context** subsections; new `/buildings/{id}/markdown` and `/liegenschaften/{id}/markdown` endpoints.
-Reason: Routing a WEG event to one Haus (Option 1: HAUS-12 as primary) is the same false-attribution mistake we rejected at the unit level. A junction table (Option 3) over-engineers a 1:N relationship and burdens every reader. Liegenschaft alongside building reflects German Hausverwaltung reality and is supported by `stammdaten.json::liegenschaft` directly.
-Revisit if: Customer data shows a multi-Liegenschaft tenant — at that point `_default_liegenschaft` (which assumes a single WEG) needs a routing key like `metadata.liegenschaft_id` or a verwendungszweck-based heuristic.
+**Decision.** Accept the cost at current volume. Rendering one property reads
+already-indexed facts and events, and the 52 render calls per Liegenschaft
+fact are visible in the materializer's logs.
 
-## 2026-04-25 — Phase 8.1 Step 3b: case-insensitive word-boundary WEG keyword matching
-Context: Buena's `verwendungszweck` mixes capitalization freely — `Hausgeld`, `HAUSGELD`, `hausgeld` all appear in real rows. A naive substring or case-sensitive regex would either over-match (`hausgeldverordnung` shouldn't trigger if it ever appeared) or under-match (uppercase rows missed).
-Decision: `_WEG_KEYWORD_RE = re.compile(rf"\b(?:{kws})\b", re.IGNORECASE)` over the keyword list. Word boundaries prevent substring traps; `re.IGNORECASE` covers casing variance. Keyword list is auditable: drawn from real Buena data + the German Hausverwaltung lexicon (Hausgeld, Verwaltergebühr/Verwaltergebuehr, Gemeinschaftskosten, Hausverwaltung, WEG, Sonderumlage, Instandhaltungsrücklage/Instandhaltungsruecklage, Kontoführungsgebühr).
-Reason: Predictable matching across casing variants; auditable list of triggers; no third-party NLP dependency.
-Revisit if: New customer data shows a token-overlap edge case (e.g. `WEG-` as a model number unrelated to Wohnungseigentümergemeinschaft) — at that point promote the heuristic to per-customer keyword sets.
+**Reason.** Liegenschaft-level events are a few per day against a hundred or
+more unit-level events. Batching or deferring renders would add code paths
+whose benefit cannot be measured at this volume.
 
-## 2026-04-25 — Phase 8.1 Step 3b: invoice → liegenschaft fallback (Buena invariant)
-Context: Invoice PDFs in Buena's archive carry filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf` — contractor + invoice number, never an EH-NNN or HAUS-NN. Filename heuristics + WEG-keyword matching both fail, but the events are unambiguously WEG bills.
-Decision: Router accepts an `event_source` argument; when `event_source == "invoice"` and a single Liegenschaft exists, route there with `method='weg_invoice'`, `reason='invoice without per-unit attribution'`. Loaders pass `event_source` from the `ConnectorEvent.source` field.
-Reason: Honest data-shape recognition: every invoice in Buena's archive IS a WEG bill. Customers with per-Haus invoice patterns (filenames containing `HAUS-NN`) hit precedence 4 first. Customers with per-unit invoices carry `EH-NNN` or `MIE-NNN` and hit precedence 1-3.
-Revisit if: A customer ships per-property invoices that lack EH-NNN — at that point the rule needs a per-customer override.
+**Revisit if.** A Liegenschaft has hundreds of units. Then batch the upsert
+into one `INSERT ... ON CONFLICT` over `UNNEST(...)` and render concurrently
+with `asyncio.gather`.
 
-## 2026-04-25 — Phase 8.1 Step 3b: one-time re-route migration is documented, not permanent
-Context: After Migration 0002 lands, already-ingested events need their `building_id` / `liegenschaft_id` populated via UPDATE. Running the original backfill skips them (idempotent on `(source, source_ref)`).
-Decision: Ship `connectors.cli re-route` as a one-time migration step. Walks events with no scope set and re-evaluates routing using the current rules. Idempotent (re-running on already-routed events scans nothing). Documented as one-time in CLI help text and module docstring; not added to the scheduler or any auto-run path. Per-event live ingestion in `_ingest_one` already calls `route_structured` on each new row, so the rule changes apply automatically to new events.
-Reason: Migration semantics belong in a dedicated CLI subcommand operators run intentionally, not in the live pipeline. The lack of automation makes it auditable: ledger-style record of "we ran this on date X" lives in DECISIONS.md.
-Revisit if: We start needing recurring re-routes (e.g. when adding new keywords) — at that point the right tool is a SQL migration that backfills, not a Python loop.
+## 2026-04-26: the frontend change feed is a separate change
 
-## 2026-04-25 — Phase 8 Step 3: structured router refuses to invent property attribution
-Context: Invoices in Buena's archive (filename pattern `YYYYMMDD_DL-NNN_INV-NNN.pdf`) are billed to the WEG (building owners' association), not to a specific unit. The filename carries contractor (DL-NNN) and invoice number (INV-NNN), never an `EH-NNN`. Bank rows of `kategorie=dienstleister` are the same shape — payments to a contractor for shared services, not for one unit.
-Decision: `backend.pipeline.router.route_structured` only accepts a property when `metadata.eh_id`, `metadata.mie_id`, or `metadata.invoice_ref` *resolves* to one. No token-overlap fallback for structured events; no inventing attribution for shared services. The result: invoice events land 100% unrouted, bank events land 12.5% unrouted (the contractor-payment subset).
-Reason: Honest — the schema currently models attribution at the property level only. Sprinkling shared-service costs onto the first matching property would corrupt every per-property financial metric. The unrouted inbox (`GET /admin/unrouted`) makes the gap observable instead of hidden.
-Revisit if: We add a `building_id` column to `events` (one-line additive migration) so building-level events have somewhere honest to land. Step 8 / 9 work could prompt this; documented as a follow-up rather than a Step 3 blocker.
+**Context.** `/property_files/changes` is meant to drive a "what changed"
+notification in the UI, and the materialized `content_md` could replace the
+empty-state shown for properties without extracted facts.
 
-## 2026-04-25 — Phase 8 Step 3: per-month rent payments supersede the prior `last_rent_payment`
-Context: A two-year bank archive holds 12-24 rent payments per active tenant. Writing each as its own immutable fact would clutter the renderer and obscure the "is this property current?" question.
-Decision: `extract_bank_facts` writes `financials.last_rent_payment` superseding any prior fact for the same `(property_id, section, field)`. Each new payment becomes the current fact; the chain of superseded predecessors is the audit history (still queryable via `superseded_by`). Identical-value writes short-circuit so re-runs add nothing.
-Reason: Matches KEYSTONE's "facts = current truth" rule (Part VI). 611 raw rent rows produced 26 current `last_rent_payment` facts after supersession — one per active tenant who has ever paid.
-Revisit if: We add explicit financial activity timeline UI that wants every monthly row visible — the supersession history is already the data, just needs a different read path.
+**Decision.** The backend shipped the data layer only: schema, materializer,
+propagation and read endpoints, all verifiable with `curl`. Frontend wiring is
+separate.
 
-## 2026-04-25 — Phase 8 Step 1: connectors/ as customer-agnostic ingestion layer
-Context: Buena dropped 29 MB of partner data; the next customer will drop a different shape. Earlier plans treated Buena as a special path inside `seed/`; that bakes a customer name into a generic primitive.
-Decision: `connectors/` is the new customer-agnostic module. `connectors/base.py` defines the `Connector` Protocol + `ConnectorEvent` dataclass; primitives (`csv_stammdaten`, `eml_archive`, `camt_bank`, `pdf_invoice_archive`, `pdf_letter_archive`) are reusable. Each customer ships a single composite (`connectors/<customer>_archive.py`) that knows their directory shape. PII redaction is centralized in `connectors/redact.py` and applied at ingestion. Cost ledger (`connectors/cost_ledger.py` + `cost_ledger` table via `connectors/migrations.py`) is durable across CLI invocations.
-Reason: Treats Buena as the first customer of a real architecture, not an exception. Future customers add one composite + tests; the primitives + redaction + ledger don't change.
-Revisit if: A customer's shape doesn't fit the primitives — at that point we extend a primitive (e.g. add a Slack-archive walker) rather than fork.
+**Reason.** Keeping the two apart let the data layer be verified on its own,
+and lets the polling cadence and UI be designed without backend deployment
+constraints.
 
-## 2026-04-25 — Phase 8 Step 1: redact at ingestion, not at render
-Context: Several places in the pipeline (renderer, MCP responses, SSE stream) read DB rows back out. Redacting at render means every reader has to know to scrub.
-Decision: `connectors/redact.py` scrubs IBANs (→ `****<last4>`), full phones (→ `+CC *** **<last4>`), and email domains (→ `<local>@example.com`) before yielding any `ConnectorEvent`. Tests assert no `r"DE\d{20}"` and no full E.164 phone survives a round-trip through any connector. Buena is treated as PII until anonymisation status is confirmed (TODO note in `redact.py`).
-Reason: Single chokepoint; one module to audit; zero burden on readers; defence-in-depth (renderer can still scrub additionally without changing semantics).
-Revisit if: Buena confirms the dataset is fully synthetic — even then, keep redaction on by default; flip a feature flag if specific demos need fuller display.
+**Revisit if.** The feed stays unused. The minimal frontend change is one
+query polling `/property_files/changes` and one branch rendering `content_md`
+when the structured file view is empty.
 
-## 2026-04-25 — Phase 8 Step 1: durable cost ledger persists across invocations
-Context: A single `--max-total-cost-usd $20` cap should govern the entire Buena backfill, not just one CLI run. A per-run-only counter would let an operator hit Ctrl-C, restart, and silently spend another $20.
-Decision: New `cost_ledger(source_label, cumulative_usd, cap_usd, hit_at)` table (additive `CREATE TABLE IF NOT EXISTS`, applied via `connectors/migrations.py`). Every Gemini call charges via `connectors.cost_ledger.charge`; on `>= cap` the row's `hit_at` is stamped and `CostCapExceeded` raised. Subsequent invocations read the row and abort immediately. Reset is friction-gated (`--reset-cost-ledger` + interactive `y/N`).
-Reason: Spend-across-runs is the only definition that makes the cap real; defaults to "remember spend" so the operator never accidentally over-spends.
-Revisit if: We add per-customer multi-tenancy and need per-customer caps — at that point use `source_label` to namespace per customer, which the schema already supports.
+**Status.** Still open; the frontend does not call the changes feed yet.
 
-## 2026-04-25 — Phase 8 Step 2: `_upsert_property` honours `prop.metadata`
-Context: The Phase 0 `_upsert_property` hardcoded `metadata = {"seed_key": prop.key}`, which kept the Berliner seed simple but lost richer payload (`kaltmiete`, `lage`, `wohnflaeche_qm`, …) needed for Buena units.
-Decision: When `prop.metadata` is non-empty, the upsert merges it under `seed_key` so both worlds coexist (`{"seed_key": "EH-014", "lage": "5. OG mitte", "wohnflaeche_qm": 85.0, …}`). Same pattern for `_upsert_tenant`. `PropertySeed.metadata` and `TenantSeed.metadata` default to `{}` so the hand-crafted Berliner seed continues bit-identically (no change to existing data).
-Reason: Single ingestion path for *all* customer master data — Buena rows and Berliner rows travel through the same SQL.
-Revisit if: We start needing schema-level richer fields (e.g. dedicated columns for kaltmiete) — at that point migrate columns out of JSONB rather than fork the upsert.
+## 2026-04-25: the trust-layer override path had been failing; `approval_log` generalized
 
-## 2026-04-25 — Phase 8 Step 2: tenants with `mietende` set are skipped (active-only)
-Context: Buena's `mieter.csv` includes 26 rows total but at least one has a populated `mietende` (lease ended). Including those as `occupied_by` edges would misrepresent current occupancy.
-Decision: The Buena loader skips any tenant whose `metadata.active` is `False` (mietende set). Skipped count is reported in the summary (`tenants_skipped_inactive`). The 25 active tenants land with `occupied_by` edges; the 1 closed lease stays out of the relationship graph.
-Reason: "Who lives here today" is a load-bearing question for the markdown / signals; including ex-tenants would confuse it. Closed leases should resurface only via lease history facts (Step 3+).
-Revisit if: Lease-history reconstruction needs the closed-lease tenant rows in `tenants` — at that point insert them with a metadata flag and keep them out of `relationships(occupied_by)`.
+**Context.** Verifying the audit trail of `POST /admin/rejected/{id}/override`
+end to end failed on the first insert. The override code wrote
+`approval_log (actor, action, target_type, target_id, payload)`, but the table
+had only `(signal_id, user_id, decision, edits)`. The columns it referenced did
+not exist, so the override path had been broken since it shipped. No test
+caught it because the tests for that change covered the validator side, not
+the override side.
 
-## 2026-04-24 — pgvector image: `pgvector/pgvector:pg15` (not `ankane/pgvector:pg15`)
-Context: Part V specified `ankane/pgvector:pg15`, but that tag does not exist on Docker Hub — `ankane/pgvector` uses v-prefixed tags and the modern pg15 flavor has moved to the official `pgvector/pgvector` repo.
-Decision: Use `pgvector/pgvector:pg15` in `docker-compose.yml`.
-Reason: Unblocks Phase 0 without any behavior change; `pgvector/pgvector` is the canonical upstream image and pulls cleanly. Pinning the requested tag would have failed on `docker compose up`.
-Revisit if: We standardize on a newer Postgres (pg16) or move to Railway-managed Postgres.
+**Decision.** Migration `0008_approval_log_generic` adds `actor`, `action`,
+`target_type`, `target_id` and `payload` as nullable columns next to the
+original ones, and drops `NOT NULL` on `decision`, so signal approvals (which
+still use `decision`) and trust-layer actions share the table. The override
+path and the new uncertainty-resolve endpoint both write rows that round-trip.
+Existing signal-approval inserts are unchanged.
 
-## 2026-04-24 — Host port mapping `5433:5432`
-Context: The dev box already runs a Homebrew `postgresql@15` on 127.0.0.1:5432, so publishing the container on 5432 leaves `localhost:5432` pointed at the host Postgres (where role `keystone` doesn't exist) and the seed script fails.
-Decision: Expose Postgres on host port 5433, container 5432. `.env.example` DSNs updated in lockstep so no downstream code has to know.
-Reason: Stopping the user's Brew service would be destructive to their environment. The port number isn't load-bearing — all application connections read `DATABASE_URL(_SYNC)` from `.env`.
-Revisit if: We ship to Railway (ports irrelevant there) or the team wants to standardize on 5432 locally.
+**Reason.** One audit table for every human decision matches how operators
+look for "who decided what, and when". Splitting into two tables, or packing
+trust actions into `edits`, would make that question harder to answer.
 
-## 2026-04-24 — Seed uses psycopg2 (sync), not SQLAlchemy async
-Context: The seed needs to run schema DDL and ~100 upserts from a CLI. The production code uses SQLAlchemy async, but bringing up an event loop for a one-shot script adds complexity.
-Decision: `seed/seed.py` connects with `psycopg2` directly (sync). Production request paths still use the async engine in `backend/db/session.py`.
-Reason: Faster, simpler, identical semantics for a one-shot. `psycopg2-binary` is already a required dep for parity with APScheduler-backed jobs later.
-Revisit if: We want to share upsert helpers between the seed and runtime (unlikely — seed data stays here).
+**Revisit if.** Per-decision-type indexes or typed foreign keys on `target_id`
+are needed; then use a discriminated union with `CHECK` constraints.
 
-## 2026-04-24 — Idempotent seed via natural-key SELECT-then-INSERT
-Context: The user asked for idempotent seed. `events` already has `UNIQUE (source, source_ref)`, but owners/buildings/contractors/properties/facts have no natural unique constraints in the canonical schema.
-Decision: For each of those tables the seeder does `SELECT id WHERE <natural key>` first and only inserts if absent. Facts are matched on `(property_id, section, field, source_event_id)`.
-Reason: Lets re-runs be safe without modifying the canonical schema (Part VI is verbatim). Keeps the seed understandable.
-Revisit if: We start seeing drift between seeded and runtime-produced facts — in that case the differ/applier will own supersession and the seed should stop trying to be an authority.
+## 2026-04-25: source links go through a redirect, not direct file URLs
 
-## 2026-04-24 — Fact confidence > 0.8 default for seed, lower for web/inferential
-Context: Phase 0 seeds facts directly instead of going through Gemini extraction; we still want the `confidence` column to be meaningful for the demo.
-Decision: Lease/tenant/financial facts sourced from a PDF carry 0.95–0.99; maintenance-from-email carry 0.85–0.94; Tavily/neighborhood facts carry 0.75–0.85.
-Reason: Signals downstream are meant to key off confidence, and the demo markdown visibly prints the value. Gradient matches how a real extractor would score these sources.
-Revisit if: Gemini extractor lands and its scores calibrate differently — re-seed and align.
+**Context.** Every `[source: <id>]` link in the rendered markdown must open the
+originating document. Rendering `/files/<path>` for PDFs and
+`/events/<id>/raw` for emails directly would require the renderer to know each
+fact's source type, and every new source type would mean a renderer change.
 
-## 2026-04-24 — Phase 1: dual-path extractor (Gemini Flash + rule-based fallback)
-Context: Part IV designates Gemini Flash as the extraction engine. The demo venue's wifi + Gemini's quota are both failure modes; Part XII explicitly lists "fallback to rule-based extraction for demo emails" as the mitigation.
-Decision: `backend/pipeline/extractor.py` calls `backend.services.gemini.extract_facts` when `GEMINI_API_KEY` is set, otherwise runs a deterministic keyword-based extractor covering heating/leak/payment/lease/compliance shapes. Both paths return the same `ExtractionResult`.
-Reason: Demo can't brick on a network issue, and the fallback also makes local dev / CI possible without burning Gemini quota. Gemini remains the production path — the fallback does **not** write lower-quality facts when Gemini is available.
-Revisit if: Gemini throughput becomes reliable enough to drop the fallback, or we want to log calibration deltas between the two paths.
+**Decision.** All fact-source links point to `/events/<id>/source`, which looks
+up the event and redirects (307) to the right view: `/files/<path>` for PDFs,
+`/events/<id>/raw` for emails, `/events/<id>/detail` for bank rows.
 
-## 2026-04-24 — Phase 1: seed events stamped `processed_at = received_at`
-Context: Dropping seed events into the queue with `processed_at IS NULL` caused the Phase 1 worker to rerun the rule-based extractor over the hand-crafted dataset on first boot, producing spurious "Latest heating issue: Mietvertrag" facts.
-Decision: `seed/seed.py` now writes `processed_at = received_at` for every seeded event, signalling to the worker that the hand-authored facts are authoritative.
-Reason: Keeps the seeded markdown clean; the live pipeline only touches events that actually arrive post-boot. No schema change.
-Revisit if: We start wanting the pipeline to *re-extract* over the seed (e.g. to verify Gemini output against ground truth) — in which case add a `--reprocess-seed` switch instead of flipping the default.
+**Reason.** One stable link format in rendered markdown, regardless of how
+source handling evolves. The path-traversal protection stays in `/files`, so a
+malicious stored path is still refused. The cost is one extra HTTP hop per
+click.
 
-## 2026-04-24 — Phase 5: Regulation watcher runs hourly, offline mode seeds canned headlines
-Context: Part IV says "Regulation watcher cron — hourly for keywords like 'Berlin rent cap', 'Mietpreisbremse'." Demo must still show a `regulation_change` signal on a fresh DB even when `TAVILY_API_KEY` is absent (flaky wifi, missing key, etc.).
-Decision: `backend/services/tavily.watch_regulations` polls Tavily for five canonical queries when the key is set; otherwise seeds three clearly-labelled "offline snapshot" headlines as `web` events tagged `metadata.regulation=true`. Every event is stamped `processed_at` so the extractor worker doesn't touch it — the `regulation_change` rule reads the events directly. Idempotent via `source_ref = tavily-reg:{query}:{hour}`.
-Reason: Preserves the partner-visibility bar ("every partner tool visible somewhere in the demo") without lying about live data when offline, and the hourly cadence is what Part IV specifies.
-Revisit if: We want streaming / diff-based regulation change detection — at that point store a `content_hash` per headline and only fire when it changes.
+**Revisit if.** Rendered markdown is served where redirects cannot be followed
+(a static export); then resolve URLs at render time.
 
-## 2026-04-24 — Phase 5: Aikido badge reads live when keyed, otherwise local snapshot with git SHA
-Context: Aikido is a scheduled scanner, not a mid-request API. The demo renders a "Security scan: passing" badge on Settings; we need it to be honest whether or not the CI scan has been hooked up.
-Decision: `backend/services/aikido.get_badge` attempts a live GET when `AIKIDO_API_KEY` is present, falls back to a `local_snapshot` badge that surfaces the git SHA the demo is running on (via `git rev-parse --short HEAD`). The response payload tags `source` so the UI / judges know which mode.
-Reason: "Passing" without context is a hand-wave. Showing the commit SHA + explicit source mode makes the fallback defensible and obvious.
-Revisit if: CI starts publishing scan results somewhere (e.g., GitHub Actions artifact) — point the fetcher at that instead of Aikido's REST API.
+## 2026-04-25: onboarding briefings regenerate on read, keyed by mutation timestamps
 
-## 2026-04-24 — Phase 5: Pioneer approval-rate weighting computed locally
-Context: Pioneer / Fastino may not expose a usable ranking endpoint in hackathon time. The Settings > Learning panel still needs to show Keystone is adapting to the human.
-Decision: `backend/services/pioneer.compute_learning` reads `approval_log`, derives per-signal-type approval rates (edits count as 0.8 × approved), and maps them to priority weights in `[0.5, 1.5]` with sample-size shrinkage (< 5 proposals anchored to 1.0). The trend-line sentence highlights the top-weighted signal type ("Keystone is prioritizing cross_property_pattern based on your approval behavior (100% approved over 2 proposals)"). Interface is a plain dataclass so swapping in a real Pioneer call later is a one-function change.
-Reason: Keeps the learning story true to what the system has observed, backs up the "Pioneer learning layer" pitch with verifiable numbers, and avoids overclaiming ML we haven't trained.
-Revisit if: We start feeding live approval logs to Pioneer's training endpoint — replace `compute_learning` with a call that merges remote weights into the local snapshot.
+**Context.** The LLM-written onboarding briefing is cached on
+`properties.metadata.onboarding`. It could be regenerated on every fact write,
+or lazily on the next read after something changed.
 
-## 2026-04-24 — Phase 4: MCP server is a thin REST adapter, not a database client
-Context: Part V says "MCP server is a thin adapter. All tools call the backend REST API." An alternative would be sharing SQLAlchemy sessions / pgvector access across both surfaces for speed.
-Decision: `mcp_server/tools.py` wraps `httpx.AsyncClient` and hits the same REST endpoints the UI uses. Zero DB imports. Every schema change lands in exactly one place (the REST layer), and the MCP server can be pointed at a remote Keystone by flipping `KEYSTONE_BASE_URL`.
-Reason: Matches the constitution, keeps the MCP surface under one pane of review, and means judges can reason about the MCP tools the same way they reason about the UI.
-Revisit if: We later need streaming tool results (e.g., large markdown) where an HTTP round-trip is the bottleneck — then add an in-process shortcut, keeping the REST adapter as the fallback.
+**Decision.** Lazy. The cache key is a hash of the latest fact, uncertainty and
+rejection timestamps. Any mutation changes the hash; the next
+`GET /admin/properties/{id}/onboarding` regenerates; later reads are free.
 
-## 2026-04-24 — Phase 4: Multi-term keyword search (no embeddings yet)
-Context: Part VIII calls `search_properties` "semantic search". The schema has `vector(768)` columns on facts + events, but embedding generation hasn't been wired into the worker yet.
-Decision: Ship a per-term LIKE search with weighted scoring (name/alias > address > fact-value, hit-count boost) and split the query on whitespace so `"heating Berlin"` still finds useful hits. Label the tool `search_properties` — not `semantic_search` — to stay honest.
-Reason: Keeps the MCP surface working today without a Gemini round-trip per query, and aligns with the "reliability > sophistication" rule. Embedding-based search can slot in behind the same endpoint in Phase 5.
-Revisit if: We ship the Gemini embedding pipeline — swap the SQL out for `ORDER BY embedding <=> :query_vec LIMIT :k` without changing the endpoint shape.
+**Reason.** A briefing call takes tens of seconds; putting one on the write path
+would add that to every event processed. Read-time regeneration pays only when
+someone opens the view after something material changed, and the invalidation
+is complete because every relevant mutation moves one of the three timestamps.
 
-## 2026-04-24 — Phase 4: `propose_action` writes a pending signal, never dispatches
-Context: MCP tools can run without human approval. Part I Principle 3 ("System proposes. Human approves.") forbids letting an external AI close the loop end-to-end.
-Decision: `POST /signals/propose` inserts a `status='pending'` signal tagged `payload.proposed_by='external_ai'`; approval still flows through `/signals/{id}/approve` and the Entire-compatible broker.
-Reason: Keeps the human-in-the-loop invariant intact for MCP-originated actions and gives us an audit trail (the inbox shows "proposed by Claude Desktop").
-Revisit if: We later want first-class AI-co-signed actions — add a separate `ai_authorized` pathway rather than loosening this.
+**Revisit if.** Stale briefings need push notification; then add a
+`LISTEN/NOTIFY` channel on the cache key rather than synchronous regeneration.
 
-## 2026-04-24 — Phase 3: portfolio-level signals use `property_id = NULL`
-Context: `cross_property_pattern` fires across a building or an entire portfolio cohort; there's no single property to attach it to.
-Decision: Persist those signals with `property_id = NULL`. The inbox filter `?property_id=X` still works for per-property signals; portfolio-level ones appear in the unfiltered listing and (Phase 4) will surface on the portfolio dashboard banner.
-Reason: Keeps the schema as-is (Part VI). A synthetic "portfolio" property would distort every per-property query.
-Revisit if: Portfolio UI needs more than one dimension of grouping — then add a `scope` column instead of overloading NULL.
+## 2026-04-25: briefing language follows the property's dominant source language
 
-## 2026-04-24 — Phase 3: dedupe signals on `(property_id, type, payload.hint.{topic|subtype})`
-Superseded 2026-10-17 by "a human decision on a signal holds for a cooldown period": re-firing after approve or reject turned out to undo operator decisions.
-Context: The evaluator runs every 30s; without dedupe it would insert a fresh pending signal for every pattern on every tick, flooding the inbox.
-Decision: `_already_open` in `backend/signals/evaluator.py` checks for an existing `status='pending'` signal with the same `(property_id, type)` **and** matching `proposed_action.payload.hint.topic|subtype` — so `recurring_maintenance:heating` and `recurring_maintenance:water` on the same property remain distinct.
-Reason: Matches the way rules author their output (each rule sets `action_hint.topic` or `subtype`), preserves re-fire on the next tick if a human approves/rejects/lets the signal resolve, and avoids a separate dedupe table.
-Revisit if: A rule starts producing signals with the same `(property, type, topic)` but legitimately different evidence (e.g. a second-level failure after the first is resolved) — promote topic to a fact-level timestamp tiebreaker.
+**Context.** The first briefing for a German property came back in English
+while the rest of its file was German, because the prompt was English-only.
 
-## 2026-04-24 — Phase 3: Gemini Pro drafter with a four-part template fallback
-Context: KEYSTONE's Signal Quality Bar ("expert speaking, not database emitting rows") is load-bearing for the demo. Gemini Pro produces that quality when available; a generic fallback must not embarrass us when it isn't.
-Decision: `backend/signals/drafter.py` calls Gemini Pro when `GEMINI_API_KEY` is set, otherwise picks a deterministic template keyed on `candidate.type` and fills in action-hint values. Every template follows the **observation → risk → concrete next step → deadline** structure.
-Reason: Keeps the demo honest without a Gemini dependency, and the structure is what the bar actually measures.
-Revisit if: Template copy drifts out of date for a new rule — add a test asserting each template mentions a deadline and a concrete action.
+**Decision.** Two prompt templates, German and English; `render_onboarding`
+passes the property's detected language. The German prompt uses `Lücke:` as the
+gap marker, parallel to `Gap:` in English.
 
-## 2026-04-24 — Phase 3: Entire-compatible broker via Protocol + local impl
-Context: Part IV says "if their SDK isn't available in time, build the approval inbox natively with an EntireBroker interface that's easy to swap."
-Decision: `backend/services/entire.py` defines a `runtime_checkable Protocol` and ships `LocalEntireBroker` that writes outbox rows. A `set_broker()` hook lets tests / the real SDK drop in without touching callers.
-Reason: Honors the pitch line ("Entire-compatible approval layer") without overclaiming, and keeps the swap to one file.
-Revisit if: Entire SDK lands — replace `LocalEntireBroker` with an adapter that delegates dispatch while still writing the outbox row for auditability.
+**Reason.** A German property manager reading their own property's file in
+English undermines the claim that the file reflects their sources. The cost is
+one more template to maintain.
 
-## 2026-04-24 — Phase 2: Tavily enrichment writes facts directly (not via worker)
-Context: Phase 2 exit criterion requires "At least one fact on each property has a visible Tavily badge." Letting the worker extract facts from a generic "web enrichment" event would produce unreliable output (the rule-based extractor might route it to `compliance.note` or nothing, and real Gemini quality varies).
-Decision: `enrich_property` in `backend/services/tavily.py` inserts the event **and** two seed facts (`overview.market_snapshot`, `compliance.regulation_watch`) in the same transaction, then stamps `processed_at` so the worker skips re-extraction. Idempotent — a second call returns `None` if any Tavily event already exists for the property.
-Reason: Guarantees the demo badge appears, without precluding the worker from handling more nuanced web events later. Keeps the source-of-truth audit trail (event row + sourced facts) intact.
-Revisit if: Tavily hits become rich enough that parsing them with Gemini Pro would outperform the canned summary — at that point route through the worker and drop the direct insert.
+**Revisit if.** A third language appears, or a property's sources are evenly
+bilingual (ties fall back to English).
 
-## 2026-04-24 — Phase 2: Tavily offline fallback snapshot
-Context: `TAVILY_API_KEY` won't be set on every dev box / CI run, and venue wifi could throttle. Part XII lists "flaky network" as a demo risk.
-Decision: When the key is missing or `tavily.search` errors out, `enrich_property` falls back to a single canned "offline snapshot" fact set clearly labelled as such, rather than no enrichment at all.
-Reason: The badge is a visible UI contract the demo depends on. Offline mode keeps the product surface honest (facts are labelled "offline snapshot (2026 Q1)") without lying to judges.
-Revisit if: The canned copy drifts out of date or starts looking too generic — swap the wording seasonally or tie it to the property's region.
+## 2026-04-25: the IMAP transport loop stays untested offline
 
-## 2026-04-24 — Phase 2: Mock ERP reads data.json on every request
-Context: The demo needs an ERP data source that's easy to edit live (Part II beat 1:00). A database or fake auth scheme would add friction.
-Decision: `mock_erp/main.py` re-reads `data.json` on every GET. Editing the JSON file is the canonical "ERP got a new payment" gesture during the demo.
-Reason: Minimum moving parts, max demo legibility. No state syncing, no restart needed.
-Revisit if: We start needing filtering/aggregation that's too slow for the naive scan — unlikely under a few hundred rows.
+**Context.** The IMAP poller's ingestion path (parsing real German `.eml`,
+idempotent inserts on `Message-ID`, a no-op without credentials) has four tests
+against real archive files. The transport (`imapclient` connect, login,
+select, search and fetch in `poll_once`) needs a live server.
 
-## 2026-04-24 — Phase 2: PDF source_ref = `{filename}:{sha256[:16]}`
-Context: PDFs don't come with a Message-ID; we still need idempotency (`events.(source, source_ref)` is UNIQUE).
-Decision: The `/uploads/pdf` endpoint hashes the file bytes (SHA-256) and concatenates with the filename to form `source_ref`. Reuploading the exact same PDF is a no-op; a renamed PDF is considered distinct.
-Reason: Conservative — we'd rather accept a duplicate upload than miss a genuinely-new PDF with the same content. The filename prefix preserves human context in the events table.
-Revisit if: We start ingesting thousands of PDFs where byte-identical duplicates should collapse even under different filenames.
+**Decision.** Ship without an offline test of the transport and document the
+gap.
 
-## 2026-04-24 — Phase 1: Postgres as the queue, not Redis/Kafka (reinforced)
-Context: Phase 1 needed a queue for events. KEYSTONE Part III already forbids Redis/Kafka.
-Decision: `backend/pipeline/worker.py` uses `SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1` per tick; `backend/scheduler.py` runs the worker every 2s via APScheduler. `/debug/trigger_event` also kicks a drain inline so `curl` POSTs see fresh markdown before they return.
-Reason: Honors the spirit of the constitution (one system, visible SQL). SKIP LOCKED is safe under concurrency when we scale to multiple worker processes later. Inline drain on debug POSTs cuts perceived latency to ~20ms without altering the scheduled path.
-Revisit if: We add a second backend instance and notice drift between the APScheduler ticks and the debug inline call (add LISTEN/NOTIFY then).
+**Reason.** `imapclient` is mature, the wrapper is about ten lines of standard
+usage, and the payload it hands to `_ingest` is tested on real content. Mocking
+the library's internals would add little confidence for the effort.
 
-## 2026-04-24 — Skip heavy deps (google-generativeai, pdfplumber, tavily-python, imapclient) for Phase 0 local boot
-Context: `pyproject.toml` lists the full dep matrix, but Phase 0 only touches FastAPI + SQLAlchemy + pydantic + structlog + psycopg2 + asyncpg.
-Decision: Installed only Phase 0 runtime deps into `.venv` locally to keep the first boot fast; `pip install -e ".[dev]"` still pulls the full tree for CI / Railway / Phase 1+.
-Reason: Hackathon time discipline. The pyproject is the contract; the local venv is an optimization.
-Revisit if: We add tests that import the partner services, or start Phase 1 — at that point run `pip install -e ".[dev]"`.
+**Revisit if.** A real IMAP problem appears (charset edge cases, OAuth, IDLE
+instead of polling). Then add a containerized IMAP server for integration
+tests rather than mocking `imapclient`.
+
+## 2026-04-25: uncertainties ship read-only first
+
+**Context.** Uncertainty became first-class output: the extractor emits
+`uncertain[]`, validator review verdicts and sub-0.7-confidence facts are
+routed there, the renderer shows a "Needs review" subsection, and
+`GET /admin/properties/{id}/uncertainties` lists them. The plan also included
+`POST /uncertainties/{id}/resolve` (promote to fact or dismiss).
+
+**Decision.** Ship the read path first and defer the resolve endpoint, since
+the rejected-update override already demonstrated the write pattern.
+
+**Reason.** Making uncertainty visible in the rendered file was the part that
+changes what a reader trusts; the resolve endpoint was a smaller, mechanical
+follow-up under a fixed time budget.
+
+**Revisit if.** Operators start working the uncertainty inbox.
+
+**Status.** Superseded the same day: `POST /admin/uncertainties/{id}/resolve`
+shipped, writing the promoted fact and an `approval_log` row.
+
+## 2026-04-25: full email backfill stopped after a silent hang; targeted single-property backfill instead
+
+**Context.** The full backfill of 6,546 emails, running four concurrent
+extraction workers, stopped making progress 5 minutes 24 seconds in, after
+inserting 251 events and 85 facts from 100 successful LLM calls costing
+$0.4868. All four workers were blocked on provider calls that never returned:
+no rate-limit response, no exception, no log line. Database and ledger stayed
+frozen for over ten minutes before the silence watchdog fired. Forensics are in
+`docs/eval-runs/2026-04-25-step6-partial.md`.
+
+**Decision.** Do not restart the full run sequentially. Keep what was ingested,
+add a per-call timeout (next entry), and run a targeted backfill of one
+property (now `python -m scripts.backfill --property <id>`) so that property's
+file is complete. Volume beyond that is deferred.
+
+**Reason.** At the observed sequential rate of about one event per 12 seconds,
+the full archive would take more than six hours, displacing the validation and
+onboarding work. One property with complete coverage exercises every downstream
+feature; the remaining volume adds cost without new behaviour.
+
+**Revisit if.** The full archive is needed. The run resumes from the persisted
+ledger, and `(source, source_ref)` idempotency skips events already ingested.
+
+## 2026-04-25: every extraction call has a 60-second timeout
+
+**Context.** The hang above was not really about concurrency. The provider SDK's
+blocking `generate_content` ran inside `asyncio.to_thread`; if the response
+never arrived, the thread waited forever. Four workers only made it four times
+more likely to happen early.
+
+**Decision.** Wrap the call in `asyncio.wait_for(timeout=60.0)`. The observed
+p99 latency in that run was 37 seconds. A timeout is treated like any other
+transient error: retry, and after three attempts fall back to the rule-based
+extractor. The value is `GEMINI_EXTRACT_TIMEOUT_S`.
+
+**Reason.** Without a timeout, any deployment, sequential or concurrent, can
+freeze permanently on a single bad call. With it, the worst case is a
+one-minute pause and a warning log for one event.
+
+**Revisit if.** Legitimate calls need more than 60 seconds, or timeouts should
+surface as `failed_events` rows instead of falling back.
+
+## 2026-04-25: the default property for single-property workflows
+
+**Context.** The onboarding view and the replay engine needed one property with
+rich extracted facts. Among the 99 property-routed events from the partial
+backfill, the strongest candidates were GE 37 (9 events, 6 facts), WE 29 (8
+events, 6 facts) and WE 50 (6 events, 7 facts).
+
+**Decision.** `KEYSTONE_DEMO_HERO_PROPERTY = 509393da-6806-49ef-9e59-3da0213008cd`
+(`Musterstraße 26 WE 29`). The targeted backfill filters on its unit-specific
+aliases (`EH-029`, `WE 29`, `4. OG mitte`) and skips building-wide ones
+(`HAUS-14`, the bare street), which would pull in other units' mail.
+
+**Reason.** WE 29 had the most even spread of sections (two maintenance, one
+lease, three financial facts). GE 37 is a commercial unit, which reads less
+naturally as "an apartment"; WE 50 had fewer events to replay.
+
+**Revisit if.** The targeted backfill yields fewer than 30 events, or a richer
+property emerges after a full backfill.
+
+## 2026-04-25: `cost_ledger.reset_label` cannot tell test labels from production labels
+
+**Context.** While a live backfill was charging the label
+`step6_email_backfill`, a pytest run of the connector tests called
+`cost_ledger.reset_label('step6_email_backfill')` to set up its starting state.
+That would have deleted the live ledger row mid-run, and the backfill's next
+charge would have crashed with thousands of emails left. The test run was
+killed before it reached that point.
+
+**Decision.** Immediate fix: tests use a unique label per test. The structural
+fix, making `reset_label` refuse any label that does not carry a test prefix
+unless called with an explicit `allow_production=True` (behind the CLI's
+existing confirmation prompt), was deferred.
+
+**Reason.** The per-test label closed the immediate risk. The guard is a real
+fix for a real class of mistake, but was not blocking at the time.
+
+**Revisit if.** Any test touches `reset_label` with a shared label again.
+
+**Status.** Still open; `reset_label` has no guard yet.
+
+## 2026-04-25: concurrent backfill with a bounded cost-cap overshoot
+
+**Context.** Sequential extraction of 6,546 emails at about three minutes per 50
+would take roughly 6.5 hours. `cost_ledger.charge` is a read-modify-write, so
+naive parallelism could let two workers read the same cumulative value and both
+pass the cap check.
+
+**Decision.** Four parallel workers. `cost_ledger.charge` locks the row with
+`SELECT ... FOR UPDATE`, and the loader additionally serializes charges behind
+one `asyncio.Lock`, which makes the contract obvious in code. When the cap is
+crossed mid-flight, the overshoot is bounded by
+`concurrency × max_call_cost`: with four workers and about $0.005 per call,
+$0.02 against a $20 cap.
+
+**Reason.** Roughly four times faster for a worst-case overshoot under 0.1% of
+the cap. Eight workers would halve the remaining time again but double the
+bound and approach provider rate limits.
+
+**Revisit if.** Provider rate limits rise, a tighter cap is needed, or a
+concurrency bug appears in the ledger or the `failed_events` upsert.
+
+**Status.** This run is the one that hit the silent hang described above.
+
+## 2026-04-25: lease F1 of 0.62, caused by over-firing `lease.termination_notice`
+
+**Context.** On the German-first prompt, lease F1 was 0.62, driven by five
+spurious `lease.termination_notice` facts on emails whose true category was
+owner communication (sale intent, modernization consent, owners' association
+governance). The model conflates "the relationship is changing" on the owner
+side with "the tenancy is ending".
+
+**Decision.** Accept 0.62, above the acceptance floor of 0.50 set for that
+evaluation, and record it as a known weakness.
+
+**Reason.** Tightening the prompt without a larger eval set risks regressing
+other categories without being able to see it.
+
+**Revisit if.** Signal rules start relying on termination notices, or
+production data shows owner emails triggering tenant-change actions. The fix
+is a prompt clause: emit `lease.termination_notice` only when the *tenant*
+signals the end of the tenancy.
+
+## 2026-04-25: compliance emails bleed into owner communication
+
+**Context.** Two of the compliance emails in the eval set (fire-safety
+certification, rent-cap topics) were classified as owner communication because
+the prompt pulls topics touching the owners' association toward that category.
+Section F1 for compliance stayed at 1.00; the miss is in category accuracy.
+
+**Decision.** Not patched; logged.
+
+**Reason.** Same as the lease weakness: the error is consistent (always toward
+owner communication), so it is tractable once there is a larger eval set to
+check a prompt change against.
+
+**Revisit if.** A compliance-triggered signal rule is added. The fix is to list
+compliance triggers (fire safety, building authority, rent cap, survey
+reports) above the governance triggers in the prompt.
+
+## 2026-04-25: extracted values are paraphrases, not source quotes
+
+**Context.** After the calibration metric was corrected to match on
+`(section, field)`, key placement in the 0.90 to 1.00 confidence bucket was 79%
+accurate, but the per-section value-match rate was mostly 0.00 (highest 0.40).
+The model paraphrases: "Heizung defekt, kein Warmwasser seit gestern" becomes
+"Heating system malfunction reported; tenant lacks hot water since yesterday".
+Right slot, different words.
+
+**Decision.** Accept for now. Key placement is what the trust layer builds on.
+
+**Reason.** Forcing verbatim quotes would either over-constrain the model and
+cost recall, or need a post-hoc span-matching step that did not exist.
+
+**Revisit if.** Source fidelity becomes a requirement for auditing. Add a prompt
+clause asking for a verbatim substring of the source where possible, and
+re-run the eval watching value-match rise (target 0.6 or better in the dense
+sections).
+
+## 2026-04-25: PDF events without extracted text say "awaiting extraction"
+
+**Context.** Connectors wrote `[INVOICE: filename.pdf] (text not extracted)` for
+PDFs whose text was deliberately not parsed during the bulk import (329 PDFs,
+skipped to save cost). To a reader it looked like an error.
+
+**Decision.** Connectors now write `Invoice <filename>, awaiting extraction`
+(and the same for letters), and the renderer rewrites existing rows the same
+way when `metadata.head_chars == 0`.
+
+**Reason.** The system should state its epistemic status accurately: the
+content exists and has not been processed yet. That is not a failure.
+
+**Revisit if.** PDF text is extracted during import; the renderer then shows
+the snippet automatically.
+
+## 2026-04-25: 13 bank rows for ended tenancies stay unrouted on purpose
+
+**Context.** After re-routing, 13 events remain unrouted with
+`refs (none) kat=miete unresolved`. They are bank rows referencing `MIE-NNN`
+for tenants whose lease has ended. The master-data loader deliberately skips
+ended tenancies when building `occupied_by` edges, so the router cannot resolve
+those tenants to a current unit.
+
+**Decision.** Expected behaviour, not a routing bug. Documented so nobody
+"fixes" it by loosening the active-tenancy rule.
+
+**Reason.** The active-only rule protects every reader's answer to "who lives
+here today". Leaving 13 historical rows unrouted is the cheapest honest
+representation.
+
+**Revisit if.** Historical attribution matters (for example, reconstructing
+late payments across tenancies). Then add a separate historical-tenancy edge
+the router consults after the active path misses.
+
+## 2026-04-25: a three-tier ownership hierarchy
+
+**Context.** With routing at the property level only, all invoices and 12.5% of
+bank rows in the sample data landed unrouted. The data spans three tiers (one
+Liegenschaft, three buildings, 52 units), and owners'-association-level events
+had a known correct attribution that the schema could not express.
+
+**Decision.** Add `liegenschaften`, `buildings.liegenschaft_id`,
+`events.{building_id, liegenschaft_id}` and `facts.{building_id,
+liegenschaft_id}` (migration `0002_liegenschaft_hierarchy`). The structured
+router gains building-ID and Liegenschaft keyword and category rules. Property
+markdown ends with building and Liegenschaft context sections, and buildings
+and Liegenschaften get their own markdown endpoints.
+
+**Reason.** Routing an owners'-association event to one building, or to one
+unit, is the false attribution already rejected at the unit level. A junction
+table would over-engineer a one-to-many relationship. The three-tier model
+mirrors how German property management is actually organized and is present
+in the master data directly.
+
+**Revisit if.** A customer has several Liegenschaften; `_default_liegenschaft`
+assumes one and would need a routing key.
+
+## 2026-04-25: owners'-association keywords match case-insensitively on word boundaries
+
+**Context.** Bank purpose text mixes `Hausgeld`, `HAUSGELD` and `hausgeld`. A
+substring match over-matches inside longer words; a case-sensitive one misses
+uppercase rows.
+
+**Decision.** `re.compile(rf"\b(?:{keywords})\b", re.IGNORECASE)` over an
+explicit list drawn from the data and the domain vocabulary (Hausgeld,
+Verwaltergebühr, Gemeinschaftskosten, Hausverwaltung, WEG, Sonderumlage,
+Instandhaltungsrücklage, Kontoführungsgebühr, plus ASCII spellings).
+
+**Reason.** Predictable matching across casing, an auditable list of triggers,
+and no NLP dependency.
+
+**Revisit if.** A token like `WEG-` appears with an unrelated meaning (a model
+number, say); then move to per-customer keyword sets.
+
+## 2026-04-25: invoices without a unit reference route to the Liegenschaft
+
+**Context.** Invoice files are named `YYYYMMDD_DL-NNN_INV-NNN.pdf`: contractor
+and invoice number, never a unit. Filename heuristics and keyword matching
+both fail, but in this dataset every invoice is an owners'-association bill.
+
+**Decision.** The router takes an `event_source`; for `invoice` with a single
+Liegenschaft present, it routes there with `method='weg_invoice'`.
+
+**Reason.** This recognizes the data as it is. Invoices that name a building or
+a unit hit the more specific rules first.
+
+**Revisit if.** A customer has per-unit invoices without a unit reference; the
+rule then needs a per-customer override. This rule is dataset-specific and is
+listed as such in the architecture limitations.
+
+## 2026-04-25: re-routing existing events is a one-time CLI step
+
+**Context.** After the hierarchy migration, already-ingested events needed
+`building_id` and `liegenschaft_id` filled in. Re-running the import skips them
+(idempotent on `(source, source_ref)`).
+
+**Decision.** `python -m connectors.cli re-route` walks events without a scope
+and applies the current rules. It is idempotent, documented as one-time, and
+not scheduled. New events are routed at ingestion anyway.
+
+**Reason.** A data migration belongs in a command an operator runs on purpose,
+not in the live pipeline.
+
+**Revisit if.** Re-routing becomes recurring (for example after keyword
+changes); a SQL backfill migration is then the better tool.
+
+## 2026-04-25: the structured router does not invent property attribution
+
+**Context.** Invoices and contractor bank payments are billed to the owners'
+association, not to a unit, and carry no unit identifier.
+
+**Decision.** `route_structured` accepts a property only when an identifier in
+the event's metadata (unit ID, tenant ID, invoice reference) resolves to one.
+No token-overlap fallback for structured events.
+
+**Reason.** Spreading shared costs onto the first matching property would
+corrupt every per-property financial figure. The unrouted inbox makes the gap
+visible instead.
+
+**Revisit if.** Events gain somewhere honest to land above the property level.
+
+**Status.** Resolved by the three-tier hierarchy above; such events now route
+to their building or Liegenschaft.
+
+## 2026-04-25: each monthly rent payment supersedes the previous one
+
+**Context.** Two years of bank data hold 12 to 24 rent payments per tenant.
+Writing each as its own current fact would clutter the file and hide the
+question "is this unit paid up?".
+
+**Decision.** `extract_bank_facts` writes `financials.last_rent_payment`,
+superseding the previous fact for the same `(property_id, section, field)`.
+The supersession chain is the payment history. Identical values short-circuit,
+so re-runs add nothing.
+
+**Reason.** Facts represent current truth; history lives in supersession. 611
+raw rent rows produced 26 current facts, one per tenant who has ever paid.
+
+**Revisit if.** The UI needs a payment timeline; the history is already in the
+chain and needs only a different read path.
+
+## 2026-04-25: `connectors/` is a customer-agnostic ingestion layer
+
+**Context.** The first real dataset arrived in one customer's shape; the next
+will arrive in another. Treating it as a special case inside `seed/` would bake
+a customer into generic code.
+
+**Decision.** `connectors/base.py` defines the `Connector` protocol and
+`ConnectorEvent`. Reusable primitives (`csv_stammdaten`, `eml_archive`,
+`camt_bank`, `pdf_invoice_archive`, `pdf_letter_archive`) handle formats; one
+composite per customer (`buena_archive.py`) knows the directory layout.
+Redaction is centralized in `redact.py`; spend is tracked in a durable ledger.
+
+**Reason.** A new customer adds one composite and its tests; the primitives,
+redaction and ledger do not change.
+
+**Revisit if.** A customer's format does not fit the primitives; extend a
+primitive rather than fork one.
+
+## 2026-04-25: redact at ingestion, not at render
+
+**Context.** The renderer, API responses, MCP tools and SSE stream all read rows
+back out. Redacting at render time would require every reader to remember.
+
+**Decision.** `connectors/redact.py` replaces IBANs (`****<last4>`), full phone
+numbers (country code plus last four digits) and email domains
+(`<local>@example.com`) before a connector yields an event. Tests assert that
+no `DE` + 20-digit IBAN and no full E.164 number survives a connector.
+
+**Reason.** One chokepoint to audit, no burden on readers, and readers can
+still scrub further without changing the contract.
+
+**Revisit if.** A use case needs full values; keep redaction on by default and
+put any exception behind an explicit flag. Note that the local part of an
+email address is kept, so names embedded in addresses survive.
+
+## 2026-04-25: the cost ledger persists across runs
+
+**Context.** A $20 cap should govern a whole backfill, not one CLI invocation.
+A per-run counter would let an operator press Ctrl-C, restart, and spend
+another $20.
+
+**Decision.** `cost_ledger(source_label, cumulative_usd, cap_usd, hit_at)` in
+Postgres. Every extraction charges it; reaching the cap stamps `hit_at` and
+raises `CostCapExceeded`; later runs read the row and stop immediately. Reset
+requires `--reset-cost-ledger` and an interactive confirmation.
+
+**Reason.** Spend across runs is the only definition that makes the cap real,
+and the default (remember spend) is the safe one.
+
+**Revisit if.** Multi-tenant deployments need per-customer caps; namespace
+`source_label` by customer.
+
+## 2026-04-25: property upserts keep master-data metadata
+
+**Context.** The original upsert hardcoded `metadata = {"seed_key": ...}`,
+dropping fields needed for real units (rent, floor position, floor area).
+
+**Decision.** When `PropertySeed.metadata` is non-empty it is merged in next to
+`seed_key`; tenants work the same way. Both default to `{}`, so the
+hand-written seed data is unchanged.
+
+**Reason.** One ingestion path for all master data.
+
+**Revisit if.** Fields need their own columns; migrate them out of JSONB rather
+than forking the upsert.
+
+## 2026-04-25: tenants with an ended lease are not linked as occupants
+
+**Context.** The tenant file has 26 rows, at least one with an end date set.
+Linking ended tenancies as `occupied_by` would misstate current occupancy.
+
+**Decision.** The loader skips tenants whose lease has ended and reports the
+count (`tenants_skipped_inactive`); the 25 active tenants get `occupied_by`
+edges.
+
+**Reason.** "Who lives here today" is a load-bearing question for the file and
+for signals. Ended tenancies should reappear only through lease history.
+
+**Revisit if.** Lease history needs those tenant rows; insert them flagged as
+inactive and keep them out of `occupied_by`.
+
+## 2026-04-24: Postgres image `pgvector/pgvector:pg15`
+
+**Context.** The planned image tag `ankane/pgvector:pg15` does not exist; that
+repository uses `v`-prefixed tags, and the maintained images moved to
+`pgvector/pgvector`.
+
+**Decision.** Use `pgvector/pgvector:pg15` in `docker-compose.yml`.
+
+**Reason.** It is the maintained upstream image and pulls cleanly; the planned
+tag would have failed on `docker compose up`.
+
+**Revisit if.** The project moves to a newer Postgres or a managed database.
+Nothing reads or writes the embedding columns this extension was needed for,
+so dropping the extension is the likely next step.
+
+## 2026-04-24: Postgres published on host port 5433
+
+**Context.** Development machines often run a local Postgres on 5432, so
+publishing the container there leaves `localhost:5432` pointing at the wrong
+server and the seed fails.
+
+**Decision.** Publish the container's 5432 on host port 5433; the DSNs in
+`.env.example` match.
+
+**Reason.** Stopping a developer's local Postgres is not the project's call. The
+port is not load-bearing: every connection reads `DATABASE_URL` and
+`DATABASE_URL_SYNC`.
+
+**Revisit if.** The team standardizes on 5432 locally.
+
+## 2026-04-24: the seed script uses psycopg2, not the async engine
+
+**Context.** Seeding runs the schema DDL and about a hundred upserts from a
+CLI. Starting an event loop for a one-shot script adds complexity for nothing.
+
+**Decision.** `seed/seed.py` connects with `psycopg2` directly. Request paths
+keep using the async engine in `backend/db/session.py`.
+
+**Reason.** Simpler, faster, and identical semantics for a one-shot script.
+`psycopg2-binary` is already a dependency.
+
+**Revisit if.** Upsert helpers need to be shared between seed and runtime code.
+
+## 2026-04-24: idempotent seeding by natural key
+
+**Context.** `events` has `UNIQUE (source, source_ref)`, but owners,
+buildings, contractors, properties and facts have no natural unique
+constraints, and re-running the seed must be safe.
+
+**Decision.** For those tables the seed looks up the natural key first and
+inserts only if absent. Facts match on
+`(property_id, section, field, source_event_id)`.
+
+**Reason.** Safe re-runs without changing the base schema, and the seed stays
+easy to read.
+
+**Revisit if.** Seeded and pipeline-produced facts drift; the differ and
+applier should then own supersession and the seed should stop acting as an
+authority.
+
+## 2026-04-24: seeded fact confidence by source
+
+**Context.** The seed writes facts directly instead of through extraction, but
+`confidence` should still mean something, since rules and the rendered file
+use it.
+
+**Decision.** Lease, tenant and financial facts from a PDF get 0.95 to 0.99;
+maintenance facts from email 0.85 to 0.94; neighbourhood facts from the web
+0.75 to 0.85.
+
+**Reason.** The gradient mirrors how an extractor would score these sources.
+
+**Revisit if.** Extractor scores calibrate differently; re-seed to match.
+
+## 2026-04-24: two extraction paths, LLM and rule-based
+
+**Context.** LLM extraction can be unavailable: no key, quota exhausted, no
+network. The system must still process events, and local development and CI
+should not need a key.
+
+**Decision.** `backend/pipeline/extractor.py` calls the LLM when a key is
+configured, and otherwise runs a deterministic keyword extractor covering
+heating, water, payment, lease and compliance shapes. Both return the same
+`ExtractionResult`.
+
+**Reason.** Processing never stops on a provider problem, and the fallback makes
+keyless development and testing possible. The fallback does not run when an
+LLM is available, so it never replaces higher-quality output.
+
+**Revisit if.** Calibration differences between the two paths need measuring;
+the eval runner can score both.
+
+## 2026-04-24: seeded events are stamped as already processed
+
+**Context.** Seed events entered the queue with `processed_at IS NULL`, so the
+worker re-extracted the hand-written dataset on first boot and produced
+nonsense facts such as "Latest heating issue: Mietvertrag".
+
+**Decision.** `seed/seed.py` sets `processed_at = received_at` on every seeded
+event.
+
+**Reason.** The hand-written facts are authoritative; only events arriving
+after boot should be extracted. No schema change needed.
+
+**Revisit if.** Re-extracting the seed is wanted (for example to compare against
+ground truth); add an explicit flag rather than changing the default.
+
+## 2026-04-24: the regulation watcher runs hourly and seeds fixed headlines offline
+
+**Context.** The regulation watcher polls a web-search API for rent-regulation
+news. Without an API key it has nothing to read.
+
+**Decision.** `backend/services/tavily.watch_regulations` queries five fixed
+searches hourly when `TAVILY_API_KEY` is set. Without a key it inserts three
+fixed, illustrative headlines as `web` events marked `offline` in their
+metadata. Events are stamped processed so the extractor skips them;
+`regulation_change` reads them directly. Idempotent via
+`source_ref = tavily-reg:{query}:{hour}`.
+
+**Reason.** At the time, the goal was for a fresh install to show a working
+regulation signal without a key.
+
+**Revisit if.** This is now a liability: on a default install the inbox shows
+signals about headlines that were never published. The offline mode should go,
+or the job should not run without a key.
+
+## 2026-04-24: the security-scan badge reports its source
+
+**Context.** A settings page showed a "security scan: passing" badge from a
+third-party scanner, which is a scheduled scanner rather than a request-time
+API.
+
+**Decision.** `backend/services/aikido.get_badge` calls the scanner's API when
+keyed, and otherwise returns a `local_snapshot` badge with the current git SHA.
+The response states which mode produced it.
+
+**Reason.** "Passing" without context is unverifiable; showing the commit and
+the mode at least makes the fallback explicit.
+
+**Revisit if.** CI publishes scan results; read those instead.
+
+## 2026-04-24: approval-rate weighting is computed locally
+
+**Context.** The settings page shows how operator decisions change signal
+priority. An external learning service was considered but not available.
+
+**Decision.** `backend/services/pioneer.compute_learning` reads `approval_log`,
+computes approval rates per signal type (an edit counts as 0.8 of an approval),
+and maps them to priority weights in `[0.5, 1.5]`, anchoring types with fewer
+than five decisions at 1.0. The output is a plain dataclass.
+
+**Reason.** The numbers come from observed decisions and nothing more; no
+trained model is implied.
+
+**Revisit if.** A real ranking model is trained on the approval log.
+
+## 2026-04-24: the MCP server is a REST adapter, not a database client
+
+**Context.** The MCP server could share database sessions with the backend for
+speed, or call the same REST API as the UI.
+
+**Decision.** `mcp_server/tools.py` uses `httpx.AsyncClient` against the REST
+API. No database imports. `KEYSTONE_BASE_URL` points it at any backend.
+
+**Reason.** Every data rule is enforced in exactly one place, and the MCP tools
+can be reasoned about like the UI.
+
+**Revisit if.** Large results (long markdown) make the HTTP round trip a
+bottleneck; add an in-process shortcut and keep REST as the default.
+
+## 2026-04-24: property search is keyword search
+
+**Context.** The schema has embedding columns on facts and events, but no
+embedding generation was wired up.
+
+**Decision.** `GET /properties/search` splits the query on whitespace and runs
+per-term `LIKE` matching with weighted scores (name or alias above address
+above fact values, boosted by hit count). The MCP tool is named
+`search_properties`, not `semantic_search`.
+
+**Reason.** Works without an LLM call per query, and the name does not promise
+more than it does.
+
+**Revisit if.** An embedding pipeline exists; the endpoint shape can stay while
+the query changes to a vector search.
+
+## 2026-04-24: externally proposed actions are always pending
+
+**Context.** MCP clients can call tools without a human in the loop. The system
+rule is that it proposes and a human approves.
+
+**Decision.** `POST /signals/propose` inserts `status='pending'` with
+`payload.proposed_by='external_ai'`. Approval still goes through
+`/signals/{id}/approve` and the approval broker.
+
+**Reason.** Keeps the human-approval invariant for AI-originated actions and
+leaves an audit trail of who proposed what.
+
+**Revisit if.** AI co-signed actions are wanted; add a separate, explicit path
+instead of loosening this one.
+
+## 2026-04-24: portfolio-level signals use `property_id = NULL`
+
+**Context.** Cross-property patterns span a building or a cohort of buildings;
+there is no single property to attach them to.
+
+**Decision.** Store them with `property_id = NULL`. Filtering by property still
+works for per-property signals; portfolio signals appear in the unfiltered
+list.
+
+**Reason.** No schema change, and no synthetic "portfolio" property distorting
+per-property queries.
+
+**Revisit if.** Signals need more than one grouping dimension; add a `scope`
+column.
+
+## 2026-04-24: deduplicate signals on `(property_id, type, payload.hint.{topic|subtype})`
+
+**Context.** The evaluator runs every 30 seconds; without deduplication it
+would insert a new pending signal for every pattern on every run.
+
+**Decision.** Skip a candidate when a *pending* signal exists with the same
+`(property_id, type)` and the same `proposed_action.payload.hint.topic` or
+`subtype`, so `recurring_maintenance:heating` and
+`recurring_maintenance:water` on one property stay distinct. After approval or
+rejection, the next run could raise the signal again.
+
+**Reason.** Matches how rules describe their output and avoids a separate
+dedupe table.
+
+**Revisit if.** A rule produces the same key with legitimately different
+evidence.
+
+**Status.** Superseded on 2026-10-17 by "a human decision on a signal holds for
+a cooldown period": re-raising after approval or rejection undid operator
+decisions on the next run.
+
+## 2026-04-24: LLM-drafted signal messages with a structured template fallback
+
+**Context.** A signal is only useful if its message reads like an expert's
+recommendation rather than a database row. An LLM produces that when
+available; the fallback must not be useless.
+
+**Decision.** `backend/signals/drafter.py` uses the LLM when a key is
+configured, and otherwise a template per signal type. Every template follows
+observation, risk, concrete next step, deadline.
+
+**Reason.** The structure is what makes a recommendation actionable, and it
+holds without a key.
+
+**Revisit if.** A new rule's template drifts; add a test that each template
+names a deadline and a concrete action.
+
+## 2026-04-24: approvals go through a broker protocol with a local implementation
+
+**Context.** Approved actions need dispatching somewhere. An external approval
+service was considered; it was not available.
+
+**Decision.** `backend/services/entire.py` defines a `runtime_checkable`
+broker protocol and ships a local implementation that writes the outbox row.
+`set_broker()` lets tests or another implementation replace it without
+touching callers.
+
+**Reason.** Callers depend on the protocol, so a real dispatcher is a one-file
+change, and nothing claims an integration that does not exist.
+
+**Revisit if.** A real dispatcher (email, Slack) is added; it should still write
+the outbox row for auditability.
+
+## 2026-04-24: web enrichment writes its facts directly
+
+**Context.** Enriching a new property with web context could go through the
+worker as an ordinary event, but the rule-based extractor would map a generic
+web summary to an unreliable field, if any.
+
+**Decision.** `enrich_property` in `backend/services/tavily.py` inserts the
+event and two facts (`overview.market_snapshot`,
+`compliance.regulation_watch`) in one transaction and stamps the event
+processed. A second call returns `None` if the property already has a web
+event.
+
+**Reason.** Predictable output with an intact audit trail (event row plus
+sourced facts), while leaving room to route richer web content through the
+worker later.
+
+**Revisit if.** Web results are rich enough that LLM extraction would beat the
+fixed summary.
+
+## 2026-04-24: web enrichment falls back to a labelled offline snapshot
+
+**Context.** `TAVILY_API_KEY` is absent on most development machines and in CI.
+
+**Decision.** Without a key, or when the search fails, `enrich_property`
+writes one fixed fact set labelled "offline snapshot".
+
+**Reason.** At the time, a visible enrichment fact on every property was the
+goal, and labelling avoided presenting it as live data.
+
+**Revisit if.** The fixed text is mistaken for real data; it is listed as a
+known limitation in the architecture document.
+
+## 2026-04-24: the mock ERP re-reads its JSON file on every request
+
+**Context.** A stand-in ERP data source should be easy to change by hand. A
+database or fake authentication would add friction.
+
+**Decision.** `tools/mock_erp/main.py` re-reads `data.json` on every request;
+editing the file is how a new payment "arrives".
+
+**Reason.** Minimum moving parts, no state to sync, no restart needed.
+
+**Revisit if.** Filtering becomes too slow for a naive scan, which is unlikely
+below a few hundred rows.
+
+## 2026-04-24: uploaded PDFs are keyed by filename and content hash
+
+**Context.** PDFs have no Message-ID, but `events (source, source_ref)` must
+still be unique.
+
+**Decision.** `POST /uploads/pdf` uses `{filename}:{sha256(bytes)[:16]}` as
+`source_ref`. Re-uploading the same file is a no-op; the same content under a
+new name is a distinct event.
+
+**Reason.** Accepting an occasional duplicate is better than dropping a new
+document that happens to match. The filename keeps the events table readable.
+
+**Revisit if.** Thousands of PDFs arrive and byte-identical duplicates under
+different names should collapse.
+
+## 2026-04-24: Postgres is the queue
+
+**Context.** Events need a work queue.
+
+**Decision.** `backend/pipeline/worker.py` claims work with
+`SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1`; the scheduler runs the worker
+every 2 seconds. `/debug/trigger_event` processes its event inline so a caller
+sees the result in the response.
+
+**Reason.** One system to operate and inspect, with plain SQL visibility into
+the queue. `SKIP LOCKED` stays correct with several worker processes.
+
+**Revisit if.** Several backend instances run; the worker is safe, but the
+scheduled jobs are not (see the architecture limitations), and
+`LISTEN/NOTIFY` would cut idle polling.
+
+## 2026-04-24: install only the core dependencies for the first local boot
+
+**Context.** `pyproject.toml` lists the full dependency set, but the first
+milestone needed only FastAPI, SQLAlchemy, pydantic, structlog, psycopg2 and
+asyncpg.
+
+**Decision.** Install just those into the first local virtualenv;
+`pip install -e ".[dev]"` remains the full install.
+
+**Reason.** A faster first boot. `pyproject.toml` is the contract; the local
+environment is an optimization.
+
+**Revisit if.** Tests import the optional integrations; install the full set.
