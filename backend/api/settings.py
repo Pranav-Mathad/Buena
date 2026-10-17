@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
-from backend.services.pioneer import compute_learning, snapshot_to_json
+from backend.services.approval_stats import compute_learning, snapshot_to_json
 from backend.services.tavily import watch_regulations
 from backend.signals.evaluator import evaluate_all
 
@@ -38,7 +38,7 @@ class WatchResponse(BaseModel):
 async def learning_dashboard(
     session: AsyncSession = Depends(get_session),
 ) -> LearningStatsOut:
-    """Return the Pioneer / Fastino-compatible approval-rate snapshot."""
+    """Return approval rates and priority weights per signal type."""
     snapshot = await compute_learning(session)
     return LearningStatsOut(**snapshot_to_json(snapshot))
 

@@ -952,10 +952,11 @@ the mode at least makes the fallback explicit.
 **Context.** The settings page shows how operator decisions change signal
 priority. An external learning service was considered but not available.
 
-**Decision.** `backend/services/pioneer.compute_learning` reads `approval_log`,
+**Decision.** `backend/services/approval_stats.compute_learning` (originally
+`pioneer.py`) reads `approval_log`,
 computes approval rates per signal type (an edit counts as 0.8 of an approval),
-and maps them to priority weights in `[0.5, 1.5]`, anchoring types with fewer
-than five decisions at 1.0. The output is a plain dataclass.
+and maps them to priority weights in `[0.5, 1.5]`; with fewer than five
+proposals the weight is pulled toward 1.0 in proportion to the sample size. The output is a plain dataclass.
 
 **Reason.** The numbers come from observed decisions and nothing more; no
 trained model is implied.

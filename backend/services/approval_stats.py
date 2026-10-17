@@ -1,11 +1,11 @@
-"""Pioneer / Fastino learning layer.
+"""Approval-rate statistics per signal type.
 
-Phase 5 implements the self-contained version: we read the
-``approval_log`` table, compute per-signal-type approval rates, and turn
-those into priority weights the UI surfaces ("Keystone is prioritizing
-heating issues based on your behavior"). The interface is shaped so a
-real Pioneer / Fastino integration can replace the local calc by
-swapping :func:`compute_learning` — the dashboard endpoint doesn't care.
+Reads ``approval_log``, computes how often operators approve, edit or reject
+each signal type, and maps that to a priority weight in ``[0.5, 1.5]``
+(with fewer than five proposals, the weight is pulled toward 1.0 in
+proportion to the sample size). ``GET /settings/learning`` serves the result. This is descriptive statistics over observed decisions,
+not a trained model; a learned ranker could replace :func:`compute_learning`
+without changing the endpoint.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ async def compute_learning(session: AsyncSession) -> LearningSnapshot:
         sample_size=sample_size,
     )
     log.info(
-        "pioneer.learning",
+        "approval_stats.computed",
         types=len(stats),
         samples=sample_size,
         top=snapshot.top_priority,
