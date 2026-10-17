@@ -63,25 +63,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-_cors_origins = [
-    origin.strip()
-    for origin in get_settings().keystone_cors_origins.split(",")
-    if origin.strip()
-]
-
-# Always allow Lovable origins
-_cors_origins.extend([
-    "https://keystone-insight.lovable.app",
-    "https://preview--keystone-insight.lovable.app",
-    "https://keystone-insight.lovable.app",
-    "https://preview--keystone-insight.lovable.app",
-    "https://e014e01e-3cc6-4aff-8939-c1bc4f248e09.lovableproject.com",
-])
-
+# KEYSTONE_CORS_ORIGINS is the only source of allowed browser origins: no
+# hardcoded hosts and no wildcard patterns, since credentials are allowed.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_origin_regex=r"https://.*\.(lovable\.app|lovableproject\.com)",
+    allow_origins=get_settings().cors_origin_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

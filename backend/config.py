@@ -96,18 +96,22 @@ class Settings(BaseSettings):
     # set an absolute path explicitly.
     keystone_files_root: str = Field(default="Extracted")
 
-    # --- Phase 11 — frontend CORS ---
-    # Comma-separated allow-list for browser origins. Default covers
-    # local Vite dev (``5173``), Vite preview (``4173``), and the
-    # legacy CRA-style ``3000``. Production deployments append the
-    # Cloud Run frontend origin, e.g.
-    # ``KEYSTONE_CORS_ORIGINS=https://app.keystone.example,http://localhost:5173``.
+    # --- Browser access (CORS) ---
+    # Comma-separated allow-list of browser origins; the only source of CORS
+    # origins. The default covers local frontends: the Vite dev server
+    # (8080 as configured, 5173 Vite's default), Vite preview (4173) and
+    # 3000. Deployments set their frontend origin explicitly, e.g.
+    # ``KEYSTONE_CORS_ORIGINS=https://app.example.com``.
     keystone_cors_origins: str = Field(
         default=(
             "http://localhost:5173,http://localhost:4173,http://localhost:3000,"
             "http://localhost:8080,http://localhost:8081,http://localhost:8082"
         )
     )
+
+    def cors_origin_list(self) -> list[str]:
+        """``keystone_cors_origins`` split on commas, blanks dropped."""
+        return [o.strip() for o in self.keystone_cors_origins.split(",") if o.strip()]
 
 
 @lru_cache(maxsize=1)

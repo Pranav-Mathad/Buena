@@ -2,6 +2,12 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-10-17: CORS origins come only from configuration
+Context: ``backend/main.py`` appended five hardcoded hosts from the original frontend builder to the configured origins, and set ``allow_origin_regex`` to accept any ``*.lovable.app`` or ``*.lovableproject.com`` origin. With ``allow_credentials=True``, any site hosted on that platform could make credentialed browser requests to the API.
+Decision: ``KEYSTONE_CORS_ORIGINS`` is the only source of allowed origins, parsed by ``Settings.cors_origin_list()``. No hardcoded hosts, no regex. The default still covers local frontends; a deployment names its frontend origin explicitly.
+Reason: An allow-list belongs in configuration, where a deployment can see and change it. A wildcard combined with credentials grants trust to every tenant of a third-party hosting platform, which is not a decision the code should make on an operator's behalf.
+Revisit if: The API gains real authentication with tokens rather than cookies; ``allow_credentials`` could then be turned off.
+
 ## 2026-10-17: the manual trigger endpoint accepts raw_content
 Context: ``POST /debug/trigger_event`` required ``body`` (plus optional ``from`` and ``subject``) and composed ``raw_content`` from them. Everywhere else the event payload is called ``raw_content``: the ``events`` table, ``ConnectorEvent``, the eval ground truth. Posting ``{"raw_content": ...}`` was the natural guess and returned a 422 about a missing ``body``; posting both fields silently ignored ``raw_content``.
 Decision: The endpoint accepts exactly one of ``raw_content`` (stored verbatim, as a connector would) or ``body`` (composed with ``from``/``subject`` into the IMAP layout). Both or neither is a 422 that names the rule; ``from``/``subject`` alongside ``raw_content`` is also a 422. Documentation shows the ``raw_content`` form.
