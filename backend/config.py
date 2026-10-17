@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # the ERP poller entirely, so a default install makes no outbound calls.
     mock_erp_url: str = Field(default="")
 
+    # --- Signals ---
+    # After a signal is approved or rejected, the evaluator will not raise
+    # the same finding (same natural key) again for this many days.
+    signal_resolution_cooldown_days: int = Field(default=7, ge=0)
+
     # --- Phase 10 demo ---
     # Hero property the no-arg ``POST /admin/demo/replay`` runs against.
     # Default: WE 29 (Step 6 hero, see docs/DECISIONS.md). Override via env when

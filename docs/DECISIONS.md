@@ -2,6 +2,12 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-10-17: a human decision on a signal holds for a cooldown period
+Context: The evaluator deduplicated candidates only against *pending* signals with the same ``(property_id, type, subtype)``. Rules are stateless and keep matching the same facts, so once a signal was approved or rejected, the next 30-second tick raised an identical pending signal (observed: approved at T, duplicate pending at T+60s). The original dedupe entry below described re-firing after a decision as intended; in practice it undid every decision an operator made.
+Decision: Signals carry a ``natural_key`` column, ``type|<property id or 'portfolio'>|<subtype or topic>``, written by the evaluator and backfilled for existing rows (migration ``0013_signal_natural_key``). A candidate is skipped while a signal with the same key is pending, or was resolved (approved or rejected) within ``signal_resolution_cooldown_days`` (default 7). After the cooldown the finding can be raised again if the rule still matches. Signals proposed through the API or MCP keep a NULL key and are not deduplicated by the evaluator.
+Reason: An explicit key column makes the dedupe rule one indexed lookup and keeps it out of JSONB path expressions. A cooldown, rather than suppressing forever, matches how operators work: a rejected boiler warning should not reappear tomorrow, but if the complaints continue for weeks it deserves another look.
+Revisit if: Operators want a per-type cooldown (lease reminders and maintenance patterns likely want different windows) or an explicit "snooze until" on reject. Both fit on the same key.
+
 ## 2026-10-17: onboarding test asserts the current degraded-briefing notice
 Context: ``test_render_onboarding_empty_property`` asserted "Briefing skipped", the notice from when Gemini was the only briefing backend. The notice was later reworded to "Briefing unavailable" when a second backend was added, and the test was not updated, so the suite carried one known failure.
 Decision: The test asserts "Briefing unavailable", the text the code emits when no LLM backend is reachable.
@@ -297,6 +303,7 @@ Reason: Keeps the schema as-is (Part VI). A synthetic "portfolio" property would
 Revisit if: Portfolio UI needs more than one dimension of grouping — then add a `scope` column instead of overloading NULL.
 
 ## 2026-04-24 — Phase 3: dedupe signals on `(property_id, type, payload.hint.{topic|subtype})`
+Superseded 2026-10-17 by "a human decision on a signal holds for a cooldown period": re-firing after approve or reject turned out to undo operator decisions.
 Context: The evaluator runs every 30s; without dedupe it would insert a fresh pending signal for every pattern on every tick, flooding the inbox.
 Decision: `_already_open` in `backend/signals/evaluator.py` checks for an existing `status='pending'` signal with the same `(property_id, type)` **and** matching `proposed_action.payload.hint.topic|subtype` — so `recurring_maintenance:heating` and `recurring_maintenance:water` on the same property remain distinct.
 Reason: Matches the way rules author their output (each rule sets `action_hint.topic` or `subtype`), preserves re-fire on the next tick if a human approves/rejects/lets the signal resolve, and avoids a separate dedupe table.

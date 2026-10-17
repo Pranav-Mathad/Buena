@@ -390,6 +390,28 @@ _MIGRATIONS: list[tuple[str, str]] = [
             NOT NULL DEFAULT '{}'::jsonb;
         """,
     ),
+    (
+        "0013_signal_natural_key",
+        """
+        -- Stable identity of "the same finding" across evaluator ticks:
+        -- type | property id (or 'portfolio') | rule subtype or topic.
+        -- The evaluator suppresses a candidate while a signal with the
+        -- same key is pending or was resolved within the cooldown, so an
+        -- approved or rejected signal is not re-raised on the next tick.
+        -- Signals proposed from outside the evaluator keep NULL.
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS natural_key TEXT;
+        UPDATE signals
+           SET natural_key = concat_ws('|',
+                 type,
+                 COALESCE(property_id::text, 'portfolio'),
+                 COALESCE(proposed_action->'payload'->'hint'->>'subtype',
+                          proposed_action->'payload'->'hint'->>'topic', ''))
+         WHERE natural_key IS NULL
+           AND proposed_action->'payload' ? 'hint';
+        CREATE INDEX IF NOT EXISTS idx_signals_natural_key
+          ON signals (natural_key, resolved_at DESC);
+        """,
+    ),
 ]
 
 
