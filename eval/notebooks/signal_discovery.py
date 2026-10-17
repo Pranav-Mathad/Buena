@@ -2,7 +2,7 @@
 
 Run after Step 6's email backfill lands so the SQL has data to chew
 on. Produces a markdown report (printed to stdout, redirect to
-``eval/runs/YYYY-MM-DD-signal-discovery.md``) covering:
+``docs/eval-runs/YYYY-MM-DD-signal-discovery.md``) covering:
 
 1. Top properties by event volume (90 d).
 2. Overlapping maintenance categories per property.
@@ -22,7 +22,7 @@ the discovery script just surfaces the candidates.
 Usage::
 
     python -m eval.notebooks.signal_discovery
-    python -m eval.notebooks.signal_discovery --out eval/runs/$(date +%Y-%m-%d)-signal-discovery.md
+    python -m eval.notebooks.signal_discovery --out docs/eval-runs/$(date +%Y-%m-%d)-signal-discovery.md
 
 The script is intentionally read-only — no fact writes, no event
 mutations. Safe to run while the backfill / live worker are active.
@@ -358,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         default=None,
         help="Optional Markdown destination "
-        "(e.g. eval/runs/2026-04-26-signal-discovery.md).",
+        "(e.g. docs/eval-runs/2026-04-26-signal-discovery.md).",
     )
     args = parser.parse_args(argv)
 

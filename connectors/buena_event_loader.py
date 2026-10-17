@@ -353,7 +353,7 @@ async def re_route_unrouted(
     """Walk every event with no scope set and re-evaluate routing.
 
     One-time migration step after Phase 8.1 schema/router changes —
-    surfaces in ``DECISIONS.md`` as a documented re-attribution pass,
+    surfaces in ``docs/DECISIONS.md`` as a documented re-attribution pass,
     not as ongoing pipeline behavior. Idempotent: re-running on already-
     re-routed events finds nothing new to scan.
     """

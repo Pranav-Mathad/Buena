@@ -14,7 +14,6 @@ eval/
 │   └── emails_v1.jsonl          # one JSON object per line — see schema below
 ├── runner.py                    # python -m eval.runner --set emails_v1
 ├── metrics.py                   # P/R/F1, calibration curve, routing accuracy
-├── runs/                        # YYYY-MM-DD-stepN.md reports
 └── tests/                       # smoke + unit on a fixture file
 ```
 
@@ -114,13 +113,13 @@ Field semantics:
 
 ```
 python -m eval.runner --set emails_v1
-python -m eval.runner --set emails_v1 --json --out eval/runs/2026-04-25-step4.md
+python -m eval.runner --set emails_v1 --json --out docs/eval-runs/2026-04-25-step4.md
 ```
 
 Reads ground-truth file, runs each row through
 `backend.pipeline.extractor.extract`, builds a
 :class:`eval.metrics.Report`. The runner prints a markdown summary
-and (with `--out`) writes a dated report into `runs/`.
+and (with `--out`) writes a dated report into `docs/eval-runs/`.
 
 ## Metrics
 
@@ -144,4 +143,4 @@ and (with `--out`) writes a dated report into `runs/`.
 
 Honest numbers, no smoothing. If a metric drops between Step 5 and
 Step 6, that's the finding; we discuss it before merging anything.
-The first eval run in `runs/` becomes the baseline.
+The first eval run in `docs/eval-runs/` becomes the baseline.

@@ -727,7 +727,7 @@ async def backfill_emails(
             read-modify-write can't double-spend; the worst-case
             overshoot is bounded by ``N × max_call_cost`` because that
             many calls can be in-flight when the cap is breached. See
-            DECISIONS.md for the auditable bound.
+            docs/DECISIONS.md for the auditable bound.
     """
     extracted_root = root if root is not None else buena_archive.require_root()
     emails_dir = extracted_root / "emails"

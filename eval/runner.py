@@ -3,7 +3,7 @@
 ```
 python -m eval.runner --set emails_v1
 python -m eval.runner --set emails_v1 --json
-python -m eval.runner --set emails_v1 --out eval/runs/2026-04-25-step4.md
+python -m eval.runner --set emails_v1 --out docs/eval-runs/2026-04-25-step4.md
 ```
 
 The runner is intentionally honest about its inputs:
@@ -320,7 +320,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--out",
         default=None,
-        help="Optional markdown destination (e.g. eval/runs/2026-04-25-step4.md).",
+        help="Optional markdown destination (e.g. docs/eval-runs/2026-04-25-step4.md).",
     )
     p.add_argument(
         "--via",

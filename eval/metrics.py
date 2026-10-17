@@ -230,7 +230,7 @@ class Report:
         return {"prompt_tokens": prompt, "completion_tokens": completion}
 
     def render_markdown(self) -> str:
-        """Pretty markdown summary suitable for committing to ``eval/runs/``."""
+        """Pretty markdown summary suitable for committing to ``docs/eval-runs/``."""
         lines: list[str] = [
             f"# Eval report — {self.set_name}",
             "",

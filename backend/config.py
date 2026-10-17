@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="")
     # Model defaults updated 2026-04-25 — Phase 8.1. The previous
     # ``gemini-2.0-{flash,pro}`` names were retired for new API users.
-    # Pinning explicit versions makes eval/runs reproducible across
+    # Pinning explicit versions makes docs/eval-runs reproducible across
     # weeks; flip to ``gemini-flash-latest`` if we explicitly want
     # tracking-the-edge behavior.
     gemini_flash_model: str = Field(default="gemini-2.5-flash")
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # --- Phase 10 demo ---
     # Hero property the no-arg ``POST /admin/demo/replay`` runs against.
-    # Default: WE 29 (Step 6 hero, see DECISIONS.md). Override via env when
+    # Default: WE 29 (Step 6 hero, see docs/DECISIONS.md). Override via env when
     # a different property has richer coverage post-hackathon.
     keystone_demo_hero_property: str = Field(
         default="509393da-6806-49ef-9e59-3da0213008cd"

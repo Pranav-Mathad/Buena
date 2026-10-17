@@ -405,7 +405,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(sequential). At N>1 the cost ledger charge() call is "
         "serialized via asyncio.Lock; worst-case overshoot if the "
         "cap is breached mid-flight is bounded by N * max_call_cost. "
-        "See DECISIONS.md for the auditable bound.",
+        "See docs/DECISIONS.md for the auditable bound.",
     )
     emails.add_argument(
         "--reset-cost-ledger",

@@ -333,7 +333,7 @@ async def propagate_after_fact_write(
     Scaling note: a single liegenschaft fact in Buena's data
     propagates to ~52 property files. Acceptable for Buena volume;
     the renderer is deterministic and fast (median 2 KB markdown).
-    Documented as the scaling boundary in DECISIONS.md.
+    Documented as the scaling boundary in docs/DECISIONS.md.
     """
     counts: dict[str, int] = {"properties": 0, "buildings": 0, "liegenschaften": 0}
 

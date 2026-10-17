@@ -5,7 +5,7 @@ Phase 11 Step 1 vocab-fix verification while Gemini Pro quota is exhausted.
 
 NOT wired into the production extractor (``backend.pipeline.extractor``).
 Phase 8 Step 5 pinned Gemini Pro for production extraction; switching the
-production path requires a DECISIONS.md entry plus an eval re-run to
+production path requires a docs/DECISIONS.md entry plus an eval re-run to
 confirm precision did not regress.
 
 Naming note: ``backend.services.pioneer`` already exists as the Phase 5
