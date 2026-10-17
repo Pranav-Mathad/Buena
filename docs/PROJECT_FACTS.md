@@ -23,7 +23,7 @@ comments.
 | HTTP routes | 55 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
 | Additive migrations | 13 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
 | Rule constraints | 8 | modules in `backend/pipeline/constraints/` |
-| Signal rules registered | 4 (of 5 modules) | `_RULES` in `backend/signals/evaluator.py`; `late_payment.py` is not registered |
+| Signal rules | 4 | `_RULES` in `backend/signals/evaluator.py` |
 | MCP tools | 5 | `grep -c '@mcp.tool' mcp_server/main.py` |
 
 ## Tests
