@@ -58,6 +58,7 @@ From [`docs/eval-runs/`](eval-runs/); details in [EVALUATION.md](EVALUATION.md).
 | Micro P / R / F1, Gemini and Pioneer | 0.79 / 1.00 / 0.88 | 26 key-correct of 33 extracted and 26 expected, summed from the per-section tables |
 | Micro P / R / F1, rule-based | 0.42 / 0.42 / 0.42 | 11 key-correct of 26 extracted and 26 expected |
 | Lease F1, Gemini and Pioneer | 0.62 (P 0.44, R 1.00) | per-section table in both reports |
+| Lease F1, rule-based | 0.67 (P 0.50, R 1.00) | `2026-10-17-emails_v1-rule-based.md` |
 | Value-match of key-correct facts | 3 of 26 (Gemini), 2 of 26 (Pioneer), 0 of 11 (rule-based) | value-match column × TP, summed |
 | Observed accuracy in the 0.90 to 1.00 confidence bucket | 0.79 (Gemini), 0.81 (Pioneer) | calibration tables |
 
