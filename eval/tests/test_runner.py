@@ -151,6 +151,11 @@ async def test_runner_end_to_end_on_fixture(tmp_path, monkeypatch) -> None:
     # Point the runner at our tmp ground-truth file
     monkeypatch.setattr(runner, "GROUND_TRUTH_DIR", tmp_path)
     fx.rename(tmp_path / "fixture.jsonl")
+    # Scoring is under test, not spend tracking: keep the runner away from the
+    # shared cost_ledger table so the test neither needs nor modifies the DB.
+    monkeypatch.setattr(runner.cost_ledger, "ensure_label", lambda *a, **k: None)
+    monkeypatch.setattr(runner.cost_ledger, "get_state", lambda *a, **k: None)
+    monkeypatch.setattr(runner.cost_ledger, "charge", lambda *a, **k: None)
 
     report, raw = await runner.run("fixture")
     assert report.n_rows == 2

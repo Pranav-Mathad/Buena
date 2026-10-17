@@ -1,44 +1,40 @@
-"""Tests for the Step 6 email backfill — cost cap + dead-letter behaviour.
+"""Email backfill loop control: cost-cap abort and dead-lettering.
 
-These tests exercise :mod:`connectors.buena_email_loader` against the
-dev Postgres on :5433. They monkeypatch ``backend.pipeline.extractor``
-so no Gemini calls are made — the assertions are about loop control,
-the failed_events table, and the cost ledger's abort path. Skipped
-when Postgres is unreachable so the suite stays portable.
+These tests run :mod:`connectors.buena_email_loader` against Postgres with
+the extractor and router monkeypatched, so no LLM calls are made. The
+assertions are about loop control, the ``failed_events`` table and the
+cost ledger's abort path.
 
-**Test isolation:** every test gets a fresh, unique cost-ledger label
-(``step6_test_<uuid>``) via the :func:`_unique_label` fixture so the
-test suite can run while a real backfill is using the production
-``step6_email_backfill`` row. Without this, the cleanup
-``reset_label`` calls would delete the live row mid-run. The
-production label is left strictly alone by the test surface.
+Isolation: the :func:`backfill_env` fixture gives each test its own
+property, building and cost-ledger label, and deletes all of them (plus
+every event the test inserted) on teardown, even when an assertion fails.
+A unique label matters because ``reset_label`` deletes a ledger row: with a
+shared label, running the suite next to a real backfill would wipe the
+backfill's spend record mid-run.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
 from backend.services.gemini import ExtractionResult
-from connectors import buena_email_loader, cost_ledger as cost_ledger_module
+from connectors import buena_email_loader
+from connectors import cost_ledger as cost_ledger_module
 from connectors.base import ConnectorEvent
 
 pytestmark = pytest.mark.asyncio
 
-
-def _reset_session_cache() -> None:
-    """Match the pattern in backend/tests/test_routing.py."""
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
+_REF_PREFIX = "test-backfill-"
 
 
 def _connector_event(idx: int) -> ConnectorEvent:
@@ -52,92 +48,102 @@ def _connector_event(idx: int) -> ConnectorEvent:
     """
     return ConnectorEvent(
         source="email",
-        source_ref=f"test-cap-{idx:04d}@example.com",
+        source_ref=f"{_REF_PREFIX}{idx:04d}@example.com",
         raw_content=f"From: a@b\nSubject: test {idx}\n\nbody {idx}",
         metadata={"from": "a@b", "subject": f"test {idx}"},
         received_at=datetime(2026, 4, 25, 9, 0, 0, tzinfo=timezone.utc),
     )
 
 
-async def _ensure_one_property() -> Any:
-    """Insert a fixture property so route_text_event can land on it."""
+@dataclass(frozen=True)
+class BackfillEnv:
+    property_id: UUID
+    ledger_label: str
+
+
+@pytest.fixture
+async def backfill_env(db: None, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[BackfillEnv]:
+    """A throwaway property, building and ledger label, removed after the test.
+
+    Every event the loader inserts is forced onto this property, so teardown
+    can delete exactly what the test produced. The ledger label is unique per
+    test so a backfill running against the same database is never touched.
+    """
+    suffix = uuid4().hex[:8]
+    label = f"test_backfill_{suffix}"
+    monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", label)
+    cost_ledger_module.reset_label(label)
+
     factory = get_sessionmaker()
     async with factory() as session:
-        existing = (
+        await session.execute(text(f"DELETE FROM events WHERE source_ref LIKE '{_REF_PREFIX}%'"))
+        building_id = (
             await session.execute(
-                text("SELECT id FROM properties WHERE name = :n"),
-                {"n": "Test Cap Apt 1"},
+                text("INSERT INTO buildings (address) VALUES (:a) RETURNING id"),
+                {"a": f"Test Backfill Building {suffix}"},
             )
-        ).first()
-        if existing is not None:
-            return existing.id
-        # buildings.address NOT NULL; properties.address NOT NULL.
-        building = (
-            await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Cap Building Address') RETURNING id"
-                )
-            )
-        ).first()
-        prop = (
+        ).scalar_one()
+        property_id = (
             await session.execute(
                 text(
                     """
                     INSERT INTO properties (name, address, building_id, aliases)
-                    VALUES (
-                      'Test Cap Apt 1',
-                      'Test Cap Building Address, Apt 1',
-                      :bid,
-                      ARRAY['Test Cap Apt 1']
-                    )
+                    VALUES (:n, :a, :bid, ARRAY[:n])
                     RETURNING id
                     """
                 ),
-                {"bid": building.id},
+                {
+                    "n": f"Test Backfill Apt {suffix}",
+                    "a": f"Test Backfill {suffix}",
+                    "bid": building_id,
+                },
             )
-        ).first()
-        await session.commit()
-        return prop.id
-
-
-async def _cleanup_test_events() -> None:
-    """Drop any rows the prior runs left behind so tests are deterministic."""
-    factory = get_sessionmaker()
-    async with factory() as session:
-        await session.execute(
-            text(
-                "DELETE FROM events WHERE source_ref LIKE 'test-cap-%'"
-            )
-        )
+        ).scalar_one()
         await session.commit()
 
+    try:
+        yield BackfillEnv(property_id=property_id, ledger_label=label)
+    finally:
+        async with factory() as session:
+            await session.execute(
+                text(
+                    "DELETE FROM failed_events WHERE event_id IN "
+                    f"(SELECT id FROM events WHERE source_ref LIKE '{_REF_PREFIX}%')"
+                )
+            )
+            await session.execute(
+                text("DELETE FROM facts WHERE property_id = :pid"), {"pid": property_id}
+            )
+            await session.execute(
+                text(f"DELETE FROM events WHERE source_ref LIKE '{_REF_PREFIX}%'")
+            )
+            await session.execute(
+                text("DELETE FROM properties WHERE id = :pid"), {"pid": property_id}
+            )
+            await session.execute(
+                text("DELETE FROM buildings WHERE id = :bid"), {"bid": building_id}
+            )
+            await session.commit()
+        cost_ledger_module.reset_label(label)
 
-@pytest.mark.usefixtures("db")
-async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When the ledger hits the cap mid-run, the loop stops cleanly."""
-    await _cleanup_test_events()
-    # Per-test unique label so a concurrent live backfill can't be
-    # corrupted by our reset_label calls. See module docstring.
-    test_label = f"step6_test_{uuid4().hex[:8]}"
-    monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", test_label)
-    cost_ledger_module.reset_label(test_label)
 
-    pid = await _ensure_one_property()
-
-    # Force every event onto our fixture property by patching route_text_event.
+def _force_route(monkeypatch: pytest.MonkeyPatch, property_id: UUID) -> None:
+    """Route every event onto the fixture property."""
     from backend.pipeline import router as router_module  # noqa: PLC0415
 
     async def _fake_route(session: Any, raw_content: str, *, metadata: Any = None) -> Any:
         return router_module.StructuredRoute(
-            property_id=pid,
-            method="test_fake",
-            reason="forced for cost-cap test",
+            property_id=property_id, method="test_fake", reason="forced by test"
         )
 
-    monkeypatch.setattr(
-        buena_email_loader, "route_text_event", _fake_route, raising=True
-    )
+    monkeypatch.setattr(buena_email_loader, "route_text_event", _fake_route, raising=True)
+
+
+async def test_cost_cap_aborts_loop_cleanly(
+    backfill_env: BackfillEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the ledger hits the cap mid-run, the loop stops cleanly."""
+    _force_route(monkeypatch, backfill_env.property_id)
 
     # Patch the extractor to return a deterministic result that costs ~$0.0125
     # per call (10k prompt + 1k completion on Pro pricing). The cap is set
@@ -194,33 +200,12 @@ async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> 
     assert summary2.aborted_on_cost_cap is True
     assert summary2.extraction_attempts == 0
 
-    # Cleanup so re-runs of the suite stay deterministic.
-    cost_ledger_module.reset_label(test_label)
-    await _cleanup_test_events()
 
-
-@pytest.mark.usefixtures("db")
-async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dead_letter_after_threshold(
+    backfill_env: BackfillEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A persistent extractor failure increments retry_count across runs."""
-    await _cleanup_test_events()
-    test_label = f"step6_test_{uuid4().hex[:8]}"
-    monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", test_label)
-    cost_ledger_module.reset_label(test_label)
-
-    pid = await _ensure_one_property()
-
-    from backend.pipeline import router as router_module  # noqa: PLC0415
-
-    async def _fake_route(session: Any, raw_content: str, *, metadata: Any = None) -> Any:
-        return router_module.StructuredRoute(
-            property_id=pid,
-            method="test_fake",
-            reason="forced for dead-letter test",
-        )
-
-    monkeypatch.setattr(
-        buena_email_loader, "route_text_event", _fake_route, raising=True
-    )
+    _force_route(monkeypatch, backfill_env.property_id)
 
     async def _always_raises(**_kwargs: Any) -> ExtractionResult:
         raise RuntimeError("synthetic extractor failure")
@@ -256,7 +241,7 @@ async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> N
                     SELECT f.retry_count, e.processing_error
                     FROM events e
                     JOIN failed_events f ON f.event_id = e.id
-                    WHERE e.source_ref = 'test-cap-0000@example.com'
+                    WHERE e.source_ref = 'test-backfill-0000@example.com'
                     """
                 )
             )
@@ -273,6 +258,3 @@ async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> N
         limit=None,
     )
     assert summary4.extraction_attempts == 0  # dead-lettered → skipped
-
-    cost_ledger_module.reset_label(test_label)
-    await _cleanup_test_events()
