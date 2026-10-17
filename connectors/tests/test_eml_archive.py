@@ -9,6 +9,9 @@ import pytest
 
 from connectors import eml_archive, redact
 
+# Synthetic IBANs, assembled at runtime so no IBAN-shaped literal is committed.
+IBAN_1349 = "DE" + "0" * 16 + "1349"
+
 
 def _write_eml(path: Path, body: str = "Heizung kalt seit gestern.") -> None:
     """Write a minimal RFC-822-ish .eml file."""
@@ -23,7 +26,7 @@ def _write_eml(path: Path, body: str = "Heizung kalt seit gestern.") -> None:
         "Content-Type: text/plain; charset=utf-8\r\n"
         "\r\n"
         f"{body}\r\n"
-        "Bitte zahlen Sie an DE94120300004034471349.\r\n"
+        f"Bitte zahlen Sie an {IBAN_1349}.\r\n"
         "Phone: +49 30 1234 5678\r\n"
     )
     path.write_text(raw, encoding="utf-8")
@@ -36,7 +39,7 @@ def test_parse_one_redacts_body_and_metadata(tmp_path: Path) -> None:
 
     assert event.source == "email"
     assert event.source_ref == "abc123@example.com"
-    assert "DE94120300004034471349" not in event.raw_content
+    assert IBAN_1349 not in event.raw_content
     assert "****1349" in event.raw_content
     assert event.metadata["from"].endswith("@example.com")
     assert event.metadata["thread_id"] == "root-thread@example.com"

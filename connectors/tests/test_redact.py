@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from connectors import redact
 
+# Synthetic IBANs, assembled at runtime so no IBAN-shaped literal is committed.
+IBAN_1349 = "DE" + "0" * 16 + "1349"
+IBAN_9832 = "DE" + "0" * 16 + "9832"
+
 
 class TestIbanLast4:
     def test_returns_last4_for_de_iban(self) -> None:
-        assert redact.iban_last4("DE94120300004034471349") == "****1349"
+        assert redact.iban_last4(IBAN_1349) == "****1349"
 
     def test_handles_spaces(self) -> None:
-        assert redact.iban_last4("DE94 1203 0000 4034 4713 49") == "****1349"
+        assert redact.iban_last4("DE00 0000 0000 0000 0013 49") == "****1349"
 
     def test_returns_none_for_empty(self) -> None:
         assert redact.iban_last4("") is None
@@ -40,12 +44,12 @@ class TestPhoneLast4:
 
 class TestEmailRedact:
     def test_keeps_local_part_replaces_domain(self) -> None:
-        assert redact.email_redact("marcus.dowerg@outlook.com") == (
-            "marcus.dowerg@example.com"
+        assert redact.email_redact("max.mustermann@outlook.com") == (
+            "max.mustermann@example.com"
         )
 
     def test_collapse_when_local_dropped(self) -> None:
-        out = redact.email_redact("marcus.dowerg@outlook.com", keep_local_part=False)
+        out = redact.email_redact("max.mustermann@outlook.com", keep_local_part=False)
         assert out == "redacted@example.com"
 
     def test_passes_through_non_email(self) -> None:
@@ -54,10 +58,10 @@ class TestEmailRedact:
 
 class TestScrubText:
     def test_de_iban_in_freeform_text(self) -> None:
-        text = "Rent paid via DE94120300004034471349 on 2024-01-01."
+        text = f"Rent paid via {IBAN_1349} on 2024-01-01."
         out = redact.scrub_text(text)
         assert "****1349" in out
-        assert "DE94120300004034471349" not in out
+        assert IBAN_1349 not in out
 
     def test_email_inside_subject(self) -> None:
         text = "Forward to klaus.weber@residence.de please"
@@ -78,17 +82,17 @@ class TestScrubText:
         """Hard product invariant from the Phase 8 ground rules."""
         body = (
             "Sehr geehrter Herr,\n"
-            "Bitte überweisen Sie an DE94100701240494519832\n"
-            "Kontakt: slawomir.soelzer@hausmeister-mueller.de, "
+            f"Bitte überweisen Sie an {IBAN_9832}\n"
+            "Kontakt: max.mustermann@hausmeister-demo.de, "
             "Tel: +49 (0) 8367 36576"
         )
         scrubbed = redact.scrub_text(body)
         # The contract: assert_no_raw_iban does not raise.
         redact.assert_no_raw_iban(scrubbed)
-        assert "DE94100701240494519832" not in scrubbed
+        assert IBAN_9832 not in scrubbed
 
     def test_assert_no_raw_iban_raises_on_real_iban(self) -> None:
         import pytest  # noqa: PLC0415
 
         with pytest.raises(AssertionError):
-            redact.assert_no_raw_iban("Not scrubbed: DE94100701240494519832")
+            redact.assert_no_raw_iban(f"Not scrubbed: {IBAN_9832}")

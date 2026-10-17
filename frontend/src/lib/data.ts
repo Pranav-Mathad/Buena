@@ -81,7 +81,7 @@ export const propertyFile = {
     {
       title: "Tenants",
       facts: [
-        { value: "Edeltraud Renner — Mietverhältnis seit 2022-03-01", source: "Mietvertrag.pdf", date: "2022-03-01" },
+        { value: "Laura Schmitz — Mietverhältnis seit 2022-03-01", source: "Mietvertrag.pdf", date: "2022-03-01" },
       ],
     },
     {
@@ -162,7 +162,7 @@ export const askResponses: Record<string, AskResponse> = {
   "What's going on with the water damage?": {
     status: "answered",
     answer:
-      "Wasser läuft seit dem 2026-04-23 durch die Küchendecke der Mieterin (Edeltraud Renner). Der Schaden wurde gemeldet, ist aber noch nicht behoben. Die Mieterin hat als Reaktion eine Mietminderung von 15% angekündigt, die ab Mai 2026 in Kraft tritt, bis das Problem behoben ist.",
+      "Wasser läuft seit dem 2026-04-23 durch die Küchendecke der Mieterin (Laura Schmitz). Der Schaden wurde gemeldet, ist aber noch nicht behoben. Die Mieterin hat als Reaktion eine Mietminderung von 15% angekündigt, die ab Mai 2026 in Kraft tritt, bis das Problem behoben ist.",
     confidence: "high",
     sources: [
       { id: "evt-001", channel: "email", date: "2026-04-23", snippet: "Seit gestern läuft Wasser durch die Decke meiner Küche..." },
@@ -174,7 +174,7 @@ export const askResponses: Record<string, AskResponse> = {
   "Hat der Mieter eine Mietminderung angekündigt?": {
     status: "answered",
     answer:
-      "Ja. Edeltraud Renner hat am 2026-04-23 eine 15% Mietminderung angekündigt, ausgelöst durch den unbehobenen Wasserschaden in der Küche. Die Minderung tritt ab Mai 2026 in Kraft.",
+      "Ja. Laura Schmitz hat am 2026-04-23 eine 15% Mietminderung angekündigt, ausgelöst durch den unbehobenen Wasserschaden in der Küche. Die Minderung tritt ab Mai 2026 in Kraft.",
     confidence: "high",
     sources: [
       { id: "evt-002", channel: "email", date: "2026-04-23", snippet: "...die Miete diesen Monat um 15% zu mindern, bis das Problem behoben ist." },
@@ -339,16 +339,16 @@ export type InboxEmail = {
 };
 
 export const inboxEmails: InboxEmail[] = [
-  { from: "Edeltraud Renner", subject: "Wasserschaden Küche — dringend", date: "2h ago", preview: "Seit gestern läuft Wasser durch die Decke meiner Küche...", relevant: true },
-  { from: "Edeltraud Renner", subject: "Mietminderung Mai 2026", date: "2h ago", preview: "Hiermit kündige ich an, die Miete diesen Monat um 15% zu mindern...", relevant: true },
+  { from: "Laura Schmitz", subject: "Wasserschaden Küche — dringend", date: "2h ago", preview: "Seit gestern läuft Wasser durch die Decke meiner Küche...", relevant: true },
+  { from: "Laura Schmitz", subject: "Mietminderung Mai 2026", date: "2h ago", preview: "Hiermit kündige ich an, die Miete diesen Monat um 15% zu mindern...", relevant: true },
   { from: "Hausverwaltung", subject: "Re: Aufzugswartung 12.05.", date: "1d ago", preview: "Termin bestätigt für den 12. Mai zwischen 9 und 12 Uhr.", relevant: false },
   { from: "WEG Verwalter", subject: "Einladung Eigentümerversammlung", date: "3d ago", preview: "Hiermit laden wir Sie zur Eigentümerversammlung am 15.06...", relevant: false },
-  { from: "Edeltraud Renner", subject: "Lärm aus Wohnung darüber", date: "1w ago", preview: "Seit Wochen wieder lautes Stampfen ab 23 Uhr — bitte Abmahnung...", relevant: true },
+  { from: "Laura Schmitz", subject: "Lärm aus Wohnung darüber", date: "1w ago", preview: "Seit Wochen wieder lautes Stampfen ab 23 Uhr — bitte Abmahnung...", relevant: true },
   { from: "Stadtwerke Berlin", subject: "Jahresabrechnung 2025", date: "2w ago", preview: "Anbei Ihre Jahresabrechnung für den Verbrauchszeitraum...", relevant: false },
   { from: "Brandschutz GmbH", subject: "Nachweis erneuert", date: "3w ago", preview: "Anbei der erneuerte Brandschutznachweis, gültig bis 2027-06-30.", relevant: false },
-  { from: "Edeltraud Renner", subject: "Frage zur Nebenkostenabrechnung", date: "1mo ago", preview: "Ich habe eine Frage zu Position 4 der NK-Abrechnung...", relevant: false },
+  { from: "Laura Schmitz", subject: "Frage zur Nebenkostenabrechnung", date: "1mo ago", preview: "Ich habe eine Frage zu Position 4 der NK-Abrechnung...", relevant: false },
   { from: "Hausmeister Service", subject: "Treppenhausreinigung Mai", date: "1mo ago", preview: "Anbei der aktualisierte Reinigungsplan für Mai 2026.", relevant: false },
-  { from: "Edeltraud Renner", subject: "Defektes Fenster Schlafzimmer", date: "3mo ago", preview: "Das Fenster im Schlafzimmer schließt nicht mehr richtig...", relevant: false },
+  { from: "Laura Schmitz", subject: "Defektes Fenster Schlafzimmer", date: "3mo ago", preview: "Das Fenster im Schlafzimmer schließt nicht mehr richtig...", relevant: false },
   { from: "Versicherung Allianz", subject: "Police-Update", date: "3mo ago", preview: "Ihre Wohngebäudeversicherung wurde aktualisiert.", relevant: false },
   { from: "Vattenfall", subject: "Abschlag April", date: "1mo ago", preview: "Ihr neuer Abschlag beträgt 142 EUR ab Mai 2026.", relevant: false },
   { from: "Nachbarschaft Berlin", subject: "Newsletter April", date: "1mo ago", preview: "Neuigkeiten aus Ihrem Kiez im April 2026.", relevant: false },

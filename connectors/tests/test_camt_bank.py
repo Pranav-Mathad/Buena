@@ -6,12 +6,15 @@ from pathlib import Path
 
 from connectors import camt_bank, redact
 
+# Synthetic IBANs, assembled at runtime so no IBAN-shaped literal is committed.
+IBAN_9832 = "DE" + "0" * 16 + "9832"
+
 
 def _write_bank_csv(path: Path) -> None:
     path.write_text(
         "id,datum,typ,betrag,kategorie,gegen_name,verwendungszweck,referenz_id,error_types\n"
         "TX-00001,2024-01-01,CREDIT,1256.00,miete,Chantal Tasche,Miete 01/2024 EH-045,MIE-006,\n"
-        "TX-00002,2024-01-15,DEBIT,650.00,dienstleister,Hausmeister Mueller GmbH,Wartung INV-00012 DE94100701240494519832,INV-00012,\n",
+        f"TX-00002,2024-01-15,DEBIT,650.00,dienstleister,Hausmeister Demo GmbH,Wartung INV-00012 {IBAN_9832},INV-00012,\n",
         encoding="utf-8",
     )
 
@@ -36,8 +39,8 @@ def test_parse_row_extracts_eh_and_mie(tmp_path: Path) -> None:
     assert second.metadata["betrag_signed"] == "-650.00"
     assert second.metadata["invoice_ref"] == "INV-00012"
     # IBAN inside verwendungszweck must be scrubbed
-    assert "DE94100701240494519832" not in second.raw_content
-    assert "DE94100701240494519832" not in second.metadata["verwendungszweck"]
+    assert IBAN_9832 not in second.raw_content
+    assert IBAN_9832 not in second.metadata["verwendungszweck"]
     redact.assert_no_raw_iban(second.metadata["verwendungszweck"])
 
 

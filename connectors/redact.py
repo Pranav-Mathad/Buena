@@ -39,7 +39,7 @@ def iban_last4(iban: str | None) -> str | None:
             through unchanged.
 
     Returns:
-        ``"****1349"`` for ``"DE94120300004034471349"`` etc. Always 8
+        ``"****1349"`` for ``"DE00 0000 0000 0000 0013 49"`` etc. Always 8
         characters (4 stars + 4 digits) when input is non-empty.
     """
     if not iban:
@@ -88,7 +88,7 @@ def email_redact(
     Args:
         email: Raw email address.
         keep_local_part: When True (default), keep the part before the
-            ``@`` so the demo can still show "marcus.dowerg" without
+            ``@`` so the demo can still show "max.mustermann" without
             leaking the real provider. When False, the whole address
             collapses to ``redacted@example.com``.
         replace_domain: Domain to substitute. Must include the leading
@@ -108,7 +108,7 @@ def scrub_text(text: str) -> str:
     Used by connectors that yield raw bodies (email body, PDF text,
     bank ``verwendungszweck``) before persistence. Substitutions:
 
-    - DE IBAN ``DE94120300004034471349`` → ``****1349``
+    - DE IBAN (``DE`` + 20 digits)       → ``****<last4>``
     - Other IBAN (``GBxx…``)              → ``****<last4>``
     - Email                               → local-part + ``@example.com``
     - E.164-ish phone                     → ``*** *** **<last4>``

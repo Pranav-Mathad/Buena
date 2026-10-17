@@ -9,6 +9,10 @@ import pytest
 from connectors import csv_stammdaten
 from connectors.csv_stammdaten import ColumnMap
 
+# Synthetic IBANs, assembled at runtime so no IBAN-shaped literal is committed.
+IBAN_1349 = "DE" + "0" * 16 + "1349"
+IBAN_7174 = "DE" + "0" * 16 + "7174"
+
 
 def _write_csv(path: Path, header: str, rows: list[str]) -> None:
     path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
@@ -20,8 +24,8 @@ def test_read_rows_redacts_pii_columns(tmp_path: Path) -> None:
         csv_path,
         header="id,name,email,telefon,iban,strasse",
         rows=[
-            "EIG-001,Alice Schmidt,alice@residence.de,+49 30 1234 5678,DE94120300004034471349,Hauptstr. 1",
-            "EIG-002,Bob Bauer,bob@example.de,030 87654321,DE99100100100249947174,Nebenstr. 2",
+            f"EIG-001,Alice Schmidt,alice@residence.de,+49 30 1234 5678,{IBAN_1349},Hauptstr. 1",
+            f"EIG-002,Bob Bauer,bob@example.de,030 87654321,{IBAN_7174},Nebenstr. 2",
         ],
     )
     column_map = ColumnMap(
@@ -44,7 +48,7 @@ def test_read_rows_redacts_pii_columns(tmp_path: Path) -> None:
     assert first.natural_key == "EIG-001"
     assert first.fields["name"] == "Alice Schmidt"
     assert first.fields["email"] == "alice@example.com"
-    assert "DE94120300004034471349" not in str(first.fields)
+    assert IBAN_1349 not in str(first.fields)
     assert first.fields["iban"].startswith("****")
     assert first.fields["iban"].endswith("1349")
     assert first.fields["telefon"].startswith("+49")

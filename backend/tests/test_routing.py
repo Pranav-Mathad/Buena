@@ -131,7 +131,7 @@ async def test_weg_kategorie_routes_to_liegenschaft() -> None:
             session,
             metadata={
                 "kategorie": "dienstleister",
-                "verwendungszweck": "Rechnung R20240184 Sanitaer Schulze GmbH",
+                "verwendungszweck": "Rechnung R20240184 Sanitaer Demo GmbH",
             },
         )
     assert result.method == "weg_kategorie"
