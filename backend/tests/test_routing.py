@@ -10,42 +10,17 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.pipeline.router import (
     StructuredRoute,
     WEG_KEYWORDS,
     route_structured,
 )
-from connectors import buena_archive, buena_loader
+from connectors import buena_loader
 from connectors.base import DataMissing
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    """Drop the cached async engine + sessionmaker so the test gets a fresh loop.
-
-    pytest-asyncio runs every coroutine test under its own event loop. The
-    engine cached in ``backend.db.session.get_engine`` binds to the first
-    loop it sees; later tests reach a dead loop unless we reset.
-    """
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
 
 
 def _ensure_buena_stammdaten() -> None:
@@ -57,12 +32,11 @@ def _ensure_buena_stammdaten() -> None:
 
 
 async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
     _ensure_buena_stammdaten()
 
 
+@pytest.mark.usefixtures("db")
 async def test_unit_event_routes_to_property() -> None:
     """``EH-NNN`` in metadata routes to the matching property."""
     await _setup_or_skip()
@@ -94,6 +68,7 @@ async def test_unit_event_routes_to_property() -> None:
     assert result.liegenschaft_id is None
 
 
+@pytest.mark.usefixtures("db")
 async def test_haus_only_event_routes_to_building() -> None:
     """``HAUS-NN`` in raw_text with no unit ref routes to the building."""
     await _setup_or_skip()
@@ -122,6 +97,7 @@ async def test_haus_only_event_routes_to_building() -> None:
     assert result.liegenschaft_id is None
 
 
+@pytest.mark.usefixtures("db")
 async def test_weg_kategorie_routes_to_liegenschaft() -> None:
     """``kategorie=dienstleister`` with no EH/MIE/HAUS → Liegenschaft."""
     await _setup_or_skip()
@@ -140,6 +116,7 @@ async def test_weg_kategorie_routes_to_liegenschaft() -> None:
     assert result.building_id is None
 
 
+@pytest.mark.usefixtures("db")
 async def test_weg_keyword_case_insensitive_word_boundary() -> None:
     """German WEG keyword matching is case-insensitive + word-boundary."""
     await _setup_or_skip()
@@ -160,6 +137,7 @@ async def test_weg_keyword_case_insensitive_word_boundary() -> None:
             assert result.method in {"weg_keyword", "weg_kategorie"}
 
 
+@pytest.mark.usefixtures("db")
 async def test_unknown_event_is_unrouted() -> None:
     """No EH/MIE/HAUS/INV/kategorie/keyword → unrouted with reason."""
     await _setup_or_skip()

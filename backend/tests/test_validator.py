@@ -14,13 +14,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.pipeline import constraints  # noqa: F401 — registers everything
 from backend.pipeline.differ import DiffPlan, FactDecision
 from backend.pipeline.validator import (
-    REGISTRY,
-    ValidationResult,
     constraints_for,
     persist_rejections,
     validate,
@@ -313,29 +310,10 @@ def test_validate_first_match_wins() -> None:
 pytestmark_db = pytest.mark.asyncio
 
 
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("db")
 async def test_persist_rejections_roundtrip() -> None:
     """One decision in → one row in rejected_updates with correct columns."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
 
     factory = get_sessionmaker()

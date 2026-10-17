@@ -25,12 +25,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.services.gemini import ExtractionResult
 from connectors import buena_email_loader, cost_ledger as cost_ledger_module
 from connectors.base import ConnectorEvent
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
 
@@ -41,23 +39,6 @@ def _reset_session_cache() -> None:
 
     session_module.get_engine.cache_clear()
     session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
 
 
 def _connector_event(idx: int) -> ConnectorEvent:
@@ -132,9 +113,9 @@ async def _cleanup_test_events() -> None:
         await session.commit()
 
 
+@pytest.mark.usefixtures("db")
 async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the ledger hits the cap mid-run, the loop stops cleanly."""
-    await _setup_or_skip()
     await _cleanup_test_events()
     # Per-test unique label so a concurrent live backfill can't be
     # corrupted by our reset_label calls. See module docstring.
@@ -218,9 +199,9 @@ async def test_cost_cap_aborts_loop_cleanly(monkeypatch: pytest.MonkeyPatch) -> 
     await _cleanup_test_events()
 
 
+@pytest.mark.usefixtures("db")
 async def test_dead_letter_after_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     """A persistent extractor failure increments retry_count across runs."""
-    await _setup_or_skip()
     await _cleanup_test_events()
     test_label = f"step6_test_{uuid4().hex[:8]}"
     monkeypatch.setattr(buena_email_loader, "LEDGER_LABEL", test_label)

@@ -14,36 +14,10 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.services import gemini, onboarding
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
 
 
 async def _seed_property(
@@ -154,9 +128,9 @@ async def test_cache_key_handles_none_inputs() -> None:
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch) -> None:
     """A bare property with no facts/events still produces all 5 sections."""
-    await _setup_or_skip()
     bid, pid = await _seed_property(
         metadata={
             "kaltmiete": "1100 EUR",
@@ -193,12 +167,12 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_surfaces_open_issues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A property with an active leak fact + open uncertainty + pending rejection
     shows all three under "Open issues right now"."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
         monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
@@ -292,9 +266,9 @@ async def test_render_onboarding_surfaces_open_issues(
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     """First render calls Gemini; second render reuses the cached briefing."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
         # Force "available" + stub the Gemini drafter so the test stays offline.
@@ -327,9 +301,9 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) -> None:
     """Inserting a new fact bumps last-fact timestamp → cache key flips → Gemini called again."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
         monkeypatch.setattr(gemini, "is_available", lambda: True, raising=True)
@@ -391,12 +365,12 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_watch_out_surfaces_recurring_constraint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A constraint that has triggered ≥2 times on this property surfaces under
     'Watch out for'. Single-trigger constraints do not (noise filter)."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
         monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
@@ -448,9 +422,9 @@ async def test_watch_out_surfaces_recurring_constraint(
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_404s_for_missing_property() -> None:
     """A missing property surfaces a clean ValueError from the renderer."""
-    await _setup_or_skip()
     factory = get_sessionmaker()
     async with factory() as session:
         with pytest.raises(ValueError, match="not found"):

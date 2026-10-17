@@ -24,12 +24,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.pipeline import constraints  # noqa: F401 — registers constraints
-from backend.pipeline.applier import apply as apply_plan
 from backend.pipeline.applier import apply_uncertainties
-from backend.pipeline.differ import DiffPlan, FactDecision, diff, load_current_facts
+from backend.pipeline.differ import DiffPlan, FactDecision, load_current_facts
 from backend.pipeline.extractor import (
     CONFIDENCE_FLOOR,
     _apply_confidence_floor,
@@ -44,24 +42,6 @@ from backend.services.gemini import ExtractionResult
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark_async = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
 
 
 # ----------------------------------------------------------------------------
@@ -242,10 +222,9 @@ def test_validate_returns_both_kinds_separately() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("db")
 async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> None:
     """The applier helper inserts a row whose columns mirror the input dict."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
 
     factory = get_sessionmaker()
@@ -339,10 +318,9 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("db")
 async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
     """Step 9.2 regression: a free-text floor-count change still goes to rejected_updates."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
 
     factory = get_sessionmaker()

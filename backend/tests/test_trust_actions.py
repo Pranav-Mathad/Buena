@@ -22,35 +22,9 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
 
 
 def _async_client() -> httpx.AsyncClient:
@@ -219,9 +193,9 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_uses_explicit_value_when_provided() -> None:
     """A POST with action=promote_to_fact + value writes the explicit value as a fact."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -300,9 +274,9 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
     """Omitting ``value`` falls back to the uncertainty's hypothesis."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(
         property_id=pid, event_id=eid, hypothesis="1250 EUR"
@@ -333,9 +307,9 @@ async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_422s_when_no_value_and_no_hypothesis() -> None:
     """An uncertainty with NULL hypothesis + no body.value cannot be promoted."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(
         property_id=pid, event_id=eid, hypothesis=None
@@ -361,9 +335,9 @@ async def test_promote_422s_when_no_value_and_no_hypothesis() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
     """``action=dismiss`` flips status without a fact + writes approval_log."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -416,9 +390,9 @@ async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_resolve_404_for_missing_uncertainty() -> None:
     """An unknown uncertainty id returns 404."""
-    await _setup_or_skip()
     async with _async_client() as client:
         resp = await client.post(
             f"/admin/uncertainties/{uuid4()}/resolve",
@@ -431,9 +405,9 @@ async def test_resolve_404_for_missing_uncertainty() -> None:
     assert resp.status_code == 404
 
 
+@pytest.mark.usefixtures("db")
 async def test_double_resolve_409s() -> None:
     """Resolving a non-open uncertainty fails with 409."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -465,9 +439,9 @@ async def test_double_resolve_409s() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_rejected_override_writes_fact_and_audit() -> None:
     """``decision=overridden`` writes a fact + an approval_log entry."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     rid = await _seed_rejection(property_id=pid, event_id=eid)
     try:
@@ -530,9 +504,9 @@ async def test_rejected_override_writes_fact_and_audit() -> None:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_rejected_dismiss_does_not_write_fact() -> None:
     """``decision=dismissed`` records the audit trail but writes no fact."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     rid = await _seed_rejection(property_id=pid, event_id=eid)
     try:

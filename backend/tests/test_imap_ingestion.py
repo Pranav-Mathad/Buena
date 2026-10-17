@@ -25,30 +25,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.services.imap_poller import _ingest, _render_event_text
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
 
 
 def _pick_buena_eml() -> Path | None:
@@ -60,8 +41,6 @@ def _pick_buena_eml() -> Path | None:
 
 
 async def _setup_or_skip() -> Path:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
     eml = _pick_buena_eml()
     if eml is None:
@@ -74,6 +53,7 @@ async def _setup_or_skip() -> Path:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_event_text_handles_german_eml() -> None:
     """A real German .eml flattens to ``From:\\nSubject:\\n\\n<body>``."""
     eml_path = await _setup_or_skip()
@@ -96,6 +76,7 @@ async def test_render_event_text_handles_german_eml() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_ingest_inserts_real_buena_eml() -> None:
     """Calling _ingest with real .eml bytes lands a routable event."""
     eml_path = await _setup_or_skip()
@@ -152,6 +133,7 @@ async def test_ingest_inserts_real_buena_eml() -> None:
             await session.commit()
 
 
+@pytest.mark.usefixtures("db")
 async def test_ingest_is_idempotent_on_message_id() -> None:
     """Re-calling _ingest with the same source_ref does not double-insert."""
     eml_path = await _setup_or_skip()

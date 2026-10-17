@@ -1,15 +1,20 @@
-"""Mandatory integration test — protects the demo spine.
+"""End-to-end pipeline test: email event in, sourced fact and markdown out.
 
 Flow under test:
-- Insert an email event mentioning Apt 4B.
-- Run the worker once.
-- Assert the event now has ``processed_at``, a fact row was written with
-  ``source_event_id`` pointing at that event, and the rendered markdown
-  contains the new fact alongside an ``[source: <event_id>]`` link.
 
-The test talks to the real dev Postgres on :5433 (same one the seeder uses).
-It is auto-skipped when the DB is unreachable so CI without Docker doesn't
-fail spuriously.
+- Create a throwaway property whose alias the email mentions.
+- Insert an email event without a ``property_id`` so the router has to
+  resolve it.
+- Process that one event through the worker (route, extract, diff,
+  validate, apply, materialize).
+- Assert the event is marked processed against the right property, at
+  least one fact carries ``source_event_id`` = the event, and the rendered
+  markdown links that event id.
+
+The test uses :func:`process_specific` rather than draining the queue, so it
+never touches other pending events in the database it runs against. It runs
+without API keys: the rule-based extractor handles the heating complaint.
+Everything it creates is deleted in ``finally``.
 """
 
 from __future__ import annotations
@@ -19,102 +24,104 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.pipeline.events import insert_event
 from backend.pipeline.renderer import render_markdown
-from backend.pipeline.worker import process_batch
+from backend.pipeline.worker import process_specific
 
-pytestmark = pytest.mark.asyncio
-
-
-async def _db_reachable() -> bool:
-    """Return True if we can SELECT 1 from the configured database."""
-    try:
-        factory = get_sessionmaker()
-        async with factory() as session:
-            await session.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001 — any failure = skip
-        return False
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("db")]
 
 
-async def _pick_berlin_4b_id() -> uuid.UUID | None:
-    """Look up the seeded Berliner 4B property id, if present."""
+async def _create_property(alias: str) -> tuple[uuid.UUID, uuid.UUID]:
     factory = get_sessionmaker()
     async with factory() as session:
-        row = (
+        building_id = (
+            await session.execute(
+                text("INSERT INTO buildings (address) VALUES (:a) RETURNING id"),
+                {"a": f"{alias} building"},
+            )
+        ).scalar_one()
+        property_id = (
             await session.execute(
                 text(
-                    "SELECT id FROM properties WHERE name = :name"
+                    """
+                    INSERT INTO properties (name, address, building_id, aliases)
+                    VALUES (:name, :addr, :bid, ARRAY[:alias])
+                    RETURNING id
+                    """
                 ),
-                {"name": "Berliner Strasse 12, Apt 4B"},
+                {"name": alias, "addr": f"{alias}, 10115 Berlin", "bid": building_id, "alias": alias},
             )
-        ).first()
-    return uuid.UUID(str(row.id)) if row else None
+        ).scalar_one()
+        await session.commit()
+    return building_id, property_id
+
+
+async def _delete_created_rows(
+    building_id: uuid.UUID, property_id: uuid.UUID, source_ref: str
+) -> None:
+    factory = get_sessionmaker()
+    async with factory() as session:
+        await session.execute(
+            text("DELETE FROM facts WHERE property_id = :pid"), {"pid": property_id}
+        )
+        await session.execute(
+            text("DELETE FROM events WHERE source = 'email' AND source_ref = :ref"),
+            {"ref": source_ref},
+        )
+        await session.execute(text("DELETE FROM properties WHERE id = :pid"), {"pid": property_id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :bid"), {"bid": building_id})
+        await session.commit()
 
 
 async def test_happy_path_email_creates_sourced_fact() -> None:
-    """End-to-end: event insert → worker → sourced fact → markdown render."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-
-    property_id = await _pick_berlin_4b_id()
-    if property_id is None:
-        pytest.skip("seed dataset not loaded — run `python -m seed.seed` first")
-
-    source_ref = f"test-{uuid.uuid4()}"
-    raw_content = (
-        "From: lukas.weber@tenant.demo\n"
-        "Subject: Heating completely out in Apt 4B again\n\n"
-        "The radiators are cold this morning and the boiler is rattling "
-        "louder than ever. Fourth time this winter."
-    )
-
-    factory = get_sessionmaker()
-    async with factory() as session:
-        event_id, inserted = await insert_event(
-            session,
-            source="email",
-            source_ref=source_ref,
-            raw_content=raw_content,
+    """Event insert → worker → sourced fact → markdown render."""
+    suffix = uuid.uuid4().hex[:6]
+    alias = f"Testweg {suffix} Apt 9Q"
+    source_ref = f"test-happy-path-{suffix}"
+    building_id, property_id = await _create_property(alias)
+    try:
+        raw_content = (
+            "From: tenant@example.com\n"
+            f"Subject: Heating completely out in {alias} again\n\n"
+            "The radiators are cold this morning and the boiler is rattling "
+            "louder than ever. Fourth time this winter."
         )
-        await session.commit()
-    assert inserted is True
 
-    processed = await process_batch(max_events=10)
-    assert processed >= 1
-
-    async with factory() as session:
-        event_row = (
-            await session.execute(
-                text(
-                    "SELECT processed_at, property_id, processing_error "
-                    "FROM events WHERE id = :id"
-                ),
-                {"id": event_id},
+        factory = get_sessionmaker()
+        async with factory() as session:
+            event_id, inserted = await insert_event(
+                session, source="email", source_ref=source_ref, raw_content=raw_content
             )
-        ).one()
-        assert event_row.processed_at is not None
-        assert event_row.processing_error is None
-        assert uuid.UUID(str(event_row.property_id)) == property_id
+            await session.commit()
+        assert inserted is True
 
-        facts = (
-            await session.execute(
-                text(
-                    """
-                    SELECT id, section, field, value, confidence
-                    FROM facts
-                    WHERE source_event_id = :eid
-                    ORDER BY section, field
-                    """
-                ),
-                {"eid": event_id},
-            )
-        ).all()
-        assert facts, "expected at least one fact written for the event"
+        assert await process_specific(event_id) is True
 
-        markdown = await render_markdown(session, property_id)
+        async with factory() as session:
+            event_row = (
+                await session.execute(
+                    text(
+                        "SELECT processed_at, property_id, processing_error "
+                        "FROM events WHERE id = :id"
+                    ),
+                    {"id": event_id},
+                )
+            ).one()
+            assert event_row.processing_error is None
+            assert event_row.processed_at is not None
+            assert uuid.UUID(str(event_row.property_id)) == property_id
 
-    # Markdown must reference the event id inline for the sourcing UI.
-    assert str(event_id) in markdown, "rendered markdown is missing the source event id"
+            facts = (
+                await session.execute(
+                    text("SELECT section, field FROM facts WHERE source_event_id = :eid"),
+                    {"eid": event_id},
+                )
+            ).all()
+            assert facts, "expected at least one fact written for the event"
+
+            markdown = await render_markdown(session, property_id)
+
+        assert str(event_id) in markdown, "rendered markdown is missing the source event id"
+    finally:
+        await _delete_created_rows(building_id, property_id, source_ref)

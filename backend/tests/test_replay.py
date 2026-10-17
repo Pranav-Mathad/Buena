@@ -15,36 +15,10 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.services import replay
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
 
 
 async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID]]:
@@ -135,9 +109,9 @@ async def _cleanup(property_id: UUID) -> None:
         await session.commit()
 
 
+@pytest.mark.usefixtures("db")
 async def test_pause_resume_stop_full_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
     """Start → pause → resume → stop hits every state and the durable row tracks it."""
-    await _setup_or_skip()
     pid, _ = await _seed_property_with_events(n_events=3)
     try:
         # Replace process_one with a fast no-op so the test doesn't hit Gemini.
@@ -172,11 +146,11 @@ async def test_pause_resume_stop_full_cycle(monkeypatch: pytest.MonkeyPatch) -> 
         await _cleanup(pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_scheduled_pause_fires_at_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A scheduled pause at at_seconds=0 puts the run into ``paused`` immediately."""
-    await _setup_or_skip()
     pid, _ = await _seed_property_with_events(n_events=2)
     try:
         async def _noop_process_one(_session: Any) -> UUID | None:
@@ -214,11 +188,11 @@ async def test_scheduled_pause_fires_at_checkpoint(
         await _cleanup(pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_reset_property_wipes_facts_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``reset_property=True`` clears facts but leaves stammdaten / events."""
-    await _setup_or_skip()
     pid, event_ids = await _seed_property_with_events(n_events=1)
     try:
         # Pre-seed a fact so reset has something to delete.
