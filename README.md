@@ -40,4 +40,4 @@ curl http://localhost:8000/properties
 curl http://localhost:8000/properties/<id>/markdown
 ```
 
-See [docs/KEYSTONE.md](docs/KEYSTONE.md) for the project constitution and [docs/DECISIONS.md](docs/DECISIONS.md) for non-obvious calls.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and [docs/DECISIONS.md](docs/DECISIONS.md) for non-obvious calls.
