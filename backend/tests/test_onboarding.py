@@ -156,8 +156,8 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
         assert "Where to look for more" in md
         # No-issues message.
         assert "No open issues" in md
-        # Briefing degraded message present.
-        assert "Briefing skipped" in md
+        # With no LLM reachable the briefing degrades to an explicit notice.
+        assert "Briefing unavailable" in md
     finally:
         await _cleanup(bid, pid)
 

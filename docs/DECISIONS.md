@@ -2,6 +2,12 @@
 
 Running log of non-obvious judgment calls. Format per KEYSTONE.md Part XIII.
 
+## 2026-10-17: onboarding test asserts the current degraded-briefing notice
+Context: ``test_render_onboarding_empty_property`` asserted "Briefing skipped", the notice from when Gemini was the only briefing backend. The notice was later reworded to "Briefing unavailable" when a second backend was added, and the test was not updated, so the suite carried one known failure.
+Decision: The test asserts "Briefing unavailable", the text the code emits when no LLM backend is reachable.
+Reason: The wording change was intentional; the test was stale, not the code. A suite with a standing red test teaches people to ignore red.
+Revisit if: The notice text changes again when the LLM backends move behind one provider interface.
+
 ## 2026-10-17: the test suite must leave the database it runs against unchanged
 Context: After a suite run, ``GET /properties`` on a developer database showed a "Test Cap Apt 1" property. The email-backfill tests inserted a property and building and never removed them, and the eval runner test created a real ``step5_eval`` cost-ledger row. Tests run against the same Postgres developers use for the app, so every leak is visible in the product.
 Decision: Tests that create rows own their cleanup in yield fixtures or ``finally`` blocks, so cleanup also runs when an assertion fails. The backfill tests get a fixture that creates a uniquely named property, building and ledger label and deletes them plus every event they produced. The eval runner test stubs the ledger, since it tests scoring, not spend. A session-scoped autouse fixture in ``conftest.py`` counts rows in the core tables before and after the run and errors if any count changed.
