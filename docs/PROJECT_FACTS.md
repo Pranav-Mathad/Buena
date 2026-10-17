@@ -28,7 +28,7 @@ comments.
 
 ## Tests
 
-Measured at commit `f0ef47a` against a freshly seeded Postgres 15
+Measured at commit `3faaeee` against a freshly seeded Postgres 15
 (`pgvector/pgvector:pg15`), no API keys set, without the private dataset.
 
 | Suite | Passed | Skipped | Failed | Command |
@@ -36,12 +36,13 @@ Measured at commit `f0ef47a` against a freshly seeded Postgres 15
 | `backend/tests` | 96 | 8 | 0 | `pytest backend/tests -q` |
 | `connectors/tests` | 52 | 5 | 0 | `pytest connectors/tests -q` |
 | `eval/tests` | 4 | 0 | 0 | `pytest eval/tests -q` |
-| All three | 152 | 13 | 0 | `pytest backend/tests connectors/tests eval/tests -q` |
+| `mcp_server/tests` | 3 | 0 | 0 | `pytest mcp_server/tests -q` |
+| All four | 155 | 13 | 0 | `pytest backend/tests connectors/tests eval/tests mcp_server/tests -q` |
 | Frontend | 0 test files | | | `git ls-files 'frontend/src/*.test.ts' 'frontend/src/*.test.tsx'` |
 
 All 13 skips need the private dataset under `Extracted/` and say so in the
-skip reason. Before this cleanup the same suites gave 126 passed, 14 skipped,
-1 failed (measured 2026-10-17 at commit `38deac2`).
+skip reason. Before this cleanup the three suites that existed then gave 126
+passed, 14 skipped, 1 failed (measured 2026-10-17 at commit `38deac2`).
 
 ## Extraction quality
 
