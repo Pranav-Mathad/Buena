@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // No component tests exist yet; the real suite replaces the old placeholder.
+    passWithNoTests: true,
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
