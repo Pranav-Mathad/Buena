@@ -1,10 +1,10 @@
 # Keystone MCP Server
 
-Thin MCP adapter over the Keystone REST backend. Exposes the five canonical tools
-from KEYSTONE Part VIII so any MCP-capable client (e.g. Claude Desktop) can
-read a property's living context, search the portfolio, inspect signals,
-review activity, and propose actions that a human approves in the Keystone
-inbox.
+A thin MCP adapter over the Keystone REST API. Its five tools let any
+MCP-capable client (for example Claude Desktop) read a property's current
+file, search the portfolio, inspect signals, review activity, and propose
+actions that a human then approves in the Keystone inbox. Every tool is an
+HTTP call; the server has no database access of its own.
 
 ## Tools
 
@@ -16,12 +16,13 @@ inbox.
 | `get_activity` | `(property_id, since?)` | Recent events + one-line summaries. |
 | `propose_action` | `(property_id, action)` | Files a new pending signal for human approval. |
 
-## Run the backend first
+## Install and run the backend first
 
 ```bash
-docker compose up -d                 # Postgres + pgvector
-python -m seed.seed                  # 4 properties + 6mo history
-uvicorn backend.main:app --port 8000 # REST API the MCP server adapts
+pip install -e ".[mcp]"              # the MCP SDK is an optional extra
+docker compose up -d postgres
+python -m seed.seed                  # schema plus 4 sample properties
+uvicorn backend.main:app --port 8000 # the REST API this server adapts
 ```
 
 ## Wire up Claude Desktop
@@ -35,21 +36,20 @@ uvicorn backend.main:app --port 8000 # REST API the MCP server adapts
 {
   "mcpServers": {
     "keystone": {
-      "command": "/Users/YOU/Desktop/hackathon/.venv/bin/python",
+      "command": "/path/to/keystone/.venv/bin/python",
       "args": ["-m", "mcp_server.main"],
-      "cwd": "/Users/YOU/Desktop/hackathon",
+      "cwd": "/path/to/keystone",
       "env": {
         "KEYSTONE_BASE_URL": "http://localhost:8000",
-        "PYTHONPATH": "/Users/YOU/Desktop/hackathon"
+        "PYTHONPATH": "/path/to/keystone"
       }
     }
   }
 }
 ```
 
-Replace the two absolute paths to match your checkout. The `PYTHONPATH`
-entry lets the `mcp_server` package find `backend/` neighbours if you ever
-share state locally.
+Replace the paths with your checkout. `PYTHONPATH` lets Python import the
+`mcp_server` package from the repository root.
 
 4. Relaunch Claude Desktop. The hammer icon in the chat input should list
    five Keystone tools.
@@ -58,7 +58,7 @@ share state locally.
 
 Ask Claude Desktop:
 
-> *What's going on with apartment 4B?*
+> *What's going on with Berliner Strasse 12, Apt 4B?*
 
 Claude will call `search_properties` → `get_property_context` → `list_signals`
 → `get_activity` and answer from the markdown + signals, not its training data.
@@ -66,7 +66,7 @@ Claude will call `search_properties` → `get_property_context` → `list_signal
 ## Pointing at a deployed backend
 
 ```bash
-export KEYSTONE_BASE_URL=https://keystone.onrender.com
+export KEYSTONE_BASE_URL=https://keystone.example.com
 python -m mcp_server.main
 ```
 
