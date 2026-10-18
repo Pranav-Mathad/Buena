@@ -392,13 +392,20 @@ async def _process_event_body(session: AsyncSession, event: dict[str, Any]) -> U
         )
 
         if result.summary:
+            # One activity entry per event: NOT EXISTS makes a replayed or
+            # recovered event a no-op here, as the differ already makes it for
+            # the extracted facts.
             await session.execute(
                 text(
                     """
                     INSERT INTO facts
                         (property_id, section, field, value, source_event_id,
                          confidence, valid_from)
-                    VALUES (:pid, 'activity', :field, :value, :eid, :conf, now())
+                    SELECT :pid, 'activity', :field, :value, :eid, :conf, now()
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM facts
+                        WHERE source_event_id = :eid AND section = 'activity'
+                    )
                     """
                 ),
                 {

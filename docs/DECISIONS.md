@@ -13,6 +13,28 @@ the code looks the way it does.
 Format: **Context**, **Decision**, **Reason**, **Revisit if**, and optionally
 **Status**.
 
+## 2026-10-18: reprocessing an event does not duplicate its activity entry
+
+**Context.** Event processing is meant to be idempotent: processing the same
+event twice must not double-insert facts. Re-delivery was safe (unique
+`(source, source_ref)`) and extracted facts were safe (the differ skips a
+proposal identical to the current fact), but the worker inserted the event's
+`activity` fact unconditionally. Clearing `processed_at` and processing again,
+as a replay or a manual recovery does, added a second activity row. A new
+idempotency test found it.
+
+**Decision.** The activity insert runs only when no activity fact for that
+event exists (`INSERT ... SELECT ... WHERE NOT EXISTS`).
+`backend/tests/test_idempotency.py` covers re-delivery, a second call on a
+processed event, and a forced reprocess.
+
+**Reason.** The guard sits next to the only unconditional insert in the event
+path; a unique index would also work but needs a migration and a backfill of
+any duplicates already written.
+
+**Revisit if.** Activity entries ever need one row per processing attempt
+(for example to show retries); then key them on an attempt id instead.
+
 ## 2026-10-17: committed data is synthetic, including eval ground truth
 
 **Context.** The source dataset (`Extracted/`) is gitignored, but derived
