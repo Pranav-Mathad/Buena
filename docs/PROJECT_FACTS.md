@@ -7,38 +7,43 @@ section names the commit it was measured at.
 
 ## Size
 
-Measured at commit `f0ef47a` (2026-10-17); route and rule counts updated as
-those change. Physical lines including blanks and
+Measured at commit `88d5e2f` (2026-10-18). Physical lines including blanks and
 comments.
 
 | Claim | Value | Command |
 |---|---:|---|
-| Python, excluding tests | 24,501 lines | `git ls-files '*.py' \| grep -v -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
-| of which `backend/` | 16,178 | same, restricted to `backend/*.py` |
+| Python, excluding tests | 23,364 lines | `git ls-files '*.py' \| grep -v -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
+| of which `backend/` | 15,023 | same, restricted to `backend/*.py` |
 | of which `connectors/` | 4,902 | same, restricted to `connectors/*.py` |
-| of which `eval/`, `seed/`, `scripts/`, `mcp_server/`, `tools/` | 1,174 / 1,368 / 532 / 260 / 87 | same, per directory |
-| Python tests (including `conftest.py`) | 4,489 lines | `git ls-files '*.py' \| grep -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
+| of which `eval/`, `seed/`, `scripts/`, `mcp_server/`, `tools/` | 1,117 / 1,385 / 591 / 259 / 87 | same, per directory |
+| Python tests (including `conftest.py`) | 5,011 lines | `git ls-files '*.py' \| grep -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
 | TypeScript/TSX, excluding `components/ui` | 4,671 lines | `git ls-files 'frontend/src/*.ts' 'frontend/src/*.tsx' \| grep -v 'frontend/src/components/ui/' \| xargs wc -l \| tail -1` |
 | Generated shadcn components kept | 314 lines | `git ls-files 'frontend/src/components/ui/*' \| xargs wc -l \| tail -1` |
 | Frontend dependencies | 14 runtime, 19 dev | `node -e 'const p=require("./frontend/package.json"); console.log(Object.keys(p.dependencies).length, Object.keys(p.devDependencies).length)'` |
 | HTTP routes | 52 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
-| Additive migrations | 13 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
+| Additive migrations | 14 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
 | Rule constraints | 8 | modules in `backend/pipeline/constraints/` |
 | Signal rules | 3 | `_RULES` in `backend/signals/evaluator.py` |
 | MCP tools | 5 | `grep -c '@mcp.tool' mcp_server/main.py` |
 
+## Static checks
+
+At commit `88d5e2f`: `ruff check .` and `ruff format --check .` report no
+issues; `mypy` (strict, over backend, connectors, eval, mcp_server, seed,
+scripts, tools) reports "no issues found in 144 source files".
+
 ## Tests
 
-Measured at commit `3faaeee` against a freshly seeded Postgres 15
-(`pgvector/pgvector:pg15`), no API keys set, without the private dataset.
+Measured at commit `88d5e2f` against a freshly seeded `postgres:16`, no API
+keys set, without the private dataset.
 
 | Suite | Passed | Skipped | Failed | Command |
 |---|---:|---:|---:|---|
-| `backend/tests` | 96 | 8 | 0 | `pytest backend/tests -q` |
+| `backend/tests` | 123 | 8 | 0 | `pytest backend/tests -q` |
 | `connectors/tests` | 52 | 5 | 0 | `pytest connectors/tests -q` |
 | `eval/tests` | 4 | 0 | 0 | `pytest eval/tests -q` |
 | `mcp_server/tests` | 3 | 0 | 0 | `pytest mcp_server/tests -q` |
-| All four | 155 | 13 | 0 | `pytest backend/tests connectors/tests eval/tests mcp_server/tests -q` |
+| All four | 182 | 13 | 0 | `pytest -q` (all four suites are in `testpaths`) |
 | Frontend | 0 test files | | | `git ls-files 'frontend/src/*.test.ts' 'frontend/src/*.test.tsx'` |
 
 All 13 skips need the private dataset under `Extracted/` and say so in the
