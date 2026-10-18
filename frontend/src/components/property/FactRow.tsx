@@ -118,11 +118,7 @@ export const FactRow = ({
           className="mt-2 inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
         >
           {expanded ? "Show less" : "Read more"}
-          <ChevronDown
-            className={`w-3 h-3 transition-transform ${
-              expanded ? "rotate-180" : ""
-            }`}
-          />
+          <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
       )}
 

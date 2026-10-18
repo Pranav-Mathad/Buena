@@ -110,7 +110,9 @@ const DraftReply = () => {
         <Card className="p-6">
           <h2 className="text-[22px] font-semibold tracking-tight">Incoming message</h2>
           <div className="mt-5 flex flex-wrap gap-2">
-            <span className="text-[13px] text-muted-foreground mr-1 self-center">load example:</span>
+            <span className="text-[13px] text-muted-foreground mr-1 self-center">
+              load example:
+            </span>
             {sampleInboundMessages.map((ex) => (
               <button
                 key={ex.key}
@@ -142,7 +144,9 @@ const DraftReply = () => {
               <Field label="Channel">
                 <select
                   value={form.channel}
-                  onChange={(e) => setForm({ ...form, channel: e.target.value as "Email" | "Slack" })}
+                  onChange={(e) =>
+                    setForm({ ...form, channel: e.target.value as "Email" | "Slack" })
+                  }
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
                 >
                   <option>Email</option>
@@ -180,14 +184,9 @@ const DraftReply = () => {
             </Field>
             <div className="flex justify-end items-center gap-3">
               {draftError && (
-                <span className="text-[12px] font-mono text-warning">
-                  {draftError}
-                </span>
+                <span className="text-[12px] font-mono text-warning">{draftError}</span>
               )}
-              <PrimaryButton
-                onClick={generate}
-                disabled={!form.body.trim() || drafting}
-              >
+              <PrimaryButton onClick={generate} disabled={!form.body.trim() || drafting}>
                 {drafting ? (
                   <>
                     <span className="dot bg-primary-foreground animate-pulse-soft" />
@@ -346,15 +345,21 @@ const SingleDraftedContent = ({
       {footerOverride ?? `Drafted in ${(drafted.elapsed_ms / 1000).toFixed(1)}s`}
     </div>
     <div className="flex gap-2">
-      <SecondaryButton><Copy className="w-3.5 h-3.5" /> Copy</SecondaryButton>
-      <SecondaryButton><Pencil className="w-3.5 h-3.5" /> Edit</SecondaryButton>
+      <SecondaryButton>
+        <Copy className="w-3.5 h-3.5" /> Copy
+      </SecondaryButton>
+      <SecondaryButton>
+        <Pencil className="w-3.5 h-3.5" /> Edit
+      </SecondaryButton>
     </div>
   </div>
 );
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label className="block">
-    <span className="text-[12px] text-muted-foreground uppercase tracking-wider font-medium">{label}</span>
+    <span className="text-[12px] text-muted-foreground uppercase tracking-wider font-medium">
+      {label}
+    </span>
     <div className="mt-1.5">{children}</div>
   </label>
 );

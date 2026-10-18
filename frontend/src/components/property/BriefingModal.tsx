@@ -40,7 +40,10 @@ export const BriefingModal = ({
             <Swatch Icon={ClipboardList} />
             <h2 className="text-[22px] font-semibold tracking-tight">Onboarding briefing</h2>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04]">
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04]"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -4,7 +4,9 @@ import { parseBriefingMarkdown, stripInlineMarkdown } from "./text";
 describe("stripInlineMarkdown", () => {
   it("removes emphasis, code, links and stray headings but keeps the words", () => {
     expect(
-      stripInlineMarkdown("## Status\n**Heizung** ist _seit_ `gestern` kalt, siehe [Mail](https://x)"),
+      stripInlineMarkdown(
+        "## Status\n**Heizung** ist _seit_ `gestern` kalt, siehe [Mail](https://x)",
+      ),
     ).toBe("Status\nHeizung ist seit gestern kalt, siehe Mail");
   });
 });

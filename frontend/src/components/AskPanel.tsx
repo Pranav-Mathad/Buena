@@ -18,10 +18,10 @@ const SourceCard = ({
   onOpenSource: (s: SourceModalSource) => void;
 }) => (
   <div className="border border-border rounded-xl p-4 bg-card">
-    <div className="font-mono text-[12px] text-muted-foreground">{s.channel} · {s.date}</div>
-    {label && (
-      <div className="font-mono text-[11px] text-muted-foreground mt-1">{label}</div>
-    )}
+    <div className="font-mono text-[12px] text-muted-foreground">
+      {s.channel} · {s.date}
+    </div>
+    {label && <div className="font-mono text-[11px] text-muted-foreground mt-1">{label}</div>}
     <p className="text-[14px] mt-2 leading-relaxed">{s.snippet}</p>
     <div className="mt-3 flex items-center justify-end">
       <button
@@ -87,9 +87,7 @@ export const AskPanel = ({
       .catch((e: unknown) => {
         if (cancelled) return;
         setResponse(null);
-        setErrorMsg(
-          e instanceof Error ? e.message : "Q&A service unreachable",
-        );
+        setErrorMsg(e instanceof Error ? e.message : "Q&A service unreachable");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -111,7 +109,8 @@ export const AskPanel = ({
           <div>
             <h2 className="text-[22px] font-semibold tracking-tight">Ask anything</h2>
             <p className="text-[13px] text-muted-foreground mt-2 leading-relaxed">
-              We answer from this property's events, facts, and parent-tier context. We say "I don't know" when we don't have enough.
+              We answer from this property's events, facts, and parent-tier context. We say "I don't
+              know" when we don't have enough.
             </p>
           </div>
 
@@ -164,13 +163,9 @@ export const AskPanel = ({
         <Card className="p-5 border-warning/40">
           <div className="flex items-center gap-2 text-warning">
             <AlertTriangle className="w-4 h-4" />
-            <span className="text-[14px] font-medium">
-              Q&amp;A service unreachable
-            </span>
+            <span className="text-[14px] font-medium">Q&amp;A service unreachable</span>
           </div>
-          <p className="text-[12px] font-mono text-muted-foreground mt-2">
-            {errorMsg}
-          </p>
+          <p className="text-[12px] font-mono text-muted-foreground mt-2">{errorMsg}</p>
         </Card>
       )}
 
@@ -183,7 +178,9 @@ export const AskPanel = ({
                   <span className="dot bg-success" />
                   answered
                 </span>
-                <span className="font-mono text-[12px] text-muted-foreground">confidence: {response.confidence}</span>
+                <span className="font-mono text-[12px] text-muted-foreground">
+                  confidence: {response.confidence}
+                </span>
               </div>
               <p className="text-[16px] leading-relaxed">{response.answer}</p>
               <div>
@@ -195,7 +192,8 @@ export const AskPanel = ({
                 </div>
               </div>
               <div className="font-mono text-[12px] text-muted-foreground">
-                Answered in {(response.elapsed_ms / 1000).toFixed(1)}s · retrieved {response.retrieved_count} events
+                Answered in {(response.elapsed_ms / 1000).toFixed(1)}s · retrieved{" "}
+                {response.retrieved_count} events
               </div>
             </>
           )}
@@ -204,15 +202,21 @@ export const AskPanel = ({
             <>
               <div className="flex items-center justify-between">
                 <span className="pill bg-card">
-                  <HelpCircle className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.75} />
-                  I don't know
+                  <HelpCircle className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.75} />I
+                  don't know
                 </span>
-                <span className="font-mono text-[12px] text-muted-foreground">confidence: {response.confidence}</span>
+                <span className="font-mono text-[12px] text-muted-foreground">
+                  confidence: {response.confidence}
+                </span>
               </div>
               <div className="bg-subdued border border-border rounded-2xl p-6 space-y-6">
-                <p className="text-[15px]">I don't have enough information to answer that confidently.</p>
+                <p className="text-[15px]">
+                  I don't have enough information to answer that confidently.
+                </p>
                 <p className="text-[13px] text-muted-foreground">
-                  <em><strong>{response.reasoning}</strong></em>
+                  <em>
+                    <strong>{response.reasoning}</strong>
+                  </em>
                 </p>
               </div>
               {response.partial_context.length > 0 && (
@@ -236,7 +240,8 @@ export const AskPanel = ({
                 </>
               )}
               <div className="font-mono text-[12px] text-muted-foreground">
-                Answered in {(response.elapsed_ms / 1000).toFixed(1)}s · retrieved {response.retrieved_count} events
+                Answered in {(response.elapsed_ms / 1000).toFixed(1)}s · retrieved{" "}
+                {response.retrieved_count} events
               </div>
             </>
           )}
@@ -248,14 +253,19 @@ export const AskPanel = ({
                   <span className="dot bg-muted-foreground/40" />
                   out of scope
                 </span>
-                <span className="font-mono text-[12px] text-muted-foreground">confidence: {response.confidence}</span>
+                <span className="font-mono text-[12px] text-muted-foreground">
+                  confidence: {response.confidence}
+                </span>
               </div>
               <Card className="p-5">
                 <p className="text-[15px]">
                   That information lives in the ERP, not in the context layer. Try{" "}
-                  <a className="underline">[link to ERP]</a> or check the lease/owner records directly.
+                  <a className="underline">[link to ERP]</a> or check the lease/owner records
+                  directly.
                 </p>
-                <p className="text-[13px] italic text-muted-foreground mt-2">{response.reasoning}</p>
+                <p className="text-[13px] italic text-muted-foreground mt-2">
+                  {response.reasoning}
+                </p>
               </Card>
               <div className="font-mono text-[12px] text-muted-foreground">
                 Answered in {(response.elapsed_ms / 1000).toFixed(1)}s
@@ -266,9 +276,7 @@ export const AskPanel = ({
       )}
       {submitted && unavailable && (
         <div className="animate-fade-in bg-subdued border border-border rounded-2xl p-6 space-y-3">
-          <p className="text-[15px]">
-            Q&amp;A is available once the property file is populated.
-          </p>
+          <p className="text-[15px]">Q&amp;A is available once the property file is populated.</p>
           {heroProperty && (
             <p className="text-[13px] text-muted-foreground">
               Try{" "}

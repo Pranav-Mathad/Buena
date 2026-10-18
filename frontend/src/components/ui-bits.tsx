@@ -1,7 +1,13 @@
 import { cn } from "@/lib/utils";
 import { Building2, type LucideIcon } from "lucide-react";
 
-export const Swatch = ({ Icon = Building2, className }: { Icon?: LucideIcon; className?: string }) => (
+export const Swatch = ({
+  Icon = Building2,
+  className,
+}: {
+  Icon?: LucideIcon;
+  className?: string;
+}) => (
   <span className={cn("swatch shrink-0", className)}>
     <Icon className="w-4 h-4" strokeWidth={1.75} />
   </span>
@@ -34,10 +40,7 @@ export const StatusPill = ({
 export const Card = ({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     {...rest}
-    className={cn(
-      "bg-card border border-border rounded-2xl shadow-card transition-all",
-      className,
-    )}
+    className={cn("bg-card border border-border rounded-2xl shadow-card transition-all", className)}
   >
     {children}
   </div>

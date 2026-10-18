@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -7,8 +7,8 @@
 @layer base {
   :root {
     /* Light mode — warm cream */
-    --background: 42 27% 94%;        /* #F5F2EC */
-    --foreground: 0 0% 4%;            /* #0A0A0A */
+    --background: 42 27% 94%; /* #F5F2EC */
+    --foreground: 0 0% 4%; /* #0A0A0A */
 
     --card: 0 0% 100%;
     --card-foreground: 0 0% 4%;
@@ -16,14 +16,14 @@
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 4%;
 
-    --primary: 0 0% 10%;              /* #1A1A1A accent */
+    --primary: 0 0% 10%; /* #1A1A1A accent */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 42 20% 90%;
     --secondary-foreground: 0 0% 4%;
 
     --muted: 42 20% 90%;
-    --muted-foreground: 60 2% 42%;    /* #6B6B68 */
+    --muted-foreground: 60 2% 42%; /* #6B6B68 */
 
     --accent: 42 25% 88%;
     --accent-foreground: 0 0% 4%;
@@ -31,17 +31,17 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 42 22% 89%;             /* #E8E5DD */
+    --border: 42 22% 89%; /* #E8E5DD */
     --input: 42 22% 89%;
     --ring: 0 0% 10%;
 
     --radius: 0.75rem;
 
     /* Custom semantic tokens */
-    --subtle-text: 50 4% 63%;         /* #A3A29E */
-    --tan: 36 30% 69%;                /* #C9B896 */
-    --swatch: 42 20% 92%;             /* #F0EDE5 */
-    --subdued-surface: 45 33% 96%;    /* #FAF8F2 */
+    --subtle-text: 50 4% 63%; /* #A3A29E */
+    --tan: 36 30% 69%; /* #C9B896 */
+    --swatch: 42 20% 92%; /* #F0EDE5 */
+    --subdued-surface: 45 33% 96%; /* #FAF8F2 */
     --success: 142 60% 42%;
     --warning: 38 92% 50%;
 
@@ -49,10 +49,10 @@
   }
 
   .dark {
-    --background: 0 0% 4%;            /* #0A0A0A */
+    --background: 0 0% 4%; /* #0A0A0A */
     --foreground: 0 0% 100%;
 
-    --card: 0 0% 9%;                  /* #161616 */
+    --card: 0 0% 9%; /* #161616 */
     --card-foreground: 0 0% 100%;
 
     --popover: 0 0% 9%;
@@ -65,7 +65,7 @@
     --secondary-foreground: 0 0% 100%;
 
     --muted: 0 0% 12%;
-    --muted-foreground: 50 4% 63%;    /* #A3A29E */
+    --muted-foreground: 50 4% 63%; /* #A3A29E */
 
     --accent: 0 0% 12%;
     --accent-foreground: 0 0% 100%;
@@ -73,14 +73,14 @@
     --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 15%;               /* #262626 */
+    --border: 0 0% 15%; /* #262626 */
     --input: 0 0% 15%;
     --ring: 0 0% 100%;
 
-    --subtle-text: 60 2% 42%;         /* #6B6B68 */
+    --subtle-text: 60 2% 42%; /* #6B6B68 */
     --tan: 36 30% 69%;
-    --swatch: 0 0% 12%;               /* #1F1F1F */
-    --subdued-surface: 60 5% 10%;     /* #1A1A18 */
+    --swatch: 0 0% 12%; /* #1F1F1F */
+    --subdued-surface: 60 5% 10%; /* #1A1A18 */
     --success: 142 50% 50%;
     --warning: 38 92% 55%;
 
@@ -94,20 +94,20 @@
   }
 
   html {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Inter", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
 @layer components {
   .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
   }
 
   .display {

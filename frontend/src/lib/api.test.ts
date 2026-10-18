@@ -7,7 +7,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe("API client", () => {
   it("maps property summaries to the UI shape and keeps the featured flag", async () => {
     mockFetch({
-      "GET /properties": [propertyDTO(), propertyDTO({ id: "p-2", is_hero: false, needs_review: 0 })],
+      "GET /properties": [
+        propertyDTO(),
+        propertyDTO({ id: "p-2", is_hero: false, needs_review: 0 }),
+      ],
     });
 
     const [featured, other] = await fetchProperties();
@@ -70,7 +73,9 @@ describe("API client", () => {
   it("raises ApiError with the server's detail on a non-2xx response", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ detail: "Ask is unavailable" }), { status: 503 })),
+      vi.fn(
+        async () => new Response(JSON.stringify({ detail: "Ask is unavailable" }), { status: 503 }),
+      ),
     );
 
     const error = await fetchProperties().catch((e: unknown) => e);
@@ -80,7 +85,10 @@ describe("API client", () => {
   });
 
   it("raises NetworkError when the API cannot be reached", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))),
+    );
 
     await expect(fetchProperties()).rejects.toBeInstanceOf(NetworkError);
   });

@@ -1,14 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Bell, Check, Inbox, Sparkles } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  useNotifications,
-  type Notification,
-} from "@/hooks/use-notifications";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useNotifications, type Notification } from "@/hooks/use-notifications";
 
 const formatRelative = (ts: number): string => {
   const diffMs = Date.now() - ts;
@@ -52,13 +45,9 @@ export const NotificationsBell = () => {
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
-            <span className="text-[14px] font-semibold tracking-tight">
-              Notifications
-            </span>
+            <span className="text-[14px] font-semibold tracking-tight">Notifications</span>
             <span className="text-[11.5px] font-mono text-muted-foreground">
-              {notifications.length === 0
-                ? "no events yet"
-                : `${notifications.length} recent`}
+              {notifications.length === 0 ? "no events yet" : `${notifications.length} recent`}
             </span>
           </div>
           {notifications.length > 0 && (
@@ -79,20 +68,14 @@ export const NotificationsBell = () => {
               <NotificationRow
                 key={n.id}
                 notification={n}
-                onView={
-                  n.propertyId
-                    ? () => navigate(`/properties/${n.propertyId}`)
-                    : undefined
-                }
+                onView={n.propertyId ? () => navigate(`/properties/${n.propertyId}`) : undefined}
               />
             ))}
           </div>
         )}
 
         <div className="px-4 py-2.5 border-t border-border bg-subdued flex items-center justify-between">
-          <span className="font-mono text-[11px] text-muted-foreground">
-            live · portfolio-wide
-          </span>
+          <span className="font-mono text-[11px] text-muted-foreground">live · portfolio-wide</span>
           {unreadCount === 0 && notifications.length > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
               <Check className="w-3 h-3" /> all read
@@ -161,8 +144,8 @@ const EmptyState = () => (
     </div>
     <p className="mt-3 text-[13px] text-foreground">No notifications yet</p>
     <p className="mt-1 text-[12px] text-muted-foreground max-w-[280px] leading-relaxed">
-      Anything the pipeline ingests will pop here — emails, invoices, bank
-      events, simulator advances.
+      Anything the pipeline ingests will pop here — emails, invoices, bank events, simulator
+      advances.
     </p>
   </div>
 );

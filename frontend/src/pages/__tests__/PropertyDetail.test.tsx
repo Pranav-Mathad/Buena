@@ -30,16 +30,33 @@ describe("PropertyDetail", () => {
         name: "Musterstraße 26 WE 29",
         address: "Musterstraße 26, 10115 Berlin",
         sections: [
-          { title: "Maintenance", is_uncertain: false, is_context: false, facts: [fact("Leak in kitchen", "f-1")] },
-          { title: "Needs review", is_uncertain: true, is_context: false, facts: [fact("Rent may change", null)] },
-          { title: "WEG Context", is_uncertain: false, is_context: true, facts: [fact("Hausgeld paid", null)] },
+          {
+            title: "Maintenance",
+            is_uncertain: false,
+            is_context: false,
+            facts: [fact("Leak in kitchen", "f-1")],
+          },
+          {
+            title: "Needs review",
+            is_uncertain: true,
+            is_context: false,
+            facts: [fact("Rent may change", null)],
+          },
+          {
+            title: "WEG Context",
+            is_uncertain: false,
+            is_context: true,
+            facts: [fact("Hausgeld paid", null)],
+          },
         ],
       },
     });
 
     renderWithProviders(<PropertyDetail />, { route: "/properties/p-1", path: "/properties/:id" });
 
-    const maintenance = (await screen.findByRole("heading", { name: "Maintenance" })).closest("section")!;
+    const maintenance = (await screen.findByRole("heading", { name: "Maintenance" })).closest(
+      "section",
+    )!;
     const review = screen.getByRole("heading", { name: "Needs review" }).closest("section")!;
     const context = screen.getByRole("heading", { name: "WEG Context" }).closest("section")!;
 

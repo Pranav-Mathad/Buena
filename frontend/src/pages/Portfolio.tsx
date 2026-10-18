@@ -49,13 +49,10 @@ const Portfolio = () => {
           <Card className="p-8 text-center mb-6 border-warning/40">
             <div className="flex items-center justify-center gap-3 text-warning">
               <AlertTriangle className="w-4 h-4" />
-              <span className="text-[14px] font-medium">
-                Backend unreachable
-              </span>
+              <span className="text-[14px] font-medium">Backend unreachable</span>
             </div>
             <p className="text-[13px] text-muted-foreground mt-2 font-mono">
-              GET /properties failed. Check that uvicorn is running on{" "}
-              {API_BASE_URL}.
+              GET /properties failed. Check that uvicorn is running on {API_BASE_URL}.
             </p>
             <button
               onClick={() => refetch()}
@@ -67,11 +64,7 @@ const Portfolio = () => {
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
           {(properties ?? []).map((p) => (
-            <Link
-              key={p.id}
-              to={`/properties/${p.id}`}
-              className="group"
-            >
+            <Link key={p.id} to={`/properties/${p.id}`} className="group">
               <Card
                 className={`p-6 hover:-translate-y-0.5 hover:border-foreground/20 ${
                   p.isHero ? "ring-1 ring-foreground/[0.04]" : ""
@@ -107,7 +100,9 @@ const Portfolio = () => {
 
       {/* Recent activity */}
       <section className="pb-24">
-        <h2 className="text-[22px] font-semibold tracking-tight">Recent activity across all properties</h2>
+        <h2 className="text-[22px] font-semibold tracking-tight">
+          Recent activity across all properties
+        </h2>
         {activityError && (
           <p className="text-[13px] text-warning mt-3 font-mono">
             activity feed unreachable — backend down or empty.
@@ -124,7 +119,9 @@ const Portfolio = () => {
             <div key={i} className="relative pl-8 pb-7 last:pb-0">
               <span className="absolute left-0 top-1.5 -translate-x-1/2 w-2 h-2 rounded-full bg-foreground/30" />
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-[13px] text-muted-foreground w-24 shrink-0">{a.time}</span>
+                <span className="font-mono text-[13px] text-muted-foreground w-24 shrink-0">
+                  {a.time}
+                </span>
                 <span className="text-[15px]">{a.text}</span>
                 <span className="pill bg-card text-[12px] py-0.5 px-2.5">{a.property}</span>
               </div>

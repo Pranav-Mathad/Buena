@@ -6,7 +6,12 @@ import { mockFetch, propertyDTO, renderWithProviders } from "@/test/utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
-const source = { id: "e-1", channel: "email", date: "2026-04-23", snippet: "Wasser läuft seit gestern" };
+const source = {
+  id: "e-1",
+  channel: "email",
+  date: "2026-04-23",
+  snippet: "Wasser läuft seit gestern",
+};
 
 const askReply = (overrides: Record<string, unknown>) => ({
   answer: null,
@@ -33,7 +38,11 @@ async function ask(reply: Record<string, unknown>) {
 
 describe("AskPanel", () => {
   it("shows an answer with its sources", async () => {
-    const fetchMock = await ask({ status: "answered", answer: "Water leak since Tuesday.", sources: [source] });
+    const fetchMock = await ask({
+      status: "answered",
+      answer: "Water leak since Tuesday.",
+      sources: [source],
+    });
 
     expect(await screen.findByText("Water leak since Tuesday.")).toBeInTheDocument();
     expect(screen.getByText("answered")).toBeInTheDocument();

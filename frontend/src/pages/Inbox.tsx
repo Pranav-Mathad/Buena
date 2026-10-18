@@ -36,10 +36,8 @@ const Inbox = () => {
           <h1 className="display text-[40px] tracking-tight">Inbox</h1>
         </div>
         <p className="text-muted-foreground mt-3 text-[15px] leading-relaxed">
-          Three trust-layer surfaces. Signals are proposed actions
-          waiting on a human. Uncertainty is what we noticed but
-          couldn't commit to. Rejections are writes the validator
-          refused.
+          Three trust-layer surfaces. Signals are proposed actions waiting on a human. Uncertainty
+          is what we noticed but couldn't commit to. Rejections are writes the validator refused.
         </p>
       </div>
 
@@ -133,9 +131,7 @@ const EmptyState = ({ children }: { children: React.ReactNode }) => (
 
 const ErrorState = () => (
   <Card className="p-10 text-center">
-    <p className="text-warning text-[14px]">
-      Backend unreachable — try again in a moment.
-    </p>
+    <p className="text-warning text-[14px]">Backend unreachable — try again in a moment.</p>
   </Card>
 );
 
@@ -153,9 +149,7 @@ const PropertyChip = ({
   propertyName: string | null;
 }) => {
   if (!propertyId || !propertyName) {
-    return (
-      <span className="pill bg-card text-[12px]">portfolio-level</span>
-    );
+    return <span className="pill bg-card text-[12px]">portfolio-level</span>;
   }
   return (
     <Link
@@ -198,12 +192,8 @@ const SignalCard = ({ signal: s }: { signal: InboxSignal }) => {
         <SeverityDot severity={s.severity} />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-baseline gap-2">
-            <h3 className="text-[15px] font-semibold">
-              {s.type.replace(/_/g, " ")}
-            </h3>
-            <StatusPill variant={severityVariant(s.severity)}>
-              {s.severity}
-            </StatusPill>
+            <h3 className="text-[15px] font-semibold">{s.type.replace(/_/g, " ")}</h3>
+            <StatusPill variant={severityVariant(s.severity)}>{s.severity}</StatusPill>
             <span className="font-mono text-[12px] text-muted-foreground">
               {relativeTime(s.createdAt)}
             </span>
@@ -253,8 +243,8 @@ const UncertaintyList = ({
   if (rows.length === 0)
     return (
       <EmptyState>
-        No open uncertainties. The extractor was confident enough on
-        every recent event to commit a fact.
+        No open uncertainties. The extractor was confident enough on every recent event to commit a
+        fact.
       </EmptyState>
     );
   return (
@@ -262,25 +252,18 @@ const UncertaintyList = ({
       {rows.map((u) => (
         <Card key={u.uncertaintyId} className="p-5">
           <div className="flex items-start gap-4">
-            <HelpCircle
-              className="w-5 h-5 text-muted-foreground mt-0.5"
-              strokeWidth={1.75}
-            />
+            <HelpCircle className="w-5 h-5 text-muted-foreground mt-0.5" strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-baseline gap-2">
                 <h3 className="text-[15px] font-semibold">
                   {u.relevantSection?.replace(/_/g, " ") ?? "(unsectioned)"}
                 </h3>
-                <span className="pill bg-card text-[12px]">
-                  via {u.source}
-                </span>
+                <span className="pill bg-card text-[12px]">via {u.source}</span>
                 <span className="font-mono text-[12px] text-muted-foreground">
                   {relativeTime(u.createdAt)}
                 </span>
               </div>
-              <p className="text-[14px] mt-2 leading-relaxed">
-                {u.observation}
-              </p>
+              <p className="text-[14px] mt-2 leading-relaxed">{u.observation}</p>
               {u.hypothesis && (
                 <p className="text-[13px] italic text-muted-foreground mt-1">
                   hypothesis: {u.hypothesis}
@@ -290,10 +273,7 @@ const UncertaintyList = ({
                 <strong>why uncertain:</strong> {u.reasonUncertain}
               </p>
               <div className="mt-3">
-                <PropertyChip
-                  propertyId={u.propertyId}
-                  propertyName={u.propertyName}
-                />
+                <PropertyChip propertyId={u.propertyId} propertyName={u.propertyName} />
               </div>
             </div>
           </div>
@@ -316,20 +296,14 @@ const RejectionsList = ({
   if (error) return <ErrorState />;
   if (rows.length === 0)
     return (
-      <EmptyState>
-        No rejected updates. Every recent extraction passed the
-        validator.
-      </EmptyState>
+      <EmptyState>No rejected updates. Every recent extraction passed the validator.</EmptyState>
     );
   return (
     <div className="space-y-3">
       {rows.map((r) => (
         <Card key={r.rejectionId} className="p-5">
           <div className="flex items-start gap-4">
-            <ShieldAlert
-              className="w-5 h-5 text-warning mt-0.5"
-              strokeWidth={1.75}
-            />
+            <ShieldAlert className="w-5 h-5 text-warning mt-0.5" strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-baseline gap-2">
                 <h3 className="text-[15px] font-semibold">
@@ -343,22 +317,16 @@ const RejectionsList = ({
                 </span>
               </div>
               <p className="text-[14px] mt-2 leading-relaxed">
-                <span className="text-muted-foreground">proposed:</span>{" "}
-                {r.proposedValue}
+                <span className="text-muted-foreground">proposed:</span> {r.proposedValue}
               </p>
-              <p className="text-[13px] italic text-warning mt-1">
-                rejected: {r.reason}
-              </p>
+              <p className="text-[13px] italic text-warning mt-1">rejected: {r.reason}</p>
               {r.snippet && (
                 <p className="text-[12px] text-muted-foreground mt-2 whitespace-pre-line border-l-2 border-border pl-3">
                   {r.snippet}
                 </p>
               )}
               <div className="mt-3">
-                <PropertyChip
-                  propertyId={r.propertyId}
-                  propertyName={r.propertyName}
-                />
+                <PropertyChip propertyId={r.propertyId} propertyName={r.propertyName} />
               </div>
             </div>
           </div>
@@ -373,10 +341,10 @@ const SeverityDot = ({ severity }: { severity: string }) => {
     severity === "urgent"
       ? "bg-warning"
       : severity === "high"
-      ? "bg-warning/70"
-      : severity === "medium"
-      ? "bg-foreground/50"
-      : "bg-muted-foreground/40";
+        ? "bg-warning/70"
+        : severity === "medium"
+          ? "bg-foreground/50"
+          : "bg-muted-foreground/40";
   return <span className={`dot mt-1.5 ${color}`} />;
 };
 

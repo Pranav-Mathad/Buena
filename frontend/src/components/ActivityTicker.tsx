@@ -36,15 +36,7 @@ function useCountUp(target: number) {
   return { display, pulsing };
 }
 
-const Stat = ({
-  value,
-  pulsing,
-  label,
-}: {
-  value: number;
-  pulsing: boolean;
-  label: string;
-}) => (
+const Stat = ({ value, pulsing, label }: { value: number; pulsing: boolean; label: string }) => (
   <div
     className={`flex items-baseline gap-2 px-1.5 py-0.5 -mx-1.5 rounded-md transition-colors duration-300 ${
       pulsing ? "bg-warning/20" : ""
@@ -81,11 +73,7 @@ export const ActivityTicker = () => {
           pulsing={eventsAnim.pulsing}
           label="events ingested · last hour"
         />
-        <Stat
-          value={factsAnim.display}
-          pulsing={factsAnim.pulsing}
-          label="facts created · today"
-        />
+        <Stat value={factsAnim.display} pulsing={factsAnim.pulsing} label="facts created · today" />
         <Stat value={signals} pulsing={false} label="signals pending" />
       </div>
       <div className="mt-2 pt-2 border-t border-border font-mono text-[11px] text-muted-foreground">

@@ -36,22 +36,14 @@ export const SourceModal = ({
           <div className="space-y-4">
             <div className="font-mono text-[12px] text-muted-foreground">
               {source.channel} · {source.date}
-              {eventId && (
-                <span className="ml-2 opacity-60">
-                  event {eventId.slice(0, 8)}…
-                </span>
-              )}
+              {eventId && <span className="ml-2 opacity-60">event {eventId.slice(0, 8)}…</span>}
             </div>
             {eventId && isLoading && (
-              <p className="text-[14px] text-muted-foreground italic">
-                loading original event…
-              </p>
+              <p className="text-[14px] text-muted-foreground italic">loading original event…</p>
             )}
             {eventId && isError && (
               <>
-                <p className="text-[15px] leading-relaxed whitespace-pre-line">
-                  {source.snippet}
-                </p>
+                <p className="text-[15px] leading-relaxed whitespace-pre-line">{source.snippet}</p>
                 <p className="text-[12px] italic text-warning">
                   Could not load original event — showing extracted snippet.
                 </p>
@@ -64,9 +56,7 @@ export const SourceModal = ({
             )}
             {!eventId && (
               <>
-                <p className="text-[15px] leading-relaxed whitespace-pre-line">
-                  {source.snippet}
-                </p>
+                <p className="text-[15px] leading-relaxed whitespace-pre-line">{source.snippet}</p>
                 <p className="text-[12px] italic text-muted-foreground border-t border-border pt-4">
                   In production, this would link to the original email, PDF, or bank record.
                 </p>

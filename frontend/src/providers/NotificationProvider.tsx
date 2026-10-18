@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Sparkles, X } from "lucide-react";
@@ -20,7 +13,6 @@ import { queryKeys } from "@/hooks/queries";
 import type { Property } from "@/lib/types";
 
 const MAX_NOTIFICATIONS = 50;
-
 
 // One global SSE subscription that drives BOTH the toast and the
 // bell dropdown. State lives here in a single provider so the bell's
@@ -57,8 +49,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         if (!payload.event_id || seenRef.current.has(payload.event_id)) return;
         seenRef.current.add(payload.event_id);
 
-        const properties =
-          queryClient.getQueryData<Property[]>(queryKeys.properties) ?? [];
+        const properties = queryClient.getQueryData<Property[]>(queryKeys.properties) ?? [];
         const property = properties.find((p) => p.id === payload.property_id);
         const propertyName = property?.name ?? "Unrouted event";
         const propertyId = property?.id ?? payload.property_id ?? null;
@@ -123,13 +114,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     return { notifications, unreadCount, markAllRead, clear };
   }, [notifications, markAllRead, clear]);
 
-  return (
-    <NotificationContext.Provider value={value}>
-      {children}
-    </NotificationContext.Provider>
-  );
+  return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 };
-
 
 // ---------------------------------------------------------------------------
 // Toast card — kept here so the provider owns both surfaces.

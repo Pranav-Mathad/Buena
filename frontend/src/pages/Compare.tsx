@@ -139,9 +139,7 @@ const Compare = () => {
                     </span>
                     <span className="col-span-3 truncate">{e.sender}</span>
                     <span className="col-span-7 truncate">
-                      <span className={e.relevant ? "text-foreground" : ""}>
-                        {e.subject}
-                      </span>
+                      <span className={e.relevant ? "text-foreground" : ""}>{e.subject}</span>
                       <span className="ml-1 opacity-60">— {e.preview}</span>
                     </span>
                   </li>
@@ -175,9 +173,8 @@ const Compare = () => {
             <span>
               {totalInbox > 0 ? (
                 <>
-                  Scrolling {totalInbox} emails for "{keyword}" — Keystone's
-                  answer cites the {relevantCount > 0 ? relevantCount : "relevant"}{" "}
-                  events directly, in seconds.
+                  Scrolling {totalInbox} emails for "{keyword}" — Keystone's answer cites the{" "}
+                  {relevantCount > 0 ? relevantCount : "relevant"} events directly, in seconds.
                 </>
               ) : (
                 <>One sourced answer instead of an inbox scroll.</>
@@ -187,15 +184,15 @@ const Compare = () => {
           <li className="flex items-baseline gap-3">
             <span className="font-mono text-[13px] text-muted-foreground w-8">→</span>
             <span>
-              When the context doesn't have an answer, Keystone says "I don't
-              know" — the inbox just keeps scrolling.
+              When the context doesn't have an answer, Keystone says "I don't know" — the inbox just
+              keeps scrolling.
             </span>
           </li>
           <li className="flex items-baseline gap-3">
             <span className="font-mono text-[13px] text-muted-foreground w-8">→</span>
             <span>
-              Sources stay clickable on both sides — but only Keystone tells you{" "}
-              <em>which</em> emails matter.
+              Sources stay clickable on both sides — but only Keystone tells you <em>which</em>{" "}
+              emails matter.
             </span>
           </li>
         </ul>

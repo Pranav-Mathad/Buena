@@ -17,12 +17,19 @@ describe("NotificationProvider", () => {
     expect(stream?.url).toBe("http://api.test/portfolio/events");
     expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
 
-    const update = { event_id: "e-1", property_id: "p-1", summary: "Heating reported", facts_written: 1 };
+    const update = {
+      event_id: "e-1",
+      property_id: "p-1",
+      summary: "Heating reported",
+      facts_written: 1,
+    };
     act(() => {
       stream!.emit("fact_update", update);
       stream!.emit("fact_update", update);
     });
 
-    expect(await screen.findByRole("button", { name: "Notifications (1 unread)" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Notifications (1 unread)" }),
+    ).toBeInTheDocument();
   });
 });

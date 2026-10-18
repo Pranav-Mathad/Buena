@@ -12,21 +12,21 @@ shadcn/ui), Vitest and Testing Library.
 
 ## Scripts
 
-| Command | What it does |
-|---|---|
-| `npm ci` | Install exact versions from `package-lock.json` |
-| `npm run dev` | Dev server on <http://localhost:8080> |
-| `npm run build` | Production build into `dist/` |
-| `npm run preview` | Serve the production build |
-| `npm run lint` | ESLint, failing on any warning |
-| `npm run typecheck` | `tsc --noEmit` for the app and the Vite config |
-| `npm test` | Vitest, single run |
-| `npm run test:watch` | Vitest in watch mode |
+| Command              | What it does                                    |
+| -------------------- | ----------------------------------------------- |
+| `npm ci`             | Install exact versions from `package-lock.json` |
+| `npm run dev`        | Dev server on <http://localhost:8080>           |
+| `npm run build`      | Production build into `dist/`                   |
+| `npm run preview`    | Serve the production build                      |
+| `npm run lint`       | ESLint, failing on any warning                  |
+| `npm run typecheck`  | `tsc --noEmit` for the app and the Vite config  |
+| `npm test`           | Vitest, single run                              |
+| `npm run test:watch` | Vitest in watch mode                            |
 
 ## Environment
 
-| Variable | Purpose |
-|---|---|
+| Variable            | Purpose                                                           |
+| ------------------- | ----------------------------------------------------------------- |
 | `VITE_API_BASE_URL` | Base URL of the Keystone API, for example `http://localhost:8000` |
 
 Copy `.env.example` to `.env.local`. Env files other than the example are

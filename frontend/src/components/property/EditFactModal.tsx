@@ -56,14 +56,17 @@ export const EditFactModal = ({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04]">
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04]"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
         <p className="mt-4 text-[12.5px] text-muted-foreground leading-relaxed">
           Saving marks this fact as <span className="font-mono">human-edited</span>. Future
-          extractor proposals against the same field will be skipped — the
-          operator becomes the source of truth until you change it again.
+          extractor proposals against the same field will be skipped — the operator becomes the
+          source of truth until you change it again.
         </p>
         <textarea
           value={value}
@@ -73,9 +76,7 @@ export const EditFactModal = ({
           className="mt-4 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[14px] leading-snug focus:outline-none focus:ring-2 focus:ring-foreground/20 resize-y"
         />
         {error && (
-          <p className="mt-3 text-[12.5px] font-mono text-warning leading-relaxed">
-            {error}
-          </p>
+          <p className="mt-3 text-[12.5px] font-mono text-warning leading-relaxed">{error}</p>
         )}
         <div className="mt-5 pt-4 border-t border-border flex items-center justify-between">
           <span className="font-mono text-[11px] text-muted-foreground">

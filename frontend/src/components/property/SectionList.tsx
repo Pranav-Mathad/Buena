@@ -31,7 +31,9 @@ export const SectionList = ({
           {isContext && <hr className="border-border mb-6" />}
           <div className="flex items-center gap-3">
             {isUncertain && <ClipboardList className="w-4 h-4 text-muted-foreground" />}
-            <h2 className={`font-semibold tracking-tight ${isContext ? "text-[18px] text-muted-foreground" : "text-[22px]"}`}>
+            <h2
+              className={`font-semibold tracking-tight ${isContext ? "text-[18px] text-muted-foreground" : "text-[22px]"}`}
+            >
               {s.title}
             </h2>
             {s.facts.length > 0 && (
@@ -46,11 +48,7 @@ export const SectionList = ({
                 key={f.factId ?? i}
                 fact={f}
                 onOpenSource={onOpenSource}
-                onEdit={
-                  s.isUncertain
-                    ? undefined
-                    : (fact) => onEdit(fact, s.title)
-                }
+                onEdit={s.isUncertain ? undefined : (fact) => onEdit(fact, s.title)}
               />
             ))}
           </div>

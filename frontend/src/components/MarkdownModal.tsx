@@ -18,12 +18,7 @@ type MarkdownModalProps = {
 // "open detail" link on any compact pointer pops the SourceModal so
 // the operator can read the original event without leaving the page.
 // "Download" saves the verbatim markdown as a .md file.
-export const MarkdownModal = ({
-  propertyId,
-  propertyName,
-  open,
-  onClose,
-}: MarkdownModalProps) => {
+export const MarkdownModal = ({ propertyId, propertyName, open, onClose }: MarkdownModalProps) => {
   const [source, setSource] = useState<SourceModalSource | null>(null);
 
   const { data, isLoading, isError, refetch, error } = usePropertyMarkdown(propertyId, open);
@@ -47,10 +42,7 @@ export const MarkdownModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div
-        className="absolute inset-0 bg-foreground/30 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-foreground/30 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-card">
         <div className="flex items-start justify-between p-6 pb-4 border-b border-border">
           <div className="flex items-center gap-3 min-w-0">
@@ -59,9 +51,7 @@ export const MarkdownModal = ({
               <h2 className="text-[20px] font-semibold tracking-tight truncate">
                 Property file (markdown)
               </h2>
-              <p className="text-[13px] text-muted-foreground truncate">
-                {propertyName}
-              </p>
+              <p className="text-[13px] text-muted-foreground truncate">{propertyName}</p>
             </div>
           </div>
           <button
@@ -82,16 +72,11 @@ export const MarkdownModal = ({
         </div>
 
         <div className="flex-1 overflow-y-auto bg-subdued p-6">
-          {isLoading && (
-            <div className="text-muted-foreground text-[14px]">
-              Loading markdown…
-            </div>
-          )}
+          {isLoading && <div className="text-muted-foreground text-[14px]">Loading markdown…</div>}
           {isError && (
             <div className="text-warning text-[14px]">
               Could not load markdown:{" "}
-              {error instanceof Error ? error.message : "backend unreachable"}{" "}
-              —{" "}
+              {error instanceof Error ? error.message : "backend unreachable"} —{" "}
               <button onClick={() => refetch()} className="underline">
                 retry
               </button>
@@ -103,10 +88,7 @@ export const MarkdownModal = ({
         </div>
       </div>
 
-      <SourceModal
-        source={source}
-        onOpenChange={(o) => !o && setSource(null)}
-      />
+      <SourceModal source={source} onOpenChange={(o) => !o && setSource(null)} />
     </div>
   );
 };
@@ -169,10 +151,7 @@ function RenderedMarkdown({
     const italicLineMatch = line.match(/^_([^_].*[^_])_$/);
     if (italicLineMatch) {
       blocks.push(
-        <p
-          key={key++}
-          className="text-[13px] italic text-muted-foreground"
-        >
+        <p key={key++} className="text-[13px] italic text-muted-foreground">
           {renderInline(italicLineMatch[1], onOpenSource)}
         </p>,
       );
@@ -211,10 +190,7 @@ function renderHeading(
 // Walk a single line and emit React nodes for each meaningful token.
 // Order matters — links before bold, bold before italic, italic before
 // code, so nested patterns peel off cleanly.
-function renderInline(
-  source: string,
-  onOpenSource: (s: SourceModalSource) => void,
-): ReactNode[] {
+function renderInline(source: string, onOpenSource: (s: SourceModalSource) => void): ReactNode[] {
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let nodeKey = 0;
@@ -222,9 +198,7 @@ function renderInline(
   let match: RegExpExecArray | null;
   while ((match = linkRe.exec(source))) {
     if (match.index > cursor) {
-      nodes.push(
-        ...renderEmphasis(source.slice(cursor, match.index), nodeKey),
-      );
+      nodes.push(...renderEmphasis(source.slice(cursor, match.index), nodeKey));
       nodeKey += 4;
     }
     const label = stripInlineMarkdown(match[1]);
@@ -278,16 +252,13 @@ function renderEmphasis(text: string, baseKey: number): ReactNode[] {
   // Simpler approach: regex replace with HTML-like markers, then split.
   // Cheap & correct enough for the renderer's actual output shape.
   const tokens: ReactNode[] = [];
-  const splitRe =
-    /(\*\*[^*\n]+\*\*|`[^`\n]+`|(?:^|[^\w*])\*[^*\n]+\*(?=[^\w*]|$))/g;
+  const splitRe = /(\*\*[^*\n]+\*\*|`[^`\n]+`|(?:^|[^\w*])\*[^*\n]+\*(?=[^\w*]|$))/g;
   let lastIdx = 0;
   let m: RegExpExecArray | null;
   let key = baseKey;
   while ((m = splitRe.exec(out))) {
     if (m.index > lastIdx) {
-      tokens.push(
-        <span key={`t-${key++}`}>{out.slice(lastIdx, m.index)}</span>,
-      );
+      tokens.push(<span key={`t-${key++}`}>{out.slice(lastIdx, m.index)}</span>);
     }
     const raw = m[1];
     if (raw.startsWith("**")) {

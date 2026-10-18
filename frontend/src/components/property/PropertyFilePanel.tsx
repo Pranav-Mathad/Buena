@@ -26,12 +26,9 @@ export const PropertyFilePanel = ({
 }) =>
   fileError ? (
     <Card className="p-8">
-      <h2 className="text-[22px] font-semibold tracking-tight">
-        Could not load the property file
-      </h2>
+      <h2 className="text-[22px] font-semibold tracking-tight">Could not load the property file</h2>
       <p className="text-[15px] text-muted-foreground mt-3 leading-relaxed">
-        The request to the API failed. Check that the backend is running and reload the
-        page.
+        The request to the API failed. Check that the backend is running and reload the page.
       </p>
     </Card>
   ) : sections ? (
@@ -41,9 +38,9 @@ export const PropertyFilePanel = ({
       <div>
         <h2 className="text-[22px] font-semibold tracking-tight">No facts yet</h2>
         <p className="text-[15px] text-muted-foreground mt-3 leading-relaxed">
-          Keystone has {property.stats.events} events for this property but has not
-          written any facts from them. Facts appear here as the worker extracts them; the
-          page updates on its own when it does.
+          Keystone has {property.stats.events} events for this property but has not written any
+          facts from them. Facts appear here as the worker extracts them; the page updates on its
+          own when it does.
         </p>
       </div>
       {featured && featured.id !== property.id && (

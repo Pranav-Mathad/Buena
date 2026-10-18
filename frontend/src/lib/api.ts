@@ -195,10 +195,7 @@ type AskDTO = {
   model: string;
 };
 
-export async function fetchAsk(
-  propertyId: string,
-  question: string,
-): Promise<AskResult> {
+export async function fetchAsk(propertyId: string, question: string): Promise<AskResult> {
   const dto = await sendJson<AskDTO>("POST", `/properties/${propertyId}/ask`, { question });
   const status =
     dto.status === "answered" ||
@@ -268,9 +265,7 @@ type DraftReplyDTO = {
   model: string;
 };
 
-export async function fetchDraftReply(
-  input: DraftReplyInput,
-): Promise<DraftReplyResult> {
+export async function fetchDraftReply(input: DraftReplyInput): Promise<DraftReplyResult> {
   const dto = await sendJson<DraftReplyDTO>("POST", "/draft-reply", {
     property_id: input.propertyId,
     property_name: input.propertyName,
@@ -313,9 +308,7 @@ type PortfolioActivityDTO = {
   property_name: string | null;
 };
 
-export async function fetchPortfolioActivity(
-  limit = 8,
-): Promise<PortfolioActivity[]> {
+export async function fetchPortfolioActivity(limit = 8): Promise<PortfolioActivity[]> {
   const rows = await fetchJson<PortfolioActivityDTO[]>(`/portfolio/activity?limit=${limit}`);
   return rows.map((r) => ({
     eventId: r.event_id,
@@ -396,9 +389,7 @@ type InboxSignalDTO = {
   created_at: string;
 };
 
-export async function fetchPendingSignals(
-  limit = 50,
-): Promise<InboxSignal[]> {
+export async function fetchPendingSignals(limit = 50): Promise<InboxSignal[]> {
   const rows = await fetchJson<InboxSignalDTO[]>(`/signals?status=pending&limit=${limit}`);
   return rows.map((r) => ({
     id: r.id,
@@ -463,9 +454,7 @@ type InboxUncertaintyDTO = {
   created_at: string;
 };
 
-export async function fetchOpenUncertainties(
-  limit = 50,
-): Promise<InboxUncertainty[]> {
+export async function fetchOpenUncertainties(limit = 50): Promise<InboxUncertainty[]> {
   const rows = await fetchJson<InboxUncertaintyDTO[]>(
     `/admin/uncertainties?status=open&limit=${limit}`,
   );
@@ -514,10 +503,10 @@ type InboxRejectionDTO = {
   snippet: string;
 };
 
-export async function fetchPendingRejections(
-  limit = 50,
-): Promise<InboxRejection[]> {
-  const rows = await fetchJson<InboxRejectionDTO[]>(`/admin/rejected?status=pending&limit=${limit}`);
+export async function fetchPendingRejections(limit = 50): Promise<InboxRejection[]> {
+  const rows = await fetchJson<InboxRejectionDTO[]>(
+    `/admin/rejected?status=pending&limit=${limit}`,
+  );
   return rows.map((r) => ({
     rejectionId: r.rejection_id,
     eventId: r.event_id,
@@ -618,7 +607,6 @@ export async function fetchPropertyFile(id: string): Promise<PropertyFile> {
     })),
   };
 }
-
 
 export type FactEditResult = {
   factId: string;

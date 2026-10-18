@@ -50,21 +50,20 @@ const PropertyDetail = () => {
     const loading = livePropertiesRaw === undefined;
     return (
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-12 animate-fade-in">
-        <Link to="/" className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+        >
           <ChevronLeft className="w-4 h-4" /> Portfolio
         </Link>
         <Card className="mt-8 p-10 text-center">
           {loading ? (
-            <p className="text-muted-foreground text-[14px] font-mono">
-              loading property…
-            </p>
+            <p className="text-muted-foreground text-[14px] font-mono">loading property…</p>
           ) : (
             <>
               <h2 className="text-[20px] font-semibold">Property not found</h2>
               <p className="text-[14px] text-muted-foreground mt-2">
-                {id
-                  ? `No property with id ${id} in the backend.`
-                  : "No property id in the URL."}
+                {id ? `No property with id ${id} in the backend.` : "No property id in the URL."}
               </p>
             </>
           )}
@@ -75,7 +74,10 @@ const PropertyDetail = () => {
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10 animate-fade-in">
-      <Link to="/" className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+      >
         <ChevronLeft className="w-4 h-4" /> Portfolio
       </Link>
 
@@ -104,7 +106,9 @@ const PropertyDetail = () => {
             key={t}
             onClick={() => setActiveTab(t)}
             className={`px-4 py-2 text-[14px] border-b-2 -mb-px transition-colors ${
-              activeTab === t ? "border-foreground text-foreground" : "border-transparent text-muted-foreground"
+              activeTab === t
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground"
             }`}
           >
             {t === "file" ? "Property file" : "Ask"}
