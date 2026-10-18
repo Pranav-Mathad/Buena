@@ -1,6 +1,7 @@
 // TanStack Query hooks for every backend resource the UI reads.
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  decideSignal,
   fetchEventRaw,
   fetchOpenUncertainties,
   fetchPendingRejections,
@@ -98,3 +99,16 @@ export const usePendingRejections = () =>
     queryFn: () => fetchPendingRejections(50),
     staleTime: INBOX_STALE_MS,
   });
+
+/** Approve or reject a signal, then refresh the inbox and portfolio counts. */
+export const useSignalDecision = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, decision }: { id: string; decision: "approve" | "reject" }) =>
+      decideSignal(id, decision),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pendingSignals });
+      queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
+    },
+  });
+};

@@ -412,6 +412,29 @@ export async function fetchPendingSignals(
   }));
 }
 
+export type SignalDecision = {
+  signalId: string;
+  status: string;
+  outboxId: string | null;
+};
+
+type SignalActionDTO = {
+  signal_id: string;
+  status: string;
+  outbox_id?: string | null;
+};
+
+/** Approve (writes the outbox row) or reject a pending signal. */
+export async function decideSignal(
+  signalId: string,
+  decision: "approve" | "reject",
+): Promise<SignalDecision> {
+  const dto = await fetchJson<SignalActionDTO>(`/signals/${signalId}/${decision}`, {
+    method: "POST",
+  });
+  return { signalId: dto.signal_id, status: dto.status, outboxId: dto.outbox_id ?? null };
+}
+
 export type InboxUncertainty = {
   uncertaintyId: string;
   eventId: string;

@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, HelpCircle, Inbox as InboxIcon, ShieldAlert } from "lucide-react";
-import { useOpenUncertainties, usePendingRejections, usePendingSignals } from "@/hooks/queries";
+import {
+  useOpenUncertainties,
+  usePendingRejections,
+  usePendingSignals,
+  useSignalDecision,
+} from "@/hooks/queries";
 import {
   relativeTime,
   type InboxRejection,
   type InboxSignal,
   type InboxUncertainty,
 } from "@/lib/api";
-import { Card, StatusPill } from "@/components/ui-bits";
+import { Card, PrimaryButton, SecondaryButton, StatusPill } from "@/components/ui-bits";
 
 type Tab = "signals" | "uncertainty" | "rejected";
 
@@ -178,30 +183,59 @@ const SignalsList = ({
   return (
     <div className="space-y-3">
       {rows.map((s) => (
-        <Card key={s.id} className="p-5">
-          <div className="flex items-start gap-4">
-            <SeverityDot severity={s.severity} />
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <h3 className="text-[15px] font-semibold">
-                  {s.type.replace(/_/g, " ")}
-                </h3>
-                <StatusPill variant={severityVariant(s.severity)}>
-                  {s.severity}
-                </StatusPill>
-                <span className="font-mono text-[12px] text-muted-foreground">
-                  {relativeTime(s.createdAt)}
-                </span>
-              </div>
-              <p className="text-[14px] mt-2 leading-relaxed">{s.message}</p>
-              <div className="mt-3">
-                <PropertyChip propertyId={s.propertyId} propertyName={s.propertyName} />
-              </div>
-            </div>
-          </div>
-        </Card>
+        <SignalCard key={s.id} signal={s} />
       ))}
     </div>
+  );
+};
+
+const SignalCard = ({ signal: s }: { signal: InboxSignal }) => {
+  const decision = useSignalDecision();
+  const busy = decision.isPending;
+  return (
+    <Card className="p-5">
+      <div className="flex items-start gap-4">
+        <SeverityDot severity={s.severity} />
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h3 className="text-[15px] font-semibold">
+              {s.type.replace(/_/g, " ")}
+            </h3>
+            <StatusPill variant={severityVariant(s.severity)}>
+              {s.severity}
+            </StatusPill>
+            <span className="font-mono text-[12px] text-muted-foreground">
+              {relativeTime(s.createdAt)}
+            </span>
+          </div>
+          <p className="text-[14px] mt-2 leading-relaxed">{s.message}</p>
+          <div className="mt-3">
+            <PropertyChip propertyId={s.propertyId} propertyName={s.propertyName} />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <PrimaryButton
+              className="px-4 py-2 text-[13px]"
+              disabled={busy}
+              onClick={() => decision.mutate({ id: s.id, decision: "approve" })}
+            >
+              Approve
+            </PrimaryButton>
+            <SecondaryButton
+              className="px-4 py-2 text-[13px]"
+              disabled={busy}
+              onClick={() => decision.mutate({ id: s.id, decision: "reject" })}
+            >
+              Reject
+            </SecondaryButton>
+            {decision.isError && (
+              <span role="alert" className="text-[13px] text-destructive">
+                {decision.error.message}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 };
 
