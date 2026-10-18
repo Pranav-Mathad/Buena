@@ -11,8 +11,6 @@ import { AskPanel } from "@/components/AskPanel";
 import { MarkdownModal } from "@/components/MarkdownModal";
 import { SourceModal, type SourceModalSource } from "@/components/SourceModal";
 
-const BRIEFING_FALLBACK_GENERATION_MS = 1200;
-
 const Tooltip = ({ children, label }: { children: React.ReactNode; label: string }) => (
   <span className="relative group/tt">
     {children}
@@ -616,7 +614,17 @@ const PropertyDetail = () => {
       <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-10">
         {/* Property file — 60% */}
         <div className={`lg:col-span-3 ${activeTab === "ask" ? "hidden lg:block" : ""}`}>
-          {file ? (
+          {fileError ? (
+            <Card className="p-8">
+              <h2 className="text-[22px] font-semibold tracking-tight">
+                Could not load the property file
+              </h2>
+              <p className="text-[15px] text-muted-foreground mt-3 leading-relaxed">
+                The request to the API failed. Check that the backend is running and reload the
+                page.
+              </p>
+            </Card>
+          ) : file ? (
             <div className="space-y-10">
               {file.sections.map((s) => {
                 const isContext = s.isContext;
