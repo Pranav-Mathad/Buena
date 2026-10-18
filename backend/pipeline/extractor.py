@@ -114,22 +114,20 @@ def _extract_subject(raw: str) -> str:
 # Field names align with the field_vocabulary.json contract so the rule
 # fallback's output isn't penalised by the eval scorer just for naming.
 _TOPIC_DISPATCH: dict[str, tuple[str, str, str, str]] = {
-    HEATING.name:        ("maintenance", "high",   "maintenance", "open_heating_issue"),
-    WATER.name:          ("maintenance", "urgent", "maintenance", "open_water_leak"),
-    KEY_LOSS.name:       ("maintenance", "medium", "maintenance", "key_lost"),
-    WINDOW_DOOR.name:    ("maintenance", "medium", "maintenance", "defective_window"),
-    LEASE.name:          ("lease",       "medium", "lease",       "renewal_discussion"),
-    TENANT_CHANGE.name:  ("tenant_change","medium","lease",       "termination_notice"),
-    PAYMENT.name:        ("payment",     "medium", "financials",  "payment_mention"),
-    OWNER_COMM.name:     ("owner_communication", "medium", "overview", "sale_intent"),
-    COMPLAINT.name:      ("maintenance", "medium", "maintenance", "noise_complaint"),
-    COMPLIANCE.name:     ("compliance",  "medium", "compliance",  "regulatory_mention"),
+    HEATING.name: ("maintenance", "high", "maintenance", "open_heating_issue"),
+    WATER.name: ("maintenance", "urgent", "maintenance", "open_water_leak"),
+    KEY_LOSS.name: ("maintenance", "medium", "maintenance", "key_lost"),
+    WINDOW_DOOR.name: ("maintenance", "medium", "maintenance", "defective_window"),
+    LEASE.name: ("lease", "medium", "lease", "renewal_discussion"),
+    TENANT_CHANGE.name: ("tenant_change", "medium", "lease", "termination_notice"),
+    PAYMENT.name: ("payment", "medium", "financials", "payment_mention"),
+    OWNER_COMM.name: ("owner_communication", "medium", "overview", "sale_intent"),
+    COMPLAINT.name: ("maintenance", "medium", "maintenance", "noise_complaint"),
+    COMPLIANCE.name: ("compliance", "medium", "compliance", "regulatory_mention"),
 }
 
 
-def _rule_based(
-    *, source: str, raw_content: str, lang: str
-) -> ExtractionResult:
+def _rule_based(*, source: str, raw_content: str, lang: str) -> ExtractionResult:
     """Deterministic fallback when Gemini is unavailable or errors out.
 
     Uses :mod:`backend.pipeline.lexicon` for the keyword set so the
@@ -157,8 +155,11 @@ def _rule_based(
     category, priority, section, field = _TOPIC_DISPATCH[topic.name]
     note = f"{subject}"
     if sender_hint:
-        note = f"{subject} (gemeldet via {source} von {sender_hint})" if lang == "de" \
+        note = (
+            f"{subject} (gemeldet via {source} von {sender_hint})"
+            if lang == "de"
             else f"{subject} (reported via {source} from {sender_hint})"
+        )
     return ExtractionResult(
         category=category,
         priority=priority,
@@ -202,13 +203,9 @@ async def extract(
             )
             return _apply_confidence_floor(result)
         except LLMUnavailableError as exc:
-            log.warning(
-                "extractor.llm_unavailable", provider=provider.name, error=str(exc)[:300]
-            )
+            log.warning("extractor.llm_unavailable", provider=provider.name, error=str(exc)[:300])
 
     # Expected on a keyless install, so only worth a debug line there.
     log_fallback = log.info if provider is not None else log.debug
     log_fallback("extractor.fallback.rule_based", source=source, lang=lang)
-    return _apply_confidence_floor(
-        _rule_based(source=source, raw_content=raw_content, lang=lang)
-    )
+    return _apply_confidence_floor(_rule_based(source=source, raw_content=raw_content, lang=lang))

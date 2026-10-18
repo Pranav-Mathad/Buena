@@ -25,7 +25,6 @@ class LearningStatsOut(BaseModel):
     signal_types: list[dict[str, Any]]
 
 
-
 @router.get("/learning", response_model=LearningStatsOut)
 async def learning_dashboard(
     session: AsyncSession = Depends(get_session),
@@ -33,4 +32,3 @@ async def learning_dashboard(
     """Return approval rates and priority weights per signal type."""
     snapshot = await compute_learning(session)
     return LearningStatsOut(**snapshot_to_json(snapshot))
-

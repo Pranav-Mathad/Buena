@@ -86,8 +86,7 @@ def parse_one(
     )
 
     relative_path = (
-        str(path.relative_to(root)) if root is not None and path.is_relative_to(root)
-        else str(path)
+        str(path.relative_to(root)) if root is not None and path.is_relative_to(root) else str(path)
     )
 
     metadata: dict[str, Any] = {
@@ -130,9 +129,7 @@ def walk_directory(
     log.info("invoice.archive.start", root=str(root), files=len(paths))
     for path in paths:
         try:
-            yield parse_one(
-                path, root=root, read_text=read_text, use_llm=use_llm
-            )
+            yield parse_one(path, root=root, read_text=read_text, use_llm=use_llm)
         except Exception:  # noqa: BLE001
             log.exception("invoice.archive.parse_error", path=str(path))
 
@@ -162,9 +159,7 @@ def walk_index_csv(
             metadata: dict[str, Any] = {
                 "filename": filename,
                 "original_path": str(
-                    pdf_root.joinpath(filename)
-                    if pdf_root is not None
-                    else filename
+                    pdf_root.joinpath(filename) if pdf_root is not None else filename
                 ),
                 "content_sha256": content_sha256,
                 "document_type": doctype,
@@ -178,9 +173,7 @@ def walk_index_csv(
             yield ConnectorEvent(
                 source=EVENT_SOURCE,
                 source_ref=f"{filename}:{content_sha256[:16]}",
-                raw_content=(
-                    f"Invoice {filename} — awaiting extraction"
-                ),
+                raw_content=(f"Invoice {filename} — awaiting extraction"),
                 metadata=metadata,
                 received_at=received_at,
                 document_type=doctype,

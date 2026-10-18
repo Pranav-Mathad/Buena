@@ -65,8 +65,5 @@ def format_slack_event(payload: dict) -> tuple[str, str]:
 
     user = str(event.get("user", "unknown"))
     text = str(event.get("text", "")).strip()
-    raw_content = (
-        f"From: Slack user {user} in channel {channel}\n"
-        f"Subject: Slack message\n\n{text}"
-    )
+    raw_content = f"From: Slack user {user} in channel {channel}\nSubject: Slack message\n\n{text}"
     return source_ref, raw_content

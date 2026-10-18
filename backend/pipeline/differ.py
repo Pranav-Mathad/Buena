@@ -104,7 +104,10 @@ def _should_replace(
     if new_rank == old_rank and new_confidence < existing["confidence"]:
         return False, "lower_confidence"
 
-    return True, f"replace ({new_source}@{new_confidence:.2f} > {existing['source']}@{existing['confidence']:.2f})"
+    return (
+        True,
+        f"replace ({new_source}@{new_confidence:.2f} > {existing['source']}@{existing['confidence']:.2f})",
+    )
 
 
 async def diff(
@@ -134,9 +137,7 @@ async def diff(
             # fact a property manager has hand-corrected. Override
             # is still possible via the API's force=true path.
             if current[key].get("human_edited"):
-                skipped.append(
-                    (f"{section}.{field}", "preserved_human_edit")
-                )
+                skipped.append((f"{section}.{field}", "preserved_human_edit"))
                 continue
             replace, reason = _should_replace(event_source, confidence, current[key], value)
             if not replace:

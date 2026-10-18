@@ -298,9 +298,7 @@ def test_validate_first_match_wins() -> None:
     filtered, rejections = validate(plan, event=_email(), current_facts={})
     assert filtered.decisions == []
     assert len(rejections) == 1
-    assert rejections[0].constraint_name.endswith(
-        "compliance_facts_require_authoritative_source"
-    )
+    assert rejections[0].constraint_name.endswith("compliance_facts_require_authoritative_source")
 
 
 # ----------------------------------------------------------------------------
@@ -321,10 +319,7 @@ async def test_persist_rejections_roundtrip() -> None:
         # Fixture: building + property + event
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Validator Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test Validator Bldg') RETURNING id")
             )
         ).first()
         p = (
@@ -406,13 +401,7 @@ async def test_persist_rejections_roundtrip() -> None:
             text("DELETE FROM rejected_updates WHERE event_id = :eid"),
             {"eid": e.id},
         )
-        await session.execute(
-            text("DELETE FROM events WHERE id = :eid"), {"eid": e.id}
-        )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id}
-        )
+        await session.execute(text("DELETE FROM events WHERE id = :eid"), {"eid": e.id})
+        await session.execute(text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id})
         await session.commit()

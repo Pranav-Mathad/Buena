@@ -65,9 +65,7 @@ async def list_signals(
 
 
 @mcp.tool()
-async def get_activity(
-    property_id: str, since: str | None = None
-) -> list[dict[str, Any]]:
+async def get_activity(property_id: str, since: str | None = None) -> list[dict[str, Any]]:
     """Return recent events + extraction summaries for a property.
 
     Args:
@@ -79,9 +77,7 @@ async def get_activity(
 
 
 @mcp.tool()
-async def propose_action(
-    property_id: str | None, action: dict[str, Any]
-) -> dict[str, Any]:
+async def propose_action(property_id: str | None, action: dict[str, Any]) -> dict[str, Any]:
     """Propose an action for a property. Creates a pending signal a human approves.
 
     Args:

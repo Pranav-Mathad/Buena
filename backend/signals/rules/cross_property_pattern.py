@@ -162,9 +162,7 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
         )
         evidence = [
             {"event_id": ev, "fact_id": fid}
-            for ev, fid in zip(
-                data["event_ids"], data["fact_ids"], strict=False
-            )
+            for ev, fid in zip(data["event_ids"], data["fact_ids"], strict=False)
             if ev or fid
         ]
         out.append(

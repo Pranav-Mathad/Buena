@@ -24,9 +24,7 @@ async def resolve_featured_property_id(session: AsyncSession) -> UUID | None:
     try:
         query, params = "SELECT id FROM properties WHERE id = :ref", {"ref": UUID(ref)}
     except ValueError:
-        query = (
-            "SELECT id FROM properties WHERE :ref = ANY(aliases) ORDER BY created_at LIMIT 1"
-        )
+        query = "SELECT id FROM properties WHERE :ref = ANY(aliases) ORDER BY created_at LIMIT 1"
         params = {"ref": ref}
     row = (await session.execute(text(query), params)).first()
     return UUID(str(row.id)) if row else None

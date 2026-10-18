@@ -66,11 +66,7 @@ class BackfillSummary:
     @property
     def routed(self) -> int:
         """Total events that resolved to *some* scope (any tier)."""
-        return (
-            self.routed_property
-            + self.routed_building
-            + self.routed_liegenschaft
-        )
+        return self.routed_property + self.routed_building + self.routed_liegenschaft
 
     def as_json(self) -> dict[str, Any]:
         """Serializable view for the CLI's ``--json`` mode."""
@@ -127,9 +123,7 @@ async def _ingest_one(
             summary.unrouted += 1
             if summary.miss_reasons is None:
                 summary.miss_reasons = {}
-            summary.miss_reasons[route.reason] = (
-                summary.miss_reasons.get(route.reason, 0) + 1
-            )
+            summary.miss_reasons[route.reason] = summary.miss_reasons.get(route.reason, 0) + 1
 
         # Write facts (no-op when no scope is resolved).
         written = await fact_writer(
@@ -159,7 +153,6 @@ def _normalise_ts(received: datetime | None) -> datetime | None:
     if received is None:
         return None
     if received.tzinfo is None:
-
         return received.replace(tzinfo=UTC)
     return received
 
@@ -177,9 +170,7 @@ async def _drive(
     for ev in iterator:
         summary.total_seen += 1
         try:
-            await _ingest_one(
-                factory, ev, fact_writer=fact_writer, summary=summary
-            )
+            await _ingest_one(factory, ev, fact_writer=fact_writer, summary=summary)
         except Exception:  # noqa: BLE001 — keep the backfill moving
             log.exception(
                 "backfill.error",
@@ -283,9 +274,7 @@ async def _reroute_one(
     from sqlalchemy import text  # noqa: PLC0415 — local import keeps imports tidy
 
     async with factory() as session:
-        route: StructuredRoute = await route_structured(
-            session, metadata, event_source=source
-        )
+        route: StructuredRoute = await route_structured(session, metadata, event_source=source)
         if route.property_id is not None:
             summary.moved_to_property += 1
         elif route.building_id is not None:
@@ -296,9 +285,7 @@ async def _reroute_one(
             summary.still_unrouted += 1
             if summary.miss_reasons is None:
                 summary.miss_reasons = {}
-            summary.miss_reasons[route.reason] = (
-                summary.miss_reasons.get(route.reason, 0) + 1
-            )
+            summary.miss_reasons[route.reason] = summary.miss_reasons.get(route.reason, 0) + 1
             await session.commit()
             return
 

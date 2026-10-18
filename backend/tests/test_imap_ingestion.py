@@ -152,9 +152,7 @@ async def test_ingest_is_idempotent_on_message_id() -> None:
         async with factory() as session:
             n = (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM events WHERE source_ref = :ref"
-                    ),
+                    text("SELECT COUNT(*) FROM events WHERE source_ref = :ref"),
                     {"ref": test_ref},
                 )
             ).scalar()

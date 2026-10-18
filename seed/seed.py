@@ -47,9 +47,7 @@ Cursor = psycopg2.extensions.cursor
 
 def _schema_applied(cur: Cursor) -> bool:
     """Return True if the canonical ``properties`` table already exists."""
-    cur.execute(
-        "SELECT to_regclass('public.properties') IS NOT NULL AS exists;"
-    )
+    cur.execute("SELECT to_regclass('public.properties') IS NOT NULL AS exists;")
     row = cur.fetchone()
     return bool(row and row[0])
 
@@ -93,9 +91,7 @@ def _upsert_liegenschaft(
     return cast(str, cur.fetchone()[0])
 
 
-def _set_building_liegenschaft(
-    cur: Cursor, building_id: str, liegenschaft_id: str
-) -> None:
+def _set_building_liegenschaft(cur: Cursor, building_id: str, liegenschaft_id: str) -> None:
     """Idempotently attach a building to its Liegenschaft (no-op if already set)."""
     cur.execute(
         """

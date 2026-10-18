@@ -40,8 +40,17 @@ log = structlog.get_logger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-zÄÖÜäöüß0-9]{2,}")
 _STOPWORDS = {
-    "apt", "apartment", "the", "and", "for", "with", "from", "this",
-    "that", "strasse", "str",
+    "apt",
+    "apartment",
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "strasse",
+    "str",
 }
 
 
@@ -64,9 +73,7 @@ async def _load_routing_corpus(
     session: AsyncSession,
 ) -> list[tuple[UUID, str, list[str]]]:
     """Return ``(property_id, name, aliases_including_name)`` for all properties."""
-    result = await session.execute(
-        text("SELECT id, name, aliases FROM properties")
-    )
+    result = await session.execute(text("SELECT id, name, aliases FROM properties"))
     corpus: list[tuple[UUID, str, list[str]]] = []
     for row in result.all():
         aliases = list(row.aliases or [])
@@ -296,9 +303,7 @@ WEG_KEYWORDS: tuple[str, ...] = (
     "brandschutz",
     "brandschutznachweis",
 )
-WEG_KATEGORIE: frozenset[str] = frozenset(
-    {"hausgeld", "dienstleister", "versorger", "sonstige"}
-)
+WEG_KATEGORIE: frozenset[str] = frozenset({"hausgeld", "dienstleister", "versorger", "sonstige"})
 _WEG_KEYWORD_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(k) for k in WEG_KEYWORDS) + r")\b",
     re.IGNORECASE,
@@ -326,23 +331,20 @@ class StructuredRoute:
     building_id: UUID | None = None
     liegenschaft_id: UUID | None = None
     method: str = "unrouted"  # 'eh_alias' | 'mie_to_eh' | 'invoice_ref'
-                              # | 'haus_alias' | 'weg_keyword'
-                              # | 'weg_kategorie' | 'inherit_from_invoice'
-                              # | 'unrouted'
+    # | 'haus_alias' | 'weg_keyword'
+    # | 'weg_kategorie' | 'inherit_from_invoice'
+    # | 'unrouted'
     reason: str = ""
 
     @property
     def is_routed(self) -> bool:
         """True iff at least one of the three scope IDs is set."""
         return any(
-            x is not None
-            for x in (self.property_id, self.building_id, self.liegenschaft_id)
+            x is not None for x in (self.property_id, self.building_id, self.liegenschaft_id)
         )
 
 
-async def _route_by_eh_alias(
-    session: AsyncSession, eh_id: str
-) -> UUID | None:
+async def _route_by_eh_alias(session: AsyncSession, eh_id: str) -> UUID | None:
     """Look up a property whose ``aliases`` array contains ``eh_id``."""
     row = (
         await session.execute(
@@ -359,9 +361,7 @@ async def _route_by_eh_alias(
     return UUID(str(row.id)) if row else None
 
 
-async def _route_by_mie_id(
-    session: AsyncSession, mie_id: str
-) -> UUID | None:
+async def _route_by_mie_id(session: AsyncSession, mie_id: str) -> UUID | None:
     """``MIE-NNN`` → tenant.metadata.buena_mie_id → occupied property."""
     row = (
         await session.execute(
@@ -415,9 +415,7 @@ async def _route_by_invoice_ref(
     )
 
 
-async def _route_by_haus_alias(
-    session: AsyncSession, haus_id: str
-) -> UUID | None:
+async def _route_by_haus_alias(session: AsyncSession, haus_id: str) -> UUID | None:
     """``HAUS-NN`` → buildings table via ``metadata->>'buena_haus_id'``."""
     row = (
         await session.execute(
@@ -442,11 +440,7 @@ async def _default_liegenschaft(session: AsyncSession) -> UUID | None:
     bank rows. With only one Liegenschaft loaded the choice is
     unambiguous; multi-Liegenschaft tenants will need a richer matcher.
     """
-    row = (
-        await session.execute(
-            text("SELECT id FROM liegenschaften LIMIT 2")
-        )
-    ).all()
+    row = (await session.execute(text("SELECT id FROM liegenschaften LIMIT 2"))).all()
     if len(row) == 1:
         return UUID(str(row[0].id))
     return None
@@ -485,8 +479,7 @@ async def route_structured(
     kategorie = (metadata.get("kategorie") or "").lower().strip()
     verwendungszweck = str(metadata.get("verwendungszweck") or "")
     raw_text = " ".join(
-        str(metadata.get(k) or "")
-        for k in ("verwendungszweck", "filename", "subject", "from")
+        str(metadata.get(k) or "") for k in ("verwendungszweck", "filename", "subject", "from")
     )
 
     # 1. Property (unit)
@@ -572,7 +565,5 @@ async def route_structured(
         reason = "no EH-/MIE-/INV-/HAUS-/kategorie in metadata"
     else:
         seen = ", ".join(s for s in (eh_id, mie_id, invoice_ref, haus_id) if s)
-        reason = (
-            f"refs {seen or '(none)'} kat={kategorie or '(none)'} unresolved"
-        )
+        reason = f"refs {seen or '(none)'} kat={kategorie or '(none)'} unresolved"
     return StructuredRoute(method="unrouted", reason=reason)

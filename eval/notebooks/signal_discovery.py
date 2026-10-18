@@ -251,9 +251,7 @@ LIMIT 20;
 # -----------------------------------------------------------------------------
 
 
-def _render_section(
-    title: str, sql: str, takeaway: str, rows: list[dict[str, Any]]
-) -> str:
+def _render_section(title: str, sql: str, takeaway: str, rows: list[dict[str, Any]]) -> str:
     """Format one section as Markdown."""
     if not rows:
         return f"## {title}\n\n_No rows returned._\n\n**Takeaway:** {takeaway}\n"
@@ -298,8 +296,7 @@ SECTIONS: list[tuple[str, str, str]] = [
     (
         "5. Contractor concentration per building",
         SQL_CONTRACTOR_CONCENTRATION,
-        "≥ 60 % of invoices from one contractor is the dependency-risk "
-        "candidate.",
+        "≥ 60 % of invoices from one contractor is the dependency-risk candidate.",
     ),
     (
         "6. Owner-communication volume per property",
@@ -343,9 +340,7 @@ async def _execute_all() -> str:
                 parts.append(_render_section(title, sql, takeaway, [dict(r) for r in rows]))
             except Exception as exc:  # noqa: BLE001 — keep the report going
                 log.exception("signal_discovery.section_error", title=title)
-                parts.append(
-                    f"## {title}\n\n_Section failed: {type(exc).__name__}: {exc}_\n"
-                )
+                parts.append(f"## {title}\n\n_Section failed: {type(exc).__name__}: {exc}_\n")
     return "\n".join(parts)
 
 
@@ -358,8 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out",
         default=None,
-        help="Optional Markdown destination "
-        "(e.g. docs/eval-runs/2026-04-26-signal-discovery.md).",
+        help="Optional Markdown destination (e.g. docs/eval-runs/2026-04-26-signal-discovery.md).",
     )
     args = parser.parse_args(argv)
 

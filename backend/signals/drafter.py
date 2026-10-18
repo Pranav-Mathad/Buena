@@ -38,9 +38,7 @@ Evidence summary:
 Write the message body now."""
 
 
-async def _owner_context(
-    session: AsyncSession, property_id: UUID | None
-) -> dict[str, Any]:
+async def _owner_context(session: AsyncSession, property_id: UUID | None) -> dict[str, Any]:
     """Look up the owner/recipient details for the drafted action."""
     if property_id is None:
         return {
@@ -135,15 +133,12 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
     )
 
 
-async def draft(
-    session: AsyncSession, candidate: SignalCandidate
-) -> ProposedAction:
+async def draft(session: AsyncSession, candidate: SignalCandidate) -> ProposedAction:
     """Build the :class:`ProposedAction` for a candidate, Gemini Pro preferred."""
     recipient = await _owner_context(session, candidate.property_id)
     subject = _subject(candidate)
-    evidence_summary = (
-        candidate.context_excerpt
-        or "\n".join(f"- {item}" for item in candidate.evidence[:5])
+    evidence_summary = candidate.context_excerpt or "\n".join(
+        f"- {item}" for item in candidate.evidence[:5]
     )
 
     drafted_message: str | None = None

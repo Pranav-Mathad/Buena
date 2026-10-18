@@ -155,9 +155,7 @@ async def reset_cursor() -> dict[str, Any]:
 # --- Per-event ingestion ----------------------------------------------------
 
 
-async def _process_event(
-    factory: Any, ev: ConnectorEvent, *, summary: AdvanceResult
-) -> None:
+async def _process_event(factory: Any, ev: ConnectorEvent, *, summary: AdvanceResult) -> None:
     """Insert one ConnectorEvent and run the matching extractor.
 
     Email events go through the Gemini extractor (fact-write via
@@ -186,9 +184,7 @@ async def _process_event(
                 session, ev.raw_content, metadata=ev.metadata
             )
         else:
-            route = await route_structured(
-                session, ev.metadata, event_source=ev.source
-            )
+            route = await route_structured(session, ev.metadata, event_source=ev.source)
     if route.property_id is not None:
         summary.routed_property += 1
     elif route.building_id is not None:
@@ -321,9 +317,7 @@ async def advance_one_day(*, root: Path | None = None) -> AdvanceResult:
     except Exception as exc:  # noqa: BLE001
         log.exception("incremental.signals_error")
         if len(summary.error_samples) < 3:
-            summary.error_samples.append(
-                f"signals: {type(exc).__name__}: {exc}"[:300]
-            )
+            summary.error_samples.append(f"signals: {type(exc).__name__}: {exc}"[:300])
 
     # Persist the cursor *after* the day's work lands so a crash mid-day
     # leaves the cursor pointing at the same day for retry.

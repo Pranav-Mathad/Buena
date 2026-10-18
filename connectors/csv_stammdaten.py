@@ -111,9 +111,7 @@ def read_rows(
                 if value is None:
                     redacted[column] = None
                     continue
-                redacted[column] = _redact_value(
-                    column, value.strip(), column_map.pii_columns
-                )
+                redacted[column] = _redact_value(column, value.strip(), column_map.pii_columns)
 
             mapped: dict[str, Any] = {}
             for canonical, source_col in column_map.required.items():
@@ -124,8 +122,7 @@ def read_rows(
                 if col in redacted:
                     metadata[col] = redacted[col]
 
-            natural_key = str(mapped.get("id") or mapped.get("email") or
-                              mapped.get("name") or "")
+            natural_key = str(mapped.get("id") or mapped.get("email") or mapped.get("name") or "")
             log.debug(
                 "stammdaten.row",
                 entity_type=entity_type,

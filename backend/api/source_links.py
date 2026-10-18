@@ -95,9 +95,7 @@ async def event_source(
             source=source,
             target="detail",
         )
-        return RedirectResponse(
-            url=f"/events/{event_id}/detail", status_code=307
-        )
+        return RedirectResponse(url=f"/events/{event_id}/detail", status_code=307)
 
     log.info(
         "events.source.redirect",
@@ -122,9 +120,7 @@ async def event_raw(
     """
     row = (
         await session.execute(
-            text(
-                "SELECT raw_content, source FROM events WHERE id = :eid"
-            ),
+            text("SELECT raw_content, source FROM events WHERE id = :eid"),
             {"eid": event_id},
         )
     ).first()

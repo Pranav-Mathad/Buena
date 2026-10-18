@@ -179,8 +179,7 @@ class Report:
         buckets = [CalibrationBucket(low=lo, high=hi) for lo, hi in CALIBRATION_BUCKETS]
         for row in self.rows:
             expected_keys: set[tuple[str, str]] = {
-                (str(ef.get("section", "")), str(ef.get("field", "")))
-                for ef in row.expected_facts
+                (str(ef.get("section", "")), str(ef.get("field", ""))) for ef in row.expected_facts
             }
 
             for xf in row.extracted_facts:
@@ -213,7 +212,8 @@ class Report:
             missed = sum(1 for fm in row.fact_matches if not fm.get("key_matched"))
             spurious = len(row.spurious_facts)
             score = (
-                float(missed) + float(spurious)
+                float(missed)
+                + float(spurious)
                 + (0.5 if not row.category_correct else 0.0)
                 + (1.0 if not row.routing_correct else 0.0)
             )
@@ -251,7 +251,13 @@ class Report:
                 f"{cs.f1:.2f} | {cs.value_match_rate:.2f} |"
             )
 
-        lines += ["", "## Calibration curve", "", "| bucket | n | correct | observed accuracy |", "|---|---:|---:|---:|"]
+        lines += [
+            "",
+            "## Calibration curve",
+            "",
+            "| bucket | n | correct | observed accuracy |",
+            "|---|---:|---:|---:|",
+        ]
         for b in self.calibration():
             lines.append(
                 f"| {b.low:.2f}–{b.high:.2f} | {b.count} | {b.correct} | {b.accuracy:.2f} |"
@@ -275,27 +281,17 @@ def _row_diff(row: Row) -> str:
     """One-line diff between expected and extracted for the failure list."""
     parts: list[str] = []
     if not row.category_correct:
-        parts.append(
-            f"category {row.expected_category!r}→{row.extracted_category!r}"
-        )
+        parts.append(f"category {row.expected_category!r}→{row.extracted_category!r}")
     if not row.routing_correct:
-        parts.append(
-            f"scope {row.expected_scope!r}→{row.extracted_scope!r}"
-        )
-    missed = [
-        fm for fm in row.fact_matches if not fm.get("key_matched")
-    ]
+        parts.append(f"scope {row.expected_scope!r}→{row.extracted_scope!r}")
+    missed = [fm for fm in row.fact_matches if not fm.get("key_matched")]
     if missed:
-        parts.append(
-            "missed "
-            + ", ".join(f"{m['section']}.{m['field']}" for m in missed[:3])
-        )
+        parts.append("missed " + ", ".join(f"{m['section']}.{m['field']}" for m in missed[:3]))
     if row.spurious_facts:
         parts.append(
             "spurious "
             + ", ".join(
-                f"{f.get('section', '?')}.{f.get('field', '?')}"
-                for f in row.spurious_facts[:3]
+                f"{f.get('section', '?')}.{f.get('field', '?')}" for f in row.spurious_facts[:3]
             )
         )
     return "; ".join(parts) or "(no measurable diff)"
@@ -356,10 +352,7 @@ def score_row(
         # so paraphrased-but-equivalent extractions count.
         value_matched = bool(
             expected_value
-            and (
-                expected_value in extracted_value
-                or extracted_value in expected_value
-            )
+            and (expected_value in extracted_value or extracted_value in expected_value)
         )
         fact_matches.append(
             {

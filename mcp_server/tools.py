@@ -134,15 +134,11 @@ def build_tools(client: KeystoneClient) -> dict[str, ToolFn]:
         """Return pending signals, optionally filtered by property or severity."""
         return await client.list_signals(property_id=property_id, severity=severity)
 
-    async def get_activity(
-        property_id: str, since: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_activity(property_id: str, since: str | None = None) -> list[dict[str, Any]]:
         """Return recent events + extraction summaries for a property."""
         return await client.get_activity(property_id, since=since)
 
-    async def propose_action(
-        property_id: str | None, action: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def propose_action(property_id: str | None, action: dict[str, Any]) -> dict[str, Any]:
         """Create a pending signal on behalf of an external AI. Human approves in the inbox."""
         return await client.propose_action(property_id=property_id, action=action)
 

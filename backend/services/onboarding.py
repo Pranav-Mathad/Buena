@@ -129,9 +129,7 @@ class _RejectionRow:
 # -----------------------------------------------------------------------------
 
 
-async def _load_header(
-    session: AsyncSession, property_id: UUID
-) -> _PropertyHeader | None:
+async def _load_header(session: AsyncSession, property_id: UUID) -> _PropertyHeader | None:
     """Load property + building + Liegenschaft in one round-trip."""
     row = (
         await session.execute(
@@ -161,16 +159,12 @@ async def _load_header(
         metadata=dict(row.metadata or {}),
         building_id=UUID(str(row.building_id)) if row.building_id else None,
         building_address=row.building_address,
-        liegenschaft_id=(
-            UUID(str(row.liegenschaft_id)) if row.liegenschaft_id else None
-        ),
+        liegenschaft_id=(UUID(str(row.liegenschaft_id)) if row.liegenschaft_id else None),
         liegenschaft_name=row.liegenschaft_name,
     )
 
 
-async def _load_pending_rejections(
-    session: AsyncSession, property_id: UUID
-) -> list[_RejectionRow]:
+async def _load_pending_rejections(session: AsyncSession, property_id: UUID) -> list[_RejectionRow]:
     """Pending or needs_review rejections — newest first."""
     rows = (
         await session.execute(
@@ -226,9 +220,7 @@ async def _load_activity_histogram(
     return {str(r.source): int(r.n) for r in rows}
 
 
-async def _load_total_event_count(
-    session: AsyncSession, property_id: UUID
-) -> int:
+async def _load_total_event_count(session: AsyncSession, property_id: UUID) -> int:
     """All-time event count for the property."""
     row = (
         await session.execute(
@@ -239,9 +231,7 @@ async def _load_total_event_count(
     return int(row.n) if row else 0
 
 
-async def _load_active_tenant(
-    session: AsyncSession, property_id: UUID
-) -> str | None:
+async def _load_active_tenant(session: AsyncSession, property_id: UUID) -> str | None:
     """Best-guess current tenant name from the tenants table."""
     row = (
         await session.execute(
@@ -309,9 +299,7 @@ def _cache_key(
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-async def _read_cache(
-    session: AsyncSession, property_id: UUID, key: str
-) -> str | None:
+async def _read_cache(session: AsyncSession, property_id: UUID, key: str) -> str | None:
     """Return the cached briefing text if its key matches ``key``."""
     row = (
         await session.execute(
@@ -407,18 +395,14 @@ def _render_property_in_60s(
     if header.address:
         parent_bits.append(f"_{header.address}_")
     if header.building_address:
-        parent_bits.append(
-            f"Building: {header.building_address}"
-        )
+        parent_bits.append(f"Building: {header.building_address}")
     if header.liegenschaft_name:
         parent_bits.append(f"WEG: {header.liegenschaft_name}")
     if parent_bits:
         lines.append(" · ".join(parent_bits))
         lines.append("")
 
-    section_title = (
-        "## Property in 60 seconds" if lang == "en" else "## Objekt in 60 Sekunden"
-    )
+    section_title = "## Property in 60 seconds" if lang == "en" else "## Objekt in 60 Sekunden"
     lines.append(section_title)
     lines.append("")
 
@@ -487,11 +471,7 @@ def _render_open_issues(
     rendered_anything = False
 
     if active_maintenance:
-        sub = (
-            "### Active maintenance"
-            if lang == "en"
-            else "### Aktuelle Wartung"
-        )
+        sub = "### Active maintenance" if lang == "en" else "### Aktuelle Wartung"
         lines.append(sub)
         lines.append("")
         for fact in active_maintenance[:TOP_N]:
@@ -506,11 +486,7 @@ def _render_open_issues(
         rendered_anything = True
 
     if uncertainties:
-        sub = (
-            "### Top open uncertainties"
-            if lang == "en"
-            else "### Top offene Unsicherheiten"
-        )
+        sub = "### Top open uncertainties" if lang == "en" else "### Top offene Unsicherheiten"
         lines.append(sub)
         lines.append("")
         for u in uncertainties[:TOP_N]:
@@ -526,11 +502,7 @@ def _render_open_issues(
         rendered_anything = True
 
     if rejections:
-        sub = (
-            "### Pending rejections"
-            if lang == "en"
-            else "### Offene Ablehnungen"
-        )
+        sub = "### Pending rejections" if lang == "en" else "### Offene Ablehnungen"
         lines.append(sub)
         lines.append("")
         for r in rejections[:TOP_N]:
@@ -568,28 +540,20 @@ def _render_watch_out_for(
 
     constraint_counts: dict[str, int] = {}
     for r in rejections_all:
-        constraint_counts[r.constraint_name] = constraint_counts.get(
-            r.constraint_name, 0
-        ) + 1
-    constraint_top = sorted(
-        constraint_counts.items(), key=lambda x: -x[1]
-    )[:TOP_N_PATTERNS]
+        constraint_counts[r.constraint_name] = constraint_counts.get(r.constraint_name, 0) + 1
+    constraint_top = sorted(constraint_counts.items(), key=lambda x: -x[1])[:TOP_N_PATTERNS]
     constraint_top = [c for c in constraint_top if c[1] >= 2]
 
     section_unc_counts: dict[str, int] = {}
     for u in uncertainties:
         section_unc_counts[u.section] = section_unc_counts.get(u.section, 0) + 1
-    unc_top = sorted(
-        section_unc_counts.items(), key=lambda x: -x[1]
-    )[:TOP_N_PATTERNS]
+    unc_top = sorted(section_unc_counts.items(), key=lambda x: -x[1])[:TOP_N_PATTERNS]
     unc_top = [u for u in unc_top if u[1] >= 2]
 
     rendered_anything = False
     if constraint_top:
         sub = (
-            "### Recurring rejected updates"
-            if lang == "en"
-            else "### Häufig abgelehnte Änderungen"
+            "### Recurring rejected updates" if lang == "en" else "### Häufig abgelehnte Änderungen"
         )
         lines.append(sub)
         lines.append("")
@@ -629,11 +593,7 @@ def _render_pointer_index(
     lang: str,
 ) -> list[str]:
     """Per-section pointer index: where to look for more on each topic."""
-    title = (
-        "## Where to look for more"
-        if lang == "en"
-        else "## Wo mehr zu finden ist"
-    )
+    title = "## Where to look for more" if lang == "en" else "## Wo mehr zu finden ist"
     lines: list[str] = [title, ""]
 
     by_section: dict[str, list[Any]] = {}
@@ -668,18 +628,14 @@ def _render_pointer_index(
             if lang == "en"
             else f"Hausansicht öffnen ({header.building_address or header.building_id})"
         )
-        lines.append(
-            f"- [{link_label}](/buildings/{header.building_id}/markdown)"
-        )
+        lines.append(f"- [{link_label}](/buildings/{header.building_id}/markdown)")
     if header.liegenschaft_id:
         link_label = (
             f"Open WEG view ({header.liegenschaft_name or header.liegenschaft_id})"
             if lang == "en"
             else f"WEG-Ansicht öffnen ({header.liegenschaft_name or header.liegenschaft_id})"
         )
-        lines.append(
-            f"- [{link_label}](/liegenschaften/{header.liegenschaft_id}/markdown)"
-        )
+        lines.append(f"- [{link_label}](/liegenschaften/{header.liegenschaft_id}/markdown)")
     lines.append("")
     return lines
 
@@ -695,18 +651,13 @@ def _summarise_facts(facts: list[Any], *, max_lines: int = 30) -> str:
         return ""
     bullets: list[str] = []
     for f in facts[:max_lines]:
-        bullets.append(
-            f"- {f.section}.{f.field} = {f.value} "
-            f"(confidence {f.confidence:.2f})"
-        )
+        bullets.append(f"- {f.section}.{f.field} = {f.value} (confidence {f.confidence:.2f})")
     if len(facts) > max_lines:
         bullets.append(f"- (+{len(facts) - max_lines} more facts not shown)")
     return "\n".join(bullets)
 
 
-def _summarise_uncertainties(
-    uncertainties: list[UncertaintyRow], *, max_lines: int = 12
-) -> str:
+def _summarise_uncertainties(uncertainties: list[UncertaintyRow], *, max_lines: int = 12) -> str:
     """Compact bullet list of open uncertainties for the briefing prompt."""
     if not uncertainties:
         return ""
@@ -715,19 +666,13 @@ def _summarise_uncertainties(
         obs = u.observation
         if len(obs) > 160:
             obs = obs[:157].rstrip() + "…"
-        bullets.append(
-            f"- {u.section}: {obs} (reason: {u.reason_uncertain})"
-        )
+        bullets.append(f"- {u.section}: {obs} (reason: {u.reason_uncertain})")
     if len(uncertainties) > max_lines:
-        bullets.append(
-            f"- (+{len(uncertainties) - max_lines} more uncertainties not shown)"
-        )
+        bullets.append(f"- (+{len(uncertainties) - max_lines} more uncertainties not shown)")
     return "\n".join(bullets)
 
 
-def _summarise_rejections(
-    rejections: list[_RejectionRow], *, max_lines: int = 8
-) -> str:
+def _summarise_rejections(rejections: list[_RejectionRow], *, max_lines: int = 8) -> str:
     """Compact bullet list of pending rejections for the briefing prompt."""
     if not rejections:
         return ""
@@ -737,8 +682,7 @@ def _summarise_rejections(
         if len(value) > 80:
             value = value[:77].rstrip() + "…"
         bullets.append(
-            f"- {r.constraint_name}: rejected {r.section}.{r.field}={value} "
-            f"(reason: {r.reason})"
+            f"- {r.constraint_name}: rejected {r.section}.{r.field}={value} (reason: {r.reason})"
         )
     return "\n".join(bullets)
 
@@ -748,8 +692,7 @@ def _summarise_activity(activity: dict[str, int]) -> str:
     if not activity:
         return ""
     return "\n".join(
-        f"- {src}: {n} events"
-        for src, n in sorted(activity.items(), key=lambda x: -x[1])
+        f"- {src}: {n} events" for src, n in sorted(activity.items(), key=lambda x: -x[1])
     )
 
 
@@ -813,9 +756,7 @@ async def _render_key_context(
         )
         return [title, "", msg, ""]
 
-    await _write_cache(
-        session, property_id, key=cache_key, briefing=briefing
-    )
+    await _write_cache(session, property_id, key=cache_key, briefing=briefing)
     log.info(
         "onboarding.briefing.generated",
         property_id=str(property_id),
@@ -830,9 +771,7 @@ async def _render_key_context(
 # -----------------------------------------------------------------------------
 
 
-async def render_onboarding(
-    session: AsyncSession, property_id: UUID
-) -> str:
+async def render_onboarding(session: AsyncSession, property_id: UUID) -> str:
     """Render the full onboarding markdown for a property.
 
     Five sections, in reading order:
@@ -867,9 +806,7 @@ async def render_onboarding(
     activity = await _load_activity_histogram(session, property_id)
     total_events = await _load_total_event_count(session, property_id)
     active_tenant = await _load_active_tenant(session, property_id)
-    last_fact, last_unc, last_rej = await _last_mutation_timestamps(
-        session, property_id
-    )
+    last_fact, last_unc, last_rej = await _last_mutation_timestamps(session, property_id)
 
     cache_key = _cache_key(last_fact, last_unc, last_rej)
 
@@ -904,11 +841,7 @@ async def render_onboarding(
             lang=lang,
         )
     )
-    lines.extend(
-        _render_open_issues(
-            uncertainties, rejections, active_maintenance, lang=lang
-        )
-    )
+    lines.extend(_render_open_issues(uncertainties, rejections, active_maintenance, lang=lang))
     lines.extend(
         await _render_key_context(
             session,
@@ -925,9 +858,7 @@ async def render_onboarding(
     # "Watch out for" wants ALL rejections (resolved + pending) for pattern-
     # spotting — load a separate cohort for it.
     rejections_all = await _load_all_rejections(session, property_id)
-    lines.extend(
-        _render_watch_out_for(rejections_all, uncertainties, lang=lang)
-    )
+    lines.extend(_render_watch_out_for(rejections_all, uncertainties, lang=lang))
     lines.extend(_render_pointer_index(facts, header, lang=lang))
 
     log.info(
@@ -943,9 +874,7 @@ async def render_onboarding(
     return "\n".join(lines).rstrip() + "\n"
 
 
-async def _load_all_rejections(
-    session: AsyncSession, property_id: UUID
-) -> list[_RejectionRow]:
+async def _load_all_rejections(session: AsyncSession, property_id: UUID) -> list[_RejectionRow]:
     """Every rejection ever recorded — pattern recognition wants the full set."""
     rows = (
         await session.execute(

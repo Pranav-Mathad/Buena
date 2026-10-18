@@ -283,15 +283,21 @@ def load_stammdaten(
 
                 # Edges that are always true once the property exists.
                 _add_edge(
-                    cur, summary,
-                    from_type="property", from_id=uid,
-                    to_type="owner", to_id=owner_uuid,
+                    cur,
+                    summary,
+                    from_type="property",
+                    from_id=uid,
+                    to_type="owner",
+                    to_id=owner_uuid,
                     rel="owned_by",
                 )
                 _add_edge(
-                    cur, summary,
-                    from_type="property", from_id=uid,
-                    to_type="building", to_id=building_uuid,
+                    cur,
+                    summary,
+                    from_type="property",
+                    from_id=uid,
+                    to_type="building",
+                    to_id=building_uuid,
                     rel="in_building",
                 )
 
@@ -319,9 +325,12 @@ def load_stammdaten(
                 if before == 0:
                     summary.tenants_inserted_now += 1
                 _add_edge(
-                    cur, summary,
-                    from_type="property", from_id=property_uuid,
-                    to_type="tenant", to_id=uid,
+                    cur,
+                    summary,
+                    from_type="property",
+                    from_id=property_uuid,
+                    to_type="tenant",
+                    to_id=uid,
                     rel="occupied_by",
                 )
 

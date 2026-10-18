@@ -37,9 +37,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+asyncpg://keystone:keystone@localhost:5432/keystone"
     )
-    database_url_sync: str = Field(
-        default="postgresql://keystone:keystone@localhost:5432/keystone"
-    )
+    database_url_sync: str = Field(default="postgresql://keystone:keystone@localhost:5432/keystone")
 
     # --- LLM ---
     # Which backend serves every LLM call (see backend/services/llm/). With no

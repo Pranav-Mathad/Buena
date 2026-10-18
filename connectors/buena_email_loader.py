@@ -532,13 +532,9 @@ async def _process_event(
                 metadata=ev.metadata,
                 known_sender_domains=known_sender_domains,
             )
-            summary.miss_reasons[bucket] = (
-                summary.miss_reasons.get(bucket, 0) + 1
-            )
+            summary.miss_reasons[bucket] = summary.miss_reasons.get(bucket, 0) + 1
 
-    historical = _is_historical(
-        ev.received_at, threshold_days=HISTORICAL_THRESHOLD_DAYS
-    )
+    historical = _is_historical(ev.received_at, threshold_days=HISTORICAL_THRESHOLD_DAYS)
 
     # --- 3. Extract facts (only when the event landed at a property) -------
     error_text: str | None = None
@@ -599,9 +595,7 @@ async def _process_event(
                             event_id=event_id,
                             route=route,
                             received_at=ev.received_at,
-                            historical=(
-                                historical and not reprocess_historical
-                            ),
+                            historical=(historical and not reprocess_historical),
                             error=None,
                         )
                         await session.commit()
@@ -611,9 +605,7 @@ async def _process_event(
             error_text = f"{type(exc).__name__}: {exc}"[:500]
             if len(summary.error_samples) < 5:
                 summary.error_samples.append(error_text)
-            log.exception(
-                "buena_email.extractor_error", source_ref=ev.source_ref
-            )
+            log.exception("buena_email.extractor_error", source_ref=ev.source_ref)
             async with factory() as session:
                 hit_dead_letter = await _record_failure(
                     session,
@@ -643,9 +635,7 @@ async def _process_event(
     return True
 
 
-async def _populate_top_properties(
-    factory: Any, summary: EmailBackfillSummary
-) -> None:
+async def _populate_top_properties(factory: Any, summary: EmailBackfillSummary) -> None:
     """Top 10 properties by inserted email-event count (sanity check)."""
     async with factory() as session:
         result = await session.execute(
@@ -783,9 +773,7 @@ async def backfill_emails(
         # consumers process events. ``abort_event`` short-circuits both
         # sides on cost-cap breach; in-flight tasks finish (≤ N × call cost
         # overshoot) but no new work starts.
-        queue: asyncio.Queue[ConnectorEvent | None] = asyncio.Queue(
-            maxsize=concurrency * 4
-        )
+        queue: asyncio.Queue[ConnectorEvent | None] = asyncio.Queue(maxsize=concurrency * 4)
         abort_event = asyncio.Event()
 
         async def _producer() -> None:
@@ -832,9 +820,7 @@ async def backfill_emails(
                     abort_event.set()
 
         producer_task = asyncio.create_task(_producer())
-        consumer_tasks = [
-            asyncio.create_task(_consumer(i)) for i in range(concurrency)
-        ]
+        consumer_tasks = [asyncio.create_task(_consumer(i)) for i in range(concurrency)]
         await asyncio.gather(producer_task, *consumer_tasks)
 
     state_after = cost_ledger.get_state(LEDGER_LABEL)

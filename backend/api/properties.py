@@ -488,8 +488,7 @@ async def property_markdown(
     cached = (
         await session.execute(
             text(
-                "SELECT content_md, last_rendered_at FROM property_files "
-                "WHERE property_id = :pid"
+                "SELECT content_md, last_rendered_at FROM property_files WHERE property_id = :pid"
             ),
             {"pid": property_id},
         )
@@ -563,9 +562,7 @@ _AUTHORITATIVE_DOCUMENT_TYPES: frozenset[str] = frozenset(
 )
 
 
-def _build_stammdaten_section(
-    s: Stammdaten, lang: str
-) -> PropertyFileSection | None:
+def _build_stammdaten_section(s: Stammdaten, lang: str) -> PropertyFileSection | None:
     """Emit a Stammdaten section mirroring the markdown view.
 
     Stammdaten lives outside the events/facts pipeline (it's the
@@ -779,9 +776,7 @@ async def property_file(
                 source=source_label,
                 date=when.date().isoformat(),
                 date_iso=when.isoformat() if when else None,
-                confidence=(
-                    float(row.confidence) if row.confidence is not None else None
-                ),
+                confidence=(float(row.confidence) if row.confidence is not None else None),
                 section=row.section,
                 field=row.field,
                 event_id=str(row.source_event_id) if row.source_event_id else None,
@@ -831,9 +826,7 @@ async def property_file(
     lang = await _detect_property_language(session, property_id)
 
     stammdaten = await _fetch_stammdaten(session, property_id)
-    stammdaten_section = (
-        _build_stammdaten_section(stammdaten, lang) if stammdaten else None
-    )
+    stammdaten_section = _build_stammdaten_section(stammdaten, lang) if stammdaten else None
     if stammdaten_section is not None:
         # Stammdaten is the master record — prepend so it reads first.
         sections.insert(0, stammdaten_section)

@@ -51,9 +51,7 @@ async def _event_stream(property_id: UUID | None) -> AsyncIterator[bytes]:
             yield b"event: fact_update\ndata: " + body + b"\n\n"
     finally:
         await bus.unsubscribe(property_id, queue)
-        log.info(
-            "sse.unsubscribe", property_id=str(property_id) if property_id else "*"
-        )
+        log.info("sse.unsubscribe", property_id=str(property_id) if property_id else "*")
 
 
 @router.get("/{property_id}/events")
@@ -74,5 +72,3 @@ async def portfolio_events() -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-

@@ -26,9 +26,7 @@ _OTHER_IBAN_RE: Final = re.compile(
     r"\b(?:[A-Z]{2}\d{2})[A-Z0-9]{11,30}\b"
 )  # fallback for non-DE IBANs
 _E164_PHONE_RE: Final = re.compile(r"\+?\d[\d\s\-/]{7,}\d")
-_EMAIL_RE: Final = re.compile(
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
-)
+_EMAIL_RE: Final = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 
 def iban_last4(iban: str | None) -> str | None:
@@ -154,6 +152,5 @@ def assert_no_raw_iban(value: str) -> None:
     """
     if _GERMAN_IBAN_RE.search(value):
         raise AssertionError(
-            "raw German IBAN found in scrubbed output — connector "
-            "redaction missed something"
+            "raw German IBAN found in scrubbed output — connector redaction missed something"
         )

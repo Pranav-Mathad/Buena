@@ -21,9 +21,7 @@ from backend.config import get_settings
 @pytest.fixture()
 def isolated_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Point the files router at a tmp dir + reset its lru_cache."""
-    monkeypatch.setattr(
-        get_settings(), "keystone_files_root", str(tmp_path), raising=True
-    )
+    monkeypatch.setattr(get_settings(), "keystone_files_root", str(tmp_path), raising=True)
     files_api._allowed_root.cache_clear()
     yield tmp_path
     files_api._allowed_root.cache_clear()

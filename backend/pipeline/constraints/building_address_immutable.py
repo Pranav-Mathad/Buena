@@ -51,8 +51,7 @@ class BuildingAddressImmutable:
     ) -> ValidationResult:
         stammdaten_value = event_stammdaten(event, "building").get("address")
         is_authoritative_pdf = (
-            event_source(event) == "pdf"
-            and event_document_type(event) in _AUTHORITATIVE_DOC_TYPES
+            event_source(event) == "pdf" and event_document_type(event) in _AUTHORITATIVE_DOC_TYPES
         )
 
         if current is None:

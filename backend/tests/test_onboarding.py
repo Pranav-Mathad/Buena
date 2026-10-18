@@ -43,10 +43,7 @@ async def _seed_property(
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Onboarding Test Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Onboarding Test Bldg') RETURNING id")
             )
         ).first()
         p = (
@@ -93,12 +90,8 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
             text("DELETE FROM events WHERE property_id = :pid"),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": property_id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :id"), {"id": building_id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": property_id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": building_id})
         await session.commit()
 
 

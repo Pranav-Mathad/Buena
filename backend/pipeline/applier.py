@@ -152,9 +152,7 @@ async def apply_uncertainties(
                 "section": str(item.get("relevant_section") or "") or None,
                 "field": str(item.get("relevant_field") or "") or None,
                 "observation": observation[:1000],
-                "hypothesis": (
-                    str(item.get("hypothesis") or "")[:1000] or None
-                ),
+                "hypothesis": (str(item.get("hypothesis") or "")[:1000] or None),
                 "reason": str(item.get("reason_uncertain") or "(no reason given)")[:500],
                 "src": str(item.get("source") or "extractor"),
             },

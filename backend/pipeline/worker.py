@@ -55,8 +55,7 @@ def _needs_review_to_uncertainty(rejection: Rejection) -> dict[str, Any]:
     """
     return {
         "observation": (
-            f"proposed {rejection.section}.{rejection.field} = "
-            f"{rejection.proposed_value!r}"
+            f"proposed {rejection.section}.{rejection.field} = {rejection.proposed_value!r}"
         ),
         "hypothesis": rejection.proposed_value,
         "reason_uncertain": rejection.reason,
@@ -64,6 +63,7 @@ def _needs_review_to_uncertainty(rejection: Rejection) -> dict[str, Any]:
         "relevant_field": rejection.field,
         "source": f"validator_needs_review:{rejection.constraint_name}",
     }
+
 
 log = structlog.get_logger(__name__)
 
@@ -203,9 +203,7 @@ async def process_one(session: AsyncSession) -> UUID | None:
     return await _process_event_body(session, event)
 
 
-async def _claim_specific(
-    session: AsyncSession, event_id: UUID
-) -> dict[str, Any] | None:
+async def _claim_specific(session: AsyncSession, event_id: UUID) -> dict[str, Any] | None:
     """Lock and return a specific event by id, regardless of queue position.
 
     Used by :func:`process_specific` so the debug trigger can extract a
@@ -256,9 +254,7 @@ async def process_specific(event_id: UUID) -> bool:
         return True
 
 
-async def _process_event_body(
-    session: AsyncSession, event: dict[str, Any]
-) -> UUID:
+async def _process_event_body(session: AsyncSession, event: dict[str, Any]) -> UUID:
     """Shared end-to-end pipeline for a claimed event row.
 
     Extracted from :func:`process_one` so :func:`process_specific` can
@@ -274,9 +270,7 @@ async def _process_event_body(
             match = await route(session, event["raw_content"])
             if match is None:
                 log.info("worker.unrouted", event_id=str(event_id))
-                await _mark_processed(
-                    session, event_id, property_id=None, error="unrouted"
-                )
+                await _mark_processed(session, event_id, property_id=None, error="unrouted")
                 await session.commit()
                 return event_id
             property_id = match.property_id
@@ -343,9 +337,7 @@ async def _process_event_body(
                 # stay in the plan; the rejection ride-along is the
                 # human-review trail.
                 hard_keys = {
-                    (r.section, r.field)
-                    for r in semantic.rejections
-                    if not r.needs_review
+                    (r.section, r.field) for r in semantic.rejections if not r.needs_review
                 }
                 if hard_keys:
                     validated_plan = type(validated_plan)(
@@ -458,9 +450,7 @@ async def _process_event_body(
         await session.rollback()
         log.exception("worker.error", event_id=str(event_id))
         async with get_sessionmaker()() as fresh:
-            await _mark_processed(
-                fresh, event_id, property_id=property_id, error=str(exc)[:500]
-            )
+            await _mark_processed(fresh, event_id, property_id=property_id, error=str(exc)[:500])
             await fresh.commit()
         return event_id
 

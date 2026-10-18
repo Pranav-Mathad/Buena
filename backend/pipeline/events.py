@@ -26,9 +26,7 @@ log = structlog.get_logger(__name__)
 class EventBus:
     """Per-property in-memory fan-out. Subscribers get a queue; publishers broadcast."""
 
-    subscribers: dict[UUID | None, set[asyncio.Queue[dict[str, Any]]]] = field(
-        default_factory=dict
-    )
+    subscribers: dict[UUID | None, set[asyncio.Queue[dict[str, Any]]]] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def subscribe(self, property_id: UUID | None) -> asyncio.Queue[dict[str, Any]]:

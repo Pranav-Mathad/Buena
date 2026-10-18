@@ -101,4 +101,3 @@ app.include_router(draft_reply_router)
 async def health() -> dict[str, str]:
     """Liveness probe used by Docker / Railway and local smoke tests."""
     return {"status": "ok"}
-

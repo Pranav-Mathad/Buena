@@ -31,9 +31,7 @@ def test_unknown_filename_without_llm_returns_other() -> None:
 def test_classify_does_not_call_llm_when_use_llm_is_false() -> None:
     # If the heuristic misses, we should get "other" without touching Gemini
     # (no exception, no charge to the cost ledger).
-    out = document_type.classify(
-        "foo_bar.pdf", head_text="some random text", use_llm=False
-    )
+    out = document_type.classify("foo_bar.pdf", head_text="some random text", use_llm=False)
     assert out == "other"
 
 

@@ -72,8 +72,7 @@ def require_root(env_value: str | None = None) -> Path:
     root = get_extracted_root(env_value)
     if not root.is_dir():
         raise DataMissingError(
-            f"Buena dataset not found at {root!s}; set EXTRACTED_ROOT or "
-            "place the folder there."
+            f"Buena dataset not found at {root!s}; set EXTRACTED_ROOT or place the folder there."
         )
     return root
 
@@ -113,33 +112,63 @@ CONTRACTOR_COLUMN_MAP = ColumnMap(
         "bic": "bic",
     },
     metadata_columns=(
-        "strasse", "plz", "ort", "land", "ust_id", "steuernummer",
-        "stil", "sprache", "vertrag_monatlich", "stundensatz",
+        "strasse",
+        "plz",
+        "ort",
+        "land",
+        "ust_id",
+        "steuernummer",
+        "stil",
+        "sprache",
+        "vertrag_monatlich",
+        "stundensatz",
     ),
     pii_columns=("email", "telefon", "iban"),
 )
 
 OWNER_COLUMN_MAP = ColumnMap(
     required={
-        "id": "id", "anrede": "anrede", "vorname": "vorname",
-        "nachname": "nachname", "firma": "firma",
-        "email": "email", "telefon": "telefon", "iban": "iban", "bic": "bic",
+        "id": "id",
+        "anrede": "anrede",
+        "vorname": "vorname",
+        "nachname": "nachname",
+        "firma": "firma",
+        "email": "email",
+        "telefon": "telefon",
+        "iban": "iban",
+        "bic": "bic",
     },
     metadata_columns=(
-        "strasse", "plz", "ort", "land", "einheit_ids",
-        "selbstnutzer", "sev_mandat", "beirat", "sprache",
+        "strasse",
+        "plz",
+        "ort",
+        "land",
+        "einheit_ids",
+        "selbstnutzer",
+        "sev_mandat",
+        "beirat",
+        "sprache",
     ),
     pii_columns=("email", "telefon", "iban"),
 )
 
 TENANT_COLUMN_MAP = ColumnMap(
     required={
-        "id": "id", "anrede": "anrede", "vorname": "vorname",
-        "nachname": "nachname", "email": "email", "telefon": "telefon",
-        "einheit_id": "einheit_id", "eigentuemer_id": "eigentuemer_id",
-        "mietbeginn": "mietbeginn", "mietende": "mietende",
-        "kaltmiete": "kaltmiete", "nk_vorauszahlung": "nk_vorauszahlung",
-        "kaution": "kaution", "iban": "iban", "bic": "bic",
+        "id": "id",
+        "anrede": "anrede",
+        "vorname": "vorname",
+        "nachname": "nachname",
+        "email": "email",
+        "telefon": "telefon",
+        "einheit_id": "einheit_id",
+        "eigentuemer_id": "eigentuemer_id",
+        "mietbeginn": "mietbeginn",
+        "mietende": "mietende",
+        "kaltmiete": "kaltmiete",
+        "nk_vorauszahlung": "nk_vorauszahlung",
+        "kaution": "kaution",
+        "iban": "iban",
+        "bic": "bic",
     },
     metadata_columns=("sprache",),
     pii_columns=("email", "telefon", "iban"),
@@ -174,8 +203,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
             {
                 "buena_liegenschaft_id": lie_id,
                 "name": str(
-                    liegenschaft.get("name")
-                    or f"WEG {liegenschaft.get('strasse', '')}".strip()
+                    liegenschaft.get("name") or f"WEG {liegenschaft.get('strasse', '')}".strip()
                 ),
                 "metadata": {
                     "buena_liegenschaft_id": lie_id,
@@ -201,9 +229,13 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         haus_id = str(g.get("id", ""))
         hausnr = str(g.get("hausnr", "") or "")
         building_address = (
-            f"{liegenschaft.get('strasse', '')} {hausnr}, "
-            f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
-        ).strip(", ").strip()
+            (
+                f"{liegenschaft.get('strasse', '')} {hausnr}, "
+                f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
+            )
+            .strip(", ")
+            .strip()
+        )
         buildings.append(
             {
                 "buena_haus_id": haus_id,
@@ -266,10 +298,12 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         lage = str(u.get("lage") or "")
         addr_short = _short_address(
             str(liegenschaft.get("strasse", "")),
-            str(next(
-                (g["hausnr"] for g in gebaeude_list if str(g.get("id")) == haus_id),
-                "",
-            )),
+            str(
+                next(
+                    (g["hausnr"] for g in gebaeude_list if str(g.get("id")) == haus_id),
+                    "",
+                )
+            ),
         )
         prop_name = (
             f"{liegenschaft.get('strasse', '').strip()} {einheit_nr}".strip()
@@ -295,7 +329,9 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
                 "address": (
                     f"{liegenschaft.get('strasse', '')} {einheit_nr}, "
                     f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
-                ).strip(", ").strip(),
+                )
+                .strip(", ")
+                .strip(),
                 "aliases": aliases,
                 "metadata": {
                     "buena_eh_id": eh_id,
@@ -313,9 +349,10 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
     # ---- Tenants (PII redacted; only active or recently active) ----
     tenants: list[dict[str, Any]] = []
     for m in mieter_list:
-        full_name = " ".join(
-            part for part in (m.get("vorname"), m.get("nachname")) if part
-        ).strip() or "Mieter"
+        full_name = (
+            " ".join(part for part in (m.get("vorname"), m.get("nachname")) if part).strip()
+            or "Mieter"
+        )
         eh_id = str(m.get("einheit_id", ""))
         mietbeginn: date | None = parse_iso_date(m.get("mietbeginn"))
         mietende: date | None = parse_iso_date(m.get("mietende"))
@@ -330,12 +367,8 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
                 "metadata": {
                     "buena_mie_id": m.get("id"),
                     "buena_eh_id": eh_id,
-                    "mietbeginn": (
-                        mietbeginn.isoformat() if mietbeginn else None
-                    ),
-                    "mietende": (
-                        mietende.isoformat() if mietende else None
-                    ),
+                    "mietbeginn": (mietbeginn.isoformat() if mietbeginn else None),
+                    "mietende": (mietende.isoformat() if mietende else None),
                     "kaltmiete": m.get("kaltmiete"),
                     "nk_vorauszahlung": m.get("nk_vorauszahlung"),
                     "kaution": m.get("kaution"),

@@ -45,14 +45,11 @@ class BuildingFloorCountImmutable:
     ) -> ValidationResult:
         stammdaten_value = event_stammdaten(event, "building").get("floor_count")
         is_permit_pdf = (
-            event_source(event) == "pdf"
-            and event_document_type(event) == "structural_permit"
+            event_source(event) == "pdf" and event_document_type(event) == "structural_permit"
         )
 
         if current is None:
-            if stammdaten_value is not None and values_differ(
-                proposed.value, stammdaten_value
-            ):
+            if stammdaten_value is not None and values_differ(proposed.value, stammdaten_value):
                 if is_permit_pdf:
                     return ValidationResult.needs_review(
                         "building floor count change vs stammdaten "

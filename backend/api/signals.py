@@ -181,7 +181,9 @@ async def propose_signal(
     The human always approves before any outbox side effect — this endpoint
     deliberately does not dispatch.
     """
-    severity = payload.severity if payload.severity in {"low", "medium", "high", "urgent"} else "medium"
+    severity = (
+        payload.severity if payload.severity in {"low", "medium", "high", "urgent"} else "medium"
+    )
     action: dict[str, Any] = dict(payload.action)
     action.setdefault("type", "owner_notification")
     action.setdefault("channel", "email")
@@ -280,9 +282,7 @@ async def edit_signal(
     if row is None:
         raise HTTPException(status_code=404, detail="signal not found")
     if row.status not in {"pending", "approved"}:
-        raise HTTPException(
-            status_code=409, detail=f"cannot edit signal in status={row.status}"
-        )
+        raise HTTPException(status_code=409, detail=f"cannot edit signal in status={row.status}")
 
     action = row.proposed_action or {}
     if isinstance(action, str):
@@ -341,9 +341,7 @@ async def approve_signal(
     if row is None:
         raise HTTPException(status_code=404, detail="signal not found")
     if row.status != "pending":
-        raise HTTPException(
-            status_code=409, detail=f"signal is {row.status}, cannot approve"
-        )
+        raise HTTPException(status_code=409, detail=f"signal is {row.status}, cannot approve")
 
     action = row.proposed_action or {}
     if isinstance(action, str):

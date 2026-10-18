@@ -86,18 +86,12 @@ async def portfolio_summary(
     session: AsyncSession = Depends(get_session),
 ) -> PortfolioSummary:
     """Return quick dashboard counts — properties, signals, portfolio signals."""
-    props = (
-        await session.execute(text("SELECT COUNT(*) FROM properties"))
-    ).scalar_one()
+    props = (await session.execute(text("SELECT COUNT(*) FROM properties"))).scalar_one()
     pending = (
-        await session.execute(
-            text("SELECT COUNT(*) FROM signals WHERE status = 'pending'")
-        )
+        await session.execute(text("SELECT COUNT(*) FROM signals WHERE status = 'pending'"))
     ).scalar_one()
     resolved = (
-        await session.execute(
-            text("SELECT COUNT(*) FROM signals WHERE status = 'resolved'")
-        )
+        await session.execute(text("SELECT COUNT(*) FROM signals WHERE status = 'resolved'"))
     ).scalar_one()
     portfolio = (
         await session.execute(

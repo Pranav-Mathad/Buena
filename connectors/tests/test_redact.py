@@ -44,9 +44,7 @@ class TestPhoneLast4:
 
 class TestEmailRedact:
     def test_keeps_local_part_replaces_domain(self) -> None:
-        assert redact.email_redact("max.mustermann@outlook.com") == (
-            "max.mustermann@example.com"
-        )
+        assert redact.email_redact("max.mustermann@outlook.com") == ("max.mustermann@example.com")
 
     def test_collapse_when_local_dropped(self) -> None:
         out = redact.email_redact("max.mustermann@outlook.com", keep_local_part=False)

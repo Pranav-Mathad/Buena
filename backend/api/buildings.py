@@ -77,8 +77,7 @@ async def building_markdown(
     cached = (
         await session.execute(
             text(
-                "SELECT content_md, last_rendered_at FROM building_files "
-                "WHERE building_id = :bid"
+                "SELECT content_md, last_rendered_at FROM building_files WHERE building_id = :bid"
             ),
             {"bid": building_id},
         )
@@ -135,17 +134,13 @@ async def building_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="building file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="building file not materialized yet")
     return BuildingFileRow(
         building_id=UUID(str(row.building_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),
@@ -229,17 +224,13 @@ async def liegenschaft_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="liegenschaft file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="liegenschaft file not materialized yet")
     return LiegenschaftFileRow(
         liegenschaft_id=UUID(str(row.liegenschaft_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),

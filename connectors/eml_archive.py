@@ -82,9 +82,9 @@ def _parse_filename_timestamp(name: str) -> datetime | None:
     if not match:
         return None
     try:
-        return datetime.strptime(
-            f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S"
-        ).replace(tzinfo=UTC)
+        return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S").replace(
+            tzinfo=UTC
+        )
     except ValueError:
         return None
 
@@ -129,11 +129,7 @@ def _parse_date_header(raw_date: str | None) -> datetime | None:
 def _stable_message_id(headers: dict[str, str]) -> str:
     """Fallback source_ref when ``Message-ID`` is missing."""
     canonical = (
-        headers.get("from", "")
-        + "|"
-        + headers.get("date", "")
-        + "|"
-        + headers.get("subject", "")
+        headers.get("from", "") + "|" + headers.get("date", "") + "|" + headers.get("subject", "")
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()[:16]
 
@@ -183,21 +179,16 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
 
     message_id = headers["message_id"].strip("<>") or _stable_message_id(headers)
 
-    received_at = (
-        _parse_date_header(headers["date"]) or _parse_filename_timestamp(path.name)
-    )
+    received_at = _parse_date_header(headers["date"]) or _parse_filename_timestamp(path.name)
     if received_at is None:
         received_at = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
     relative_path = (
-        str(path.relative_to(root)) if root is not None and path.is_relative_to(root)
-        else str(path)
+        str(path.relative_to(root)) if root is not None and path.is_relative_to(root) else str(path)
     )
 
     inner_sender_raw = _detect_forward(headers["subject"], body)
-    inner_sender = (
-        redact.scrub_text(inner_sender_raw) if inner_sender_raw else None
-    )
+    inner_sender = redact.scrub_text(inner_sender_raw) if inner_sender_raw else None
 
     metadata: dict[str, Any] = {
         "from": redacted_headers["from"],
@@ -208,11 +199,7 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
         "thread_id": (
             _references_list(headers["references"])[0].strip("<>")
             if _references_list(headers["references"])
-            else (
-                headers["in_reply_to"].strip("<>")
-                if headers["in_reply_to"]
-                else message_id
-            )
+            else (headers["in_reply_to"].strip("<>") if headers["in_reply_to"] else message_id)
         ),
         "in_reply_to": headers["in_reply_to"].strip("<>") or None,
         "references": [r.strip("<>") for r in _references_list(headers["references"])],

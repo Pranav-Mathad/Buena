@@ -27,10 +27,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Replay Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test Replay Bldg') RETURNING id")
             )
         ).first()
         p = (
@@ -98,14 +95,10 @@ async def _cleanup(property_id: UUID) -> None:
         # Building lookup via property no longer possible after delete; we
         # just clean the test row by name.
         await session.execute(
-            text(
-                "DELETE FROM properties WHERE id = :pid "
-            ),
+            text("DELETE FROM properties WHERE id = :pid "),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM buildings WHERE address = 'Test Replay Bldg'")
-        )
+        await session.execute(text("DELETE FROM buildings WHERE address = 'Test Replay Bldg'"))
         await session.commit()
 
 
@@ -118,9 +111,7 @@ async def test_pause_resume_stop_full_cycle(monkeypatch: pytest.MonkeyPatch) -> 
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -153,12 +144,11 @@ async def test_scheduled_pause_fires_at_checkpoint(
     """A scheduled pause at at_seconds=0 puts the run into ``paused`` immediately."""
     pid, _ = await _seed_property_with_events(n_events=2)
     try:
+
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -217,9 +207,7 @@ async def test_reset_property_wipes_facts_only(
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -237,17 +225,13 @@ async def test_reset_property_wipes_facts_only(
         async with factory() as session:
             facts_left = (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM facts WHERE property_id = :pid"
-                    ),
+                    text("SELECT COUNT(*) FROM facts WHERE property_id = :pid"),
                     {"pid": pid},
                 )
             ).scalar()
             events_left = (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM events WHERE property_id = :pid"
-                    ),
+                    text("SELECT COUNT(*) FROM events WHERE property_id = :pid"),
                     {"pid": pid},
                 )
             ).scalar()

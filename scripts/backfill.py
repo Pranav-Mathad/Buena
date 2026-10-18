@@ -102,8 +102,10 @@ def alias_matcher(keepers: list[str]) -> Callable[[ConnectorEvent], bool]:
     pattern = re.compile("|".join(re.escape(k) for k in keepers), re.IGNORECASE)
 
     def matches(ev: ConnectorEvent) -> bool:
-        haystack = ev.raw_content + " " + " ".join(
-            str(v) for v in ev.metadata.values() if isinstance(v, str)
+        haystack = (
+            ev.raw_content
+            + " "
+            + " ".join(str(v) for v in ev.metadata.values() if isinstance(v, str))
         )
         return pattern.search(haystack) is not None
 

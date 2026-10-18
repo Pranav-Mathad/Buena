@@ -164,9 +164,7 @@ async def test_cost_cap_aborts_loop_cleanly(
     async def _fake_extract(**_kwargs: Any) -> ExtractionResult:
         return fake_result
 
-    monkeypatch.setattr(
-        buena_email_loader, "run_extractor", _fake_extract, raising=True
-    )
+    monkeypatch.setattr(buena_email_loader, "run_extractor", _fake_extract, raising=True)
 
     # Iterate exactly N events from a fabricated list; bypass the .eml walker.
     events = [_connector_event(i) for i in range(5)]
@@ -210,9 +208,7 @@ async def test_dead_letter_after_threshold(
     async def _always_raises(**_kwargs: Any) -> ExtractionResult:
         raise RuntimeError("synthetic extractor failure")
 
-    monkeypatch.setattr(
-        buena_email_loader, "run_extractor", _always_raises, raising=True
-    )
+    monkeypatch.setattr(buena_email_loader, "run_extractor", _always_raises, raising=True)
 
     events = [_connector_event(0)]  # single event re-tried across runs
     monkeypatch.setattr(

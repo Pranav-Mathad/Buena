@@ -411,9 +411,7 @@ async def _set_status(
         await session.commit()
 
 
-async def _publish_control(
-    run_id: UUID, kind: str, payload: dict[str, Any]
-) -> None:
+async def _publish_control(run_id: UUID, kind: str, payload: dict[str, Any]) -> None:
     """Push a control message onto the event bus so SSE subscribers see it.
 
     Replay control events fan out under the property's bus channel
@@ -460,9 +458,7 @@ async def _drive_run(
             while pauses_pending and pauses_pending[0]["at_seconds"] <= elapsed:
                 pause = pauses_pending.pop(0)
                 handle.pause_event.clear()
-                await _set_status(
-                    handle.run_id, "paused", with_paused_at=True
-                )
+                await _set_status(handle.run_id, "paused", with_paused_at=True)
                 await _publish_control(
                     handle.run_id,
                     "replay.scheduled_pause",
@@ -514,9 +510,7 @@ async def _drive_run(
             await asyncio.sleep(max(0.02, 1.0 / handle.speed_multiplier))
     except Exception as exc:  # noqa: BLE001 — surface the failure cleanly
         log.exception("replay.drive.error", run_id=str(handle.run_id))
-        await _set_status(
-            handle.run_id, "failed", last_error=f"{type(exc).__name__}: {exc}"[:500]
-        )
+        await _set_status(handle.run_id, "failed", last_error=f"{type(exc).__name__}: {exc}"[:500])
         await _publish_control(
             handle.run_id,
             "replay.failed",

@@ -40,6 +40,7 @@ def _cache_headers(response: Response, last_rendered_at: datetime) -> None:
     response.headers["Cache-Control"] = "public, max-age=30"
     response.headers["ETag"] = f'"{int(last_rendered_at.timestamp())}"'
 
+
 router = APIRouter(prefix="/property_files", tags=["property_files"])
 log = structlog.get_logger(__name__)
 
@@ -140,9 +141,7 @@ async def list_changes(
             last_rendered_at=r.last_rendered_at,
             trigger_scope=r.trigger_scope,
             trigger_summary=r.trigger_summary,
-            trigger_event_id=(
-                UUID(str(r.trigger_event_id)) if r.trigger_event_id else None
-            ),
+            trigger_event_id=(UUID(str(r.trigger_event_id)) if r.trigger_event_id else None),
         )
         for r in rows
     ]
@@ -170,18 +169,14 @@ async def get_property_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="property file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="property file not materialized yet")
     _cache_headers(response, row.last_rendered_at)
     return PropertyFileRow(
         property_id=UUID(str(row.property_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),
@@ -227,9 +222,7 @@ async def get_property_file_index(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="property file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="property file not materialized yet")
     _cache_headers(response, row.last_rendered_at)
     return PropertyFileIndex(
         property_id=UUID(str(row.property_id)),

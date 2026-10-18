@@ -114,6 +114,4 @@ async def trigger_event(
         inserted=inserted,
         processed=processed,
     )
-    return TriggerEventResponse(
-        event_id=event_id, inserted=inserted, processed=processed
-    )
+    return TriggerEventResponse(event_id=event_id, inserted=inserted, processed=processed)

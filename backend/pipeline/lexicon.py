@@ -79,8 +79,7 @@ LEASE: Final = Topic(
         "nachmieter|untermiete|mieterwechsel|mietende|wohnungsuebergabe"
     ),
     en=_compile(
-        "lease|tenancy|termination|renewal|sub[- ]let|tenant[- ]change|"
-        "move[- ]out|hand[- ]over"
+        "lease|tenancy|termination|renewal|sub[- ]let|tenant[- ]change|move[- ]out|hand[- ]over"
     ),
 )
 COMPLIANCE: Final = Topic(
@@ -89,10 +88,7 @@ COMPLIANCE: Final = Topic(
         "mietpreisbremse|verordnung|prüfung|abnahme|brandschutz|"
         "modernisierung|baugenehmigung|brandschutznachweis"
     ),
-    en=_compile(
-        "regulation|inspection|approval|fire[- ]safety|modernization|"
-        "building[- ]permit"
-    ),
+    en=_compile("regulation|inspection|approval|fire[- ]safety|modernization|building[- ]permit"),
 )
 COMPLAINT: Final = Topic(
     name="complaint",
@@ -112,12 +108,10 @@ WINDOW_DOOR: Final = Topic(
 TENANT_CHANGE: Final = Topic(
     name="tenant_change",
     de=_compile(
-        "kuendigung|kündigung|mieterwechsel|nachmieter|"
-        "wohnungsuebergabe|wohnungsübergabe|kaution"
+        "kuendigung|kündigung|mieterwechsel|nachmieter|wohnungsuebergabe|wohnungsübergabe|kaution"
     ),
     en=_compile(
-        "lease[- ]termination|tenant[- ]change|new[- ]tenant|"
-        "hand[- ]over|deposit[- ]return"
+        "lease[- ]termination|tenant[- ]change|new[- ]tenant|hand[- ]over|deposit[- ]return"
     ),
 )
 OWNER_COMM: Final = Topic(
@@ -126,9 +120,7 @@ OWNER_COMM: Final = Topic(
         "verkaufsabsicht|sonderumlage|hausverwaltung|eigentuemer|"
         "eigentümer|etv|beirat|bescheinigung"
     ),
-    en=_compile(
-        "sale[- ]intent|owner[- ]assembly|board[- ]member|certificate"
-    ),
+    en=_compile("sale[- ]intent|owner[- ]assembly|board[- ]member|certificate"),
 )
 
 

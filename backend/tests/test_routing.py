@@ -45,10 +45,7 @@ async def test_unit_event_routes_to_property() -> None:
         # Pick any property and use its EH alias
         row = (
             await session.execute(
-                text(
-                    "SELECT id, aliases FROM properties "
-                    "WHERE 'EH-005' = ANY(aliases) LIMIT 1"
-                )
+                text("SELECT id, aliases FROM properties WHERE 'EH-005' = ANY(aliases) LIMIT 1")
             )
         ).first()
         if row is None:
@@ -76,10 +73,7 @@ async def test_haus_only_event_routes_to_building() -> None:
     async with factory() as session:
         row = (
             await session.execute(
-                text(
-                    "SELECT id FROM buildings "
-                    "WHERE metadata->>'buena_haus_id' = 'HAUS-12'"
-                )
+                text("SELECT id FROM buildings WHERE metadata->>'buena_haus_id' = 'HAUS-12'")
             )
         ).first()
         if row is None:

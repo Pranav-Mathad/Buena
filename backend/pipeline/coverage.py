@@ -88,9 +88,7 @@ def compute_coverage(
     sections: dict[str, list[tuple[str, bool]]] = {}
     for section, field, label_en, label_de in _EXPECTED_FACTS:
         label = label_de if lang == "de" else label_en
-        sections.setdefault(section, []).append(
-            (label, (section, field) in fact_keys)
-        )
+        sections.setdefault(section, []).append((label, (section, field) in fact_keys))
 
     total_present = sum(1 for _, ok in stamm_rows if ok) + sum(
         1 for rows in sections.values() for _, ok in rows if ok
@@ -116,9 +114,7 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     lines: list[str] = [f"## {title}", ""]
 
     if report.stammdaten:
-        joined = " · ".join(
-            f"{'✓' if ok else '⨯'} {label}" for label, ok in report.stammdaten
-        )
+        joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in report.stammdaten)
         lines.append(f"- **{stamm_label}** — {joined}")
 
     section_titles_de = {
@@ -136,9 +132,7 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     titles = section_titles_de if lang == "de" else section_titles_en
 
     for section, rows in report.sections.items():
-        joined = " · ".join(
-            f"{'✓' if ok else '⨯'} {label}" for label, ok in rows
-        )
+        joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in rows)
         title_label = titles.get(section, section.replace("_", " ").title())
         lines.append(f"- **{title_label}** — {joined}")
 
@@ -149,13 +143,9 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
 def coverage_to_index(report: CoverageReport) -> dict[str, object]:
     """Return a JSON-friendly dict for the ``content_index`` JSONB column."""
     return {
-        "stammdaten": [
-            {"label": label, "present": ok} for label, ok in report.stammdaten
-        ],
+        "stammdaten": [{"label": label, "present": ok} for label, ok in report.stammdaten],
         "sections": {
-            section: [
-                {"label": label, "present": ok} for label, ok in rows
-            ]
+            section: [{"label": label, "present": ok} for label, ok in rows]
             for section, rows in report.sections.items()
         },
         "total_present": report.total_present,

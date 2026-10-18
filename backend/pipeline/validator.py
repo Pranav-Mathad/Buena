@@ -65,9 +65,7 @@ class ValidationResult:
         )
 
     @classmethod
-    def needs_review(
-        cls, reason: str, required_source_type: str | None = None
-    ) -> ValidationResult:
+    def needs_review(cls, reason: str, required_source_type: str | None = None) -> ValidationResult:
         return cls(
             status="needs_review",
             reason=reason,
@@ -218,9 +216,7 @@ def validate(
                 field=decision.field,
                 proposed_value=decision.value,
                 proposed_confidence=decision.confidence,
-                constraint_name=(
-                    verdict_constraint.name if verdict_constraint else "unknown"
-                ),
+                constraint_name=(verdict_constraint.name if verdict_constraint else "unknown"),
                 reason=verdict.reason,
                 required_source_type=verdict.required_source_type,
                 needs_review=verdict.status == "needs_review",

@@ -24,9 +24,9 @@ log = structlog.get_logger(__name__)
 def _imap_configured() -> bool:
     """Return True when IMAP env is real enough to attempt a connection."""
     s = get_settings()
-    configured = bool(
-        s.imap_host and s.imap_user and s.imap_password
-    ) and s.imap_password != "replace-me"
+    configured = (
+        bool(s.imap_host and s.imap_user and s.imap_password) and s.imap_password != "replace-me"
+    )
 
     log.info(
         "imap.config.check",
@@ -45,11 +45,7 @@ def _flatten_body(msg: Message) -> str:
             if part.get_content_type() == "text/plain" and not part.is_multipart():
                 payload = part.get_payload(decode=True) or b""
                 try:
-                    parts.append(
-                        payload.decode(
-                            part.get_content_charset() or "utf-8", "replace"
-                        )
-                    )
+                    parts.append(payload.decode(part.get_content_charset() or "utf-8", "replace"))
                 except LookupError:
                     parts.append(payload.decode("utf-8", "replace"))
         if parts:
@@ -57,9 +53,7 @@ def _flatten_body(msg: Message) -> str:
 
     payload = msg.get_payload(decode=True) or b""
     if isinstance(payload, bytes):
-        return payload.decode(
-            msg.get_content_charset() or "utf-8", "replace"
-        ).strip()
+        return payload.decode(msg.get_content_charset() or "utf-8", "replace").strip()
     return str(payload)
 
 

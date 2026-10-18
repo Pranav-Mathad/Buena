@@ -39,7 +39,9 @@ async def upload_pdf(
 ) -> PdfUploadResponse:
     """Parse the PDF, insert an event, drain the worker once."""
     if file.content_type not in {"application/pdf", "application/x-pdf", None}:
-        raise HTTPException(status_code=415, detail=f"unsupported content-type: {file.content_type}")
+        raise HTTPException(
+            status_code=415, detail=f"unsupported content-type: {file.content_type}"
+        )
 
     data = await file.read()
     if not data:

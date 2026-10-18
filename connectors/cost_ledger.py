@@ -50,8 +50,7 @@ class CostCapExceededError(RuntimeError):
 
     def __init__(self, label: str, cumulative: Decimal, cap: Decimal) -> None:
         super().__init__(
-            f"cost cap reached for label={label!r}: "
-            f"cumulative=${cumulative:.4f} cap=${cap:.4f}"
+            f"cost cap reached for label={label!r}: cumulative=${cumulative:.4f} cap=${cap:.4f}"
         )
         self.label = label
         self.cumulative = cumulative
@@ -85,7 +84,9 @@ def get_state(label: str, *, url: str | None = None) -> LedgerState | None:
     )
 
 
-def ensure_label(label: str, cap_usd: Decimal | float | str, *, url: str | None = None) -> LedgerState:
+def ensure_label(
+    label: str, cap_usd: Decimal | float | str, *, url: str | None = None
+) -> LedgerState:
     """Create the ledger row if missing; return current state."""
     cap = Decimal(str(cap_usd))
     ensure_migrations(url)

@@ -134,9 +134,7 @@ def test_confidence_floor_threshold_is_inclusive_floor() -> None:
 
 def test_extraction_result_uncertain_default_empty() -> None:
     """An ExtractionResult without explicit uncertain[] defaults to []."""
-    r = ExtractionResult(
-        category="other", priority="low", facts_to_update=[], summary=""
-    )
+    r = ExtractionResult(category="other", priority="low", facts_to_update=[], summary="")
     assert r.uncertain == []
 
 
@@ -232,8 +230,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
         b = (
             await session.execute(
                 text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Uncertainty Bldg') RETURNING id"
+                    "INSERT INTO buildings (address) VALUES ('Test Uncertainty Bldg') RETURNING id"
                 )
             )
         ).first()
@@ -276,9 +273,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
     ]
 
     async with factory() as session:
-        n = await apply_uncertainties(
-            session, event_id=e.id, property_id=p.id, items=items
-        )
+        n = await apply_uncertainties(session, event_id=e.id, property_id=p.id, items=items)
         await session.commit()
     assert n == 1
 
@@ -310,9 +305,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
             {"eid": e.id},
         )
         await session.execute(text("DELETE FROM events WHERE id = :id"), {"id": e.id})
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": p.id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": p.id})
         await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": b.id})
         await session.commit()
 
@@ -327,10 +320,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test 9.1 Regression') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test 9.1 Regression') RETURNING id")
             )
         ).first()
         p = (
@@ -445,9 +435,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
         assert rej.reviewed_status == "pending"
         unc_count = (
             await session.execute(
-                text(
-                    "SELECT COUNT(*) FROM uncertainty_events WHERE event_id = :eid"
-                ),
+                text("SELECT COUNT(*) FROM uncertainty_events WHERE event_id = :eid"),
                 {"eid": e.id},
             )
         ).scalar()
@@ -458,17 +446,11 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
             text("DELETE FROM rejected_updates WHERE event_id IN (:eid, :seed)"),
             {"eid": e.id, "seed": e0.id},
         )
-        await session.execute(
-            text("DELETE FROM facts WHERE property_id = :pid"), {"pid": p.id}
-        )
+        await session.execute(text("DELETE FROM facts WHERE property_id = :pid"), {"pid": p.id})
         await session.execute(
             text("DELETE FROM events WHERE id IN (:eid, :seed)"),
             {"eid": e.id, "seed": e0.id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id})
         await session.commit()

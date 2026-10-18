@@ -271,9 +271,7 @@ async def _fetch_header(session: AsyncSession, property_id: UUID) -> PropertyHea
     return PropertyHeader(name=row.name, address=row.address)
 
 
-async def _fetch_stammdaten(
-    session: AsyncSession, property_id: UUID
-) -> Stammdaten | None:
+async def _fetch_stammdaten(session: AsyncSession, property_id: UUID) -> Stammdaten | None:
     """Pull the master-record snapshot for a property.
 
     Joins ``properties.metadata`` (unit dimensions), the active row in
@@ -494,11 +492,7 @@ def _format_fact_line_active(fact: FactRow) -> str:
         if fact.source_event_id is not None
         else "[source: unknown]"
     )
-    badge = (
-        " 🌐 _Updated from web sources_"
-        if (fact.source or "").lower() == "web"
-        else ""
-    )
+    badge = " 🌐 _Updated from web sources_" if (fact.source or "").lower() == "web" else ""
     return (
         f"- **{_format_field(fact.field)}:** {fact.value} "
         f"_(confidence {fact.confidence:.2f})_ {source}{badge}"
@@ -526,10 +520,7 @@ def _format_fact_line_compact(fact: FactRow) -> str:
         else "_(no source on file)_"
     )
     preview = _truncate(fact.value)
-    return (
-        f"- *{date_str}* — **{_format_field(fact.field)}:** {preview} "
-        f"{detail_link}"
-    )
+    return f"- *{date_str}* — **{_format_field(fact.field)}:** {preview} {detail_link}"
 
 
 def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
@@ -558,8 +549,10 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         # Newest in the year, by occurred_at, drives the link target.
         latest = max(
             rows,
-            key=lambda f: f.occurred_at  # type: ignore[arg-type,return-value]
-            or datetime.min.replace(tzinfo=UTC),
+            key=lambda f: (
+                f.occurred_at  # type: ignore[arg-type,return-value]
+                or datetime.min.replace(tzinfo=UTC)
+            ),
         )
         link = (
             f"[open detail](/events/{latest.source_event_id}/source)"
@@ -570,8 +563,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         entries_label = "Einträge" if lang == "de" else "entries"
         latest_summary = _truncate(latest.value, limit=60)
         out.append(
-            f"- **{year}** — {len(rows)} {entries_label} "
-            f"({last_label}: {latest_summary}) {link}"
+            f"- **{year}** — {len(rows)} {entries_label} ({last_label}: {latest_summary}) {link}"
         )
     return out
 
@@ -714,9 +706,7 @@ async def _fetch_facts_by_scope(
         "liegenschaft": "liegenschaft_id",
     }[scope]
     other_columns = ["property_id", "building_id", "liegenschaft_id"]
-    other_clauses = " AND ".join(
-        f"f.{col} IS NULL" for col in other_columns if col != column
-    )
+    other_clauses = " AND ".join(f"f.{col} IS NULL" for col in other_columns if col != column)
     sql = f"""
         SELECT f.section, f.field, f.value, f.source_event_id, f.confidence,
                f.created_at, e.source AS source,
@@ -814,9 +804,7 @@ class RejectionRow:
     occurred_at: datetime | None
 
 
-async def _fetch_pending_rejections(
-    session: AsyncSession, property_id: UUID
-) -> list[RejectionRow]:
+async def _fetch_pending_rejections(session: AsyncSession, property_id: UUID) -> list[RejectionRow]:
     """Pull every ``reviewed_status='pending'`` rejection for a property.
 
     The renderer surfaces these inline, beneath the active fact at the
@@ -878,9 +866,7 @@ def _format_conflict_line(rej: RejectionRow, *, lang: str) -> str:
     )
 
 
-def _format_open_conflicts_block(
-    unmatched: list[RejectionRow], *, lang: str
-) -> list[str]:
+def _format_open_conflicts_block(unmatched: list[RejectionRow], *, lang: str) -> list[str]:
     """Standalone block listing rejections that don't pair to a current fact.
 
     These are typically validator-rejected proposals at scopes that
@@ -891,11 +877,7 @@ def _format_open_conflicts_block(
     """
     if not unmatched:
         return []
-    title = (
-        "Offene Konflikte zur Überprüfung"
-        if lang == "de"
-        else "Open conflicts pending review"
-    )
+    title = "Offene Konflikte zur Überprüfung" if lang == "de" else "Open conflicts pending review"
     review = "Überprüfen" if lang == "de" else "Review"
     out: list[str] = [f"## {title}", ""]
     for rej in unmatched:
@@ -908,9 +890,7 @@ def _format_open_conflicts_block(
         preview = _truncate(rej.proposed_value, limit=100)
         section_label = _format_field(rej.section)
         field_label = _format_field(rej.field) if rej.field else ""
-        coord = (
-            f"{section_label} · {field_label}" if field_label else section_label
-        )
+        coord = f"{section_label} · {field_label}" if field_label else section_label
         out.append(
             f"- ⚠ **{coord}:** {preview}{when} — flagged by "
             f"`{rej.constraint_name}`. "
@@ -1002,9 +982,7 @@ def _emit_sections(
         # of 135 separate lines.
         if section in _CAPPED_SECTIONS and len(active_rows) > ACTIVITY_ACTIVE_LIMIT:
             active_rows.sort(
-                key=lambda f: (
-                    f.occurred_at or datetime.min.replace(tzinfo=UTC)
-                ),
+                key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
                 reverse=True,
             )
             overflow = active_rows[ACTIVITY_ACTIVE_LIMIT:]
@@ -1012,9 +990,7 @@ def _emit_sections(
             archive_rows = overflow + archive_rows
 
         recent_rows.sort(
-            key=lambda f: (
-                f.occurred_at or datetime.min.replace(tzinfo=UTC)
-            ),
+            key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
             reverse=True,
         )
 
@@ -1139,9 +1115,7 @@ class RenderResult:
     content_index: dict[str, object]
 
 
-async def render_property_full(
-    session: AsyncSession, property_id: UUID
-) -> RenderResult:
+async def render_property_full(session: AsyncSession, property_id: UUID) -> RenderResult:
     """Render the living markdown + structured ``content_index`` together.
 
     Three new responsibilities (Phase 12+):
@@ -1172,9 +1146,7 @@ async def render_property_full(
     liegenschaft_id: UUID | None = None
     liegenschaft_name: str | None = None
     if building_id is not None:
-        liegenschaft_id, liegenschaft_name = await _liegenschaft_for_building(
-            session, building_id
-        )
+        liegenschaft_id, liegenschaft_name = await _liegenschaft_for_building(session, building_id)
 
     rendered_at = datetime.now(UTC)
     coverage = compute_coverage(stammdaten, facts, lang=lang)
@@ -1204,29 +1176,22 @@ async def render_property_full(
     # this, building/liegenschaft-scope rejections attached to the
     # property would never surface in the property's markdown.
     fact_keys = {(f.section, f.field) for f in facts}
-    unmatched_rejections = [
-        r for r in rejections if (r.section, r.field) not in fact_keys
-    ]
+    unmatched_rejections = [r for r in rejections if (r.section, r.field) not in fact_keys]
     body_lines.extend(_format_open_conflicts_block(unmatched_rejections, lang=lang))
     body_lines.extend(render_coverage_block(coverage, lang=lang))
 
     # Building Context
     if building_id is not None:
-        events = await _recent_events_for_scope(
-            session, scope="building", scope_id=building_id
-        )
+        events = await _recent_events_for_scope(session, scope="building", scope_id=building_id)
         if events:
             body_lines.append(f"## {labels['building_context']}")
             body_lines.append("")
             body_lines.append(
-                f"_{labels['building_subtitle']} — "
-                f"{building_address or building_id}_"
+                f"_{labels['building_subtitle']} — {building_address or building_id}_"
             )
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
-            body_lines.append(
-                f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n"
-            )
+            body_lines.append(f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n")
 
     # WEG Context
     if liegenschaft_id is not None:
@@ -1237,14 +1202,12 @@ async def render_property_full(
             body_lines.append(f"## {labels['weg_context']}")
             body_lines.append("")
             body_lines.append(
-                f"_{labels['weg_subtitle']} — "
-                f"{liegenschaft_name or liegenschaft_id}_"
+                f"_{labels['weg_subtitle']} — {liegenschaft_name or liegenschaft_id}_"
             )
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
             body_lines.append(
-                f"\n[{labels['open_weg']}](/liegenschaften/"
-                f"{liegenschaft_id}/markdown)\n"
+                f"\n[{labels['open_weg']}](/liegenschaften/{liegenschaft_id}/markdown)\n"
             )
 
     frontmatter = _format_frontmatter(
@@ -1317,9 +1280,7 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
     return (await render_property_full(session, property_id)).markdown
 
 
-async def render_building_markdown(
-    session: AsyncSession, building_id: UUID
-) -> str:
+async def render_building_markdown(session: AsyncSession, building_id: UUID) -> str:
     """Render the living markdown for a building (Haus)."""
     row = (
         await session.execute(
@@ -1337,9 +1298,7 @@ async def render_building_markdown(
     if row is None:
         raise ValueError(f"Building {building_id} not found")
 
-    facts = await _fetch_facts_by_scope(
-        session, scope="building", scope_id=building_id
-    )
+    facts = await _fetch_facts_by_scope(session, scope="building", scope_id=building_id)
     lines: list[str] = [
         f"# Building {row.address}",
         "",
@@ -1355,22 +1314,14 @@ async def render_building_markdown(
         if events:
             lines.append("## WEG Context")
             lines.append("")
-            lines.append(
-                f"_Recent activity at the WEG — "
-                f"{row.lname or row.liegenschaft_id}_"
-            )
+            lines.append(f"_Recent activity at the WEG — {row.lname or row.liegenschaft_id}_")
             lines.append("")
             lines.extend(_format_context_event(ev) for ev in events)
-            lines.append(
-                f"\n[Open WEG view](/liegenschaften/"
-                f"{row.liegenschaft_id}/markdown)\n"
-            )
+            lines.append(f"\n[Open WEG view](/liegenschaften/{row.liegenschaft_id}/markdown)\n")
     return "\n".join(lines).rstrip() + "\n"
 
 
-async def render_liegenschaft_markdown(
-    session: AsyncSession, liegenschaft_id: UUID
-) -> str:
+async def render_liegenschaft_markdown(session: AsyncSession, liegenschaft_id: UUID) -> str:
     """Render the living markdown for a Liegenschaft (WEG)."""
     row = (
         await session.execute(
@@ -1381,9 +1332,7 @@ async def render_liegenschaft_markdown(
     if row is None:
         raise ValueError(f"Liegenschaft {liegenschaft_id} not found")
 
-    facts = await _fetch_facts_by_scope(
-        session, scope="liegenschaft", scope_id=liegenschaft_id
-    )
+    facts = await _fetch_facts_by_scope(session, scope="liegenschaft", scope_id=liegenschaft_id)
     lines: list[str] = [
         f"# WEG — {row.name}",
         "",

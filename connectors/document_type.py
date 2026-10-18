@@ -85,9 +85,7 @@ Output schema: {{"document_type": "<label>"}}
 Return "other" if uncertain. Do NOT invent labels."""
 
 
-def _classify_with_gemini(
-    filename: str, head_text: str, *, sub_cap_usd: Decimal
-) -> DocumentType:
+def _classify_with_gemini(filename: str, head_text: str, *, sub_cap_usd: Decimal) -> DocumentType:
     """Call Gemini Flash; charge the cost ledger; coerce to a known label.
 
     Returns ``"other"`` when Gemini is unavailable, the cost cap is

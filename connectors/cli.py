@@ -68,8 +68,7 @@ def _cmd_load_stammdaten(args: argparse.Namespace) -> int:
     """Handle the ``load-stammdaten`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
@@ -130,8 +129,7 @@ def _cmd_backfill_bank(args: argparse.Namespace) -> int:
     """Handle the ``backfill-bank`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
@@ -151,8 +149,7 @@ def _cmd_backfill_invoices(args: argparse.Namespace) -> int:
     """Handle the ``backfill-invoices`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
@@ -173,7 +170,10 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
     inserted = summary.inserted_now or 1
     pct_routed = (
         (summary.routed_property + summary.routed_building + summary.routed_liegenschaft)
-        / inserted * 100 if summary.inserted_now else 0.0
+        / inserted
+        * 100
+        if summary.inserted_now
+        else 0.0
     )
     pct_unrouted = (summary.unrouted / inserted * 100) if summary.inserted_now else 0.0
     miss_lines = (
@@ -185,9 +185,7 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
         )
         or "      (none)"
     )
-    err_lines = (
-        "\n".join(f"      {s}" for s in summary.error_samples) or "      (none)"
-    )
+    err_lines = "\n".join(f"      {s}" for s in summary.error_samples) or "      (none)"
     top_props = (
         "\n".join(
             f"      {n:>4}  {name}"
@@ -226,8 +224,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
     """Handle the ``backfill-emails`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
@@ -236,8 +233,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
         # Friction gate — ledger reset is intentional. The y/N prompt
         # makes it impossible to wipe spend by reflex.
         prompt = (
-            f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' "
-            "(deletes durable spend record)? [y/N] "
+            f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' (deletes durable spend record)? [y/N] "
         )
         try:
             answer = input(prompt).strip().lower()
@@ -374,8 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-total-cost-usd",
         type=float,
         default=20.00,
-        help="Hard ceiling on the cost ledger for label "
-        f"'{EMAIL_LEDGER_LABEL}'. Default: 20.00.",
+        help=f"Hard ceiling on the cost ledger for label '{EMAIL_LEDGER_LABEL}'. Default: 20.00.",
     )
     emails.add_argument(
         "--dead-letter-after",
@@ -396,8 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit",
         type=int,
         default=None,
-        help="Stop after N .eml files. Use for dry-runs without burning "
-        "the full cost cap.",
+        help="Stop after N .eml files. Use for dry-runs without burning the full cost cap.",
     )
     emails.add_argument(
         "--concurrency",
@@ -429,8 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--sources",
         nargs="*",
         default=None,
-        help="Optional list of event sources to limit the rescan to "
-        "(default: all sources).",
+        help="Optional list of event sources to limit the rescan to (default: all sources).",
     )
     reroute.add_argument("--json", action="store_true")
     reroute.set_defaults(func=_cmd_re_route)

@@ -52,21 +52,80 @@ TARGET_DIR = REPO_ROOT / "Extracted_demo" / "stammdaten"
 TARGET = TARGET_DIR / "stammdaten.json"
 
 GERMAN_FIRST_NAMES_M = [
-    "Lukas", "Maximilian", "Felix", "Paul", "Jonas", "Ben", "Tim", "Tom",
-    "Niklas", "Leon", "Finn", "David", "Daniel", "Samuel", "Erik",
-    "Moritz", "Jakob", "Elias", "Noah", "Henry",
+    "Lukas",
+    "Maximilian",
+    "Felix",
+    "Paul",
+    "Jonas",
+    "Ben",
+    "Tim",
+    "Tom",
+    "Niklas",
+    "Leon",
+    "Finn",
+    "David",
+    "Daniel",
+    "Samuel",
+    "Erik",
+    "Moritz",
+    "Jakob",
+    "Elias",
+    "Noah",
+    "Henry",
 ]
 GERMAN_FIRST_NAMES_F = [
-    "Anna", "Sophie", "Lena", "Marie", "Hannah", "Emma", "Lisa", "Sara",
-    "Mia", "Lea", "Clara", "Laura", "Julia", "Lara", "Anja",
-    "Charlotte", "Emilia", "Greta", "Ida", "Johanna",
+    "Anna",
+    "Sophie",
+    "Lena",
+    "Marie",
+    "Hannah",
+    "Emma",
+    "Lisa",
+    "Sara",
+    "Mia",
+    "Lea",
+    "Clara",
+    "Laura",
+    "Julia",
+    "Lara",
+    "Anja",
+    "Charlotte",
+    "Emilia",
+    "Greta",
+    "Ida",
+    "Johanna",
 ]
 GERMAN_LAST_NAMES = [
-    "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner",
-    "Becker", "Schulz", "Hoffmann", "Schäfer", "Koch", "Bauer", "Richter",
-    "Klein", "Wolf", "Schröder", "Neumann", "Schwarz", "Zimmermann",
-    "Braun", "Krüger", "Hartmann", "Lange", "Werner", "Schmitz", "Krause",
-    "Meier", "Lehmann", "Schmid",
+    "Müller",
+    "Schmidt",
+    "Schneider",
+    "Fischer",
+    "Weber",
+    "Meyer",
+    "Wagner",
+    "Becker",
+    "Schulz",
+    "Hoffmann",
+    "Schäfer",
+    "Koch",
+    "Bauer",
+    "Richter",
+    "Klein",
+    "Wolf",
+    "Schröder",
+    "Neumann",
+    "Schwarz",
+    "Zimmermann",
+    "Braun",
+    "Krüger",
+    "Hartmann",
+    "Lange",
+    "Werner",
+    "Schmitz",
+    "Krause",
+    "Meier",
+    "Lehmann",
+    "Schmid",
 ]
 
 # Per-contractor demo company names — same order/length as the source
@@ -307,9 +366,7 @@ def main() -> None:
         "einheiten": list(src["einheiten"]),
         "eigentuemer": [synthesize_owner(e) for e in src["eigentuemer"]],
         "mieter": [synthesize_tenant(m) for m in src["mieter"]],
-        "dienstleister": [
-            synthesize_contractor(d, i) for i, d in enumerate(src["dienstleister"])
-        ],
+        "dienstleister": [synthesize_contractor(d, i) for i, d in enumerate(src["dienstleister"])],
     }
 
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
@@ -319,8 +376,7 @@ def main() -> None:
     )
     print(f"wrote {TARGET}")
     print(
-        f"  liegenschaft: 1   gebaeude: {len(out['gebaeude'])}   "
-        f"einheiten: {len(out['einheiten'])}"
+        f"  liegenschaft: 1   gebaeude: {len(out['gebaeude'])}   einheiten: {len(out['einheiten'])}"
     )
     print(
         f"  eigentuemer: {len(out['eigentuemer'])}   "

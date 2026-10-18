@@ -67,9 +67,7 @@ FLASH_COMPLETION_USD_PER_M = Decimal("0.30")
 TEXT_ROUTER_SOURCES: frozenset[str] = frozenset({"email", "slack", "debug"})
 
 #: Sources that travel through ``route_structured``.
-STRUCTURED_ROUTER_SOURCES: frozenset[str] = frozenset(
-    {"bank", "invoice", "letter", "erp", "web"}
-)
+STRUCTURED_ROUTER_SOURCES: frozenset[str] = frozenset({"bank", "invoice", "letter", "erp", "web"})
 
 log = structlog.get_logger("eval.runner")
 
@@ -82,8 +80,7 @@ def _load_ground_truth(set_name: str) -> list[dict[str, Any]]:
     path = GROUND_TRUTH_DIR / f"{set_name}.jsonl"
     if not path.is_file():
         raise FileNotFoundError(
-            f"ground truth set {set_name!r} not found at {path}; "
-            "see eval/README.md for the schema"
+            f"ground truth set {set_name!r} not found at {path}; see eval/README.md for the schema"
         )
     rows: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as handle:
@@ -94,9 +91,7 @@ def _load_ground_truth(set_name: str) -> list[dict[str, Any]]:
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"{path}:{line_no} is not valid JSON — {exc}"
-                ) from exc
+                raise ValueError(f"{path}:{line_no} is not valid JSON — {exc}") from exc
     log.info("eval.ground_truth.loaded", set_name=set_name, rows=len(rows))
     return rows
 
@@ -120,9 +115,7 @@ async def _scope_for_event(
         factory = get_sessionmaker()
         async with factory() as session:
             if source in TEXT_ROUTER_SOURCES:
-                text_route = await route_text_event(
-                    session, raw_content, metadata=metadata
-                )
+                text_route = await route_text_event(session, raw_content, metadata=metadata)
                 if text_route.property_id is not None:
                     return "property"
                 if text_route.building_id is not None:
@@ -130,9 +123,7 @@ async def _scope_for_event(
                 if text_route.liegenschaft_id is not None:
                     return "liegenschaft"
                 return "unrouted"
-            structured = await route_structured(
-                session, metadata, event_source=source
-            )
+            structured = await route_structured(session, metadata, event_source=source)
             if structured.property_id is not None:
                 return "property"
             if structured.building_id is not None:
@@ -152,13 +143,10 @@ def _gemini_call_cost(model: str, prompt_tokens: int, completion_tokens: int) ->
     is_pro = "pro" in model.lower()
     prompt_rate = PRO_PROMPT_USD_PER_M if is_pro else FLASH_PROMPT_USD_PER_M
     completion_rate = PRO_COMPLETION_USD_PER_M if is_pro else FLASH_COMPLETION_USD_PER_M
-    cost = (
-        Decimal(prompt_tokens) * prompt_rate / Decimal(1_000_000)
-        + Decimal(completion_tokens) * completion_rate / Decimal(1_000_000)
-    )
+    cost = Decimal(prompt_tokens) * prompt_rate / Decimal(1_000_000) + Decimal(
+        completion_tokens
+    ) * completion_rate / Decimal(1_000_000)
     return cost.quantize(Decimal("0.000001"))
-
-
 
 
 # Mutated by ``main()`` based on ``--via``. Read by ``_score_one`` to
@@ -202,11 +190,7 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
     completion_tokens = getattr(result, "completion_tokens", None)
     model = getattr(result, "model", "") or ""
     extractor_source = getattr(result, "source", "")
-    if (
-        extractor_source == "gemini"
-        and prompt_tokens is not None
-        and completion_tokens is not None
-    ):
+    if extractor_source == "gemini" and prompt_tokens is not None and completion_tokens is not None:
         try:
             cost = _gemini_call_cost(model, int(prompt_tokens), int(completion_tokens))
             cost_ledger.charge(ACTIVE_LEDGER_LABEL, cost)
@@ -337,9 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
     else:
         markdown = report.render_markdown()
-        markdown = (
-            f"_Backend: **{ACTIVE_BACKEND}**_\n\n" + markdown
-        )
+        markdown = f"_Backend: **{ACTIVE_BACKEND}**_\n\n" + markdown
         try:
             state = cost_ledger.get_state(ACTIVE_LEDGER_LABEL)
         except Exception:  # noqa: BLE001

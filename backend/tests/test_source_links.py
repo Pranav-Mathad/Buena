@@ -54,9 +54,7 @@ async def _seed_event(
 async def _cleanup_event(event_id: UUID) -> None:
     factory = get_sessionmaker()
     async with factory() as session:
-        await session.execute(
-            text("DELETE FROM events WHERE id = :eid"), {"eid": event_id}
-        )
+        await session.execute(text("DELETE FROM events WHERE id = :eid"), {"eid": event_id})
         await session.commit()
 
 
@@ -69,9 +67,7 @@ def _async_client() -> httpx.AsyncClient:
     """
     from backend.main import app  # noqa: PLC0415
 
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
 
 
 # ---------------------------------------------------------------------------

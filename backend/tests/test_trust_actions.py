@@ -31,9 +31,7 @@ def _async_client() -> httpx.AsyncClient:
     """ASGI-transport client — see test_source_links for rationale."""
     from backend.main import app  # noqa: PLC0415
 
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +45,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Trust Action Test') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Trust Action Test') RETURNING id")
             )
         ).first()
         p = (
@@ -158,10 +153,12 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
     factory = get_sessionmaker()
     async with factory() as session:
         await session.execute(
-            text("DELETE FROM approval_log WHERE target_id IN ("
-                 "SELECT id::text FROM uncertainty_events WHERE property_id = :pid"
-                 " UNION SELECT id::text FROM rejected_updates WHERE property_id = :pid"
-                 ")"),
+            text(
+                "DELETE FROM approval_log WHERE target_id IN ("
+                "SELECT id::text FROM uncertainty_events WHERE property_id = :pid"
+                " UNION SELECT id::text FROM rejected_updates WHERE property_id = :pid"
+                ")"
+            ),
             {"pid": property_id},
         )
         await session.execute(
@@ -179,12 +176,8 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
             text("DELETE FROM events WHERE property_id = :pid"),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": property_id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :id"), {"id": building_id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": property_id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": building_id})
         await session.commit()
 
 
@@ -267,7 +260,9 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
             assert audit is not None
             assert audit.actor == "ops@keystone.test"
             assert audit.action == "uncertainty.promote_to_fact"
-            payload = audit.payload if isinstance(audit.payload, dict) else json.loads(audit.payload)
+            payload = (
+                audit.payload if isinstance(audit.payload, dict) else json.loads(audit.payload)
+            )
             assert payload["value_written"] == "1450 EUR"
             assert payload["reason"] == "tenant confirmed by phone today"
     finally:
@@ -278,9 +273,7 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
 async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
     """Omitting ``value`` falls back to the uncertainty's hypothesis."""
     bid, pid, eid = await _seed_property()
-    uid = await _seed_uncertainty(
-        property_id=pid, event_id=eid, hypothesis="1250 EUR"
-    )
+    uid = await _seed_uncertainty(property_id=pid, event_id=eid, hypothesis="1250 EUR")
     try:
         async with _async_client() as client:
             resp = await client.post(
@@ -311,9 +304,7 @@ async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
 async def test_promote_422s_when_no_value_and_no_hypothesis() -> None:
     """An uncertainty with NULL hypothesis + no body.value cannot be promoted."""
     bid, pid, eid = await _seed_property()
-    uid = await _seed_uncertainty(
-        property_id=pid, event_id=eid, hypothesis=None
-    )
+    uid = await _seed_uncertainty(property_id=pid, event_id=eid, hypothesis=None)
     try:
         async with _async_client() as client:
             resp = await client.post(
@@ -538,10 +529,7 @@ async def test_rejected_dismiss_does_not_write_fact() -> None:
 
             audit_action = (
                 await session.execute(
-                    text(
-                        "SELECT action FROM approval_log "
-                        "WHERE target_id = :tid"
-                    ),
+                    text("SELECT action FROM approval_log WHERE target_id = :tid"),
                     {"tid": str(rid)},
                 )
             ).scalar()

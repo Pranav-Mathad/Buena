@@ -416,9 +416,7 @@ async def list_rejected_for_property(
             proposed_field=r.proposed_field,
             proposed_value=r.proposed_value,
             proposed_confidence=(
-                float(r.proposed_confidence)
-                if r.proposed_confidence is not None
-                else None
+                float(r.proposed_confidence) if r.proposed_confidence is not None else None
             ),
             constraint_name=r.constraint_name,
             reason=r.reason,
@@ -507,9 +505,7 @@ async def override_rejection(
                 "value": row.proposed_value,
                 "eid": row.event_id,
                 "conf": (
-                    float(row.proposed_confidence)
-                    if row.proposed_confidence is not None
-                    else 0.7
+                    float(row.proposed_confidence) if row.proposed_confidence is not None else 0.7
                 ),
             },
         )
@@ -520,12 +516,9 @@ async def override_rejection(
         await propagate_after_fact_write(
             session,
             property_id=UUID(str(row.property_id)),
-            trigger_event_id=(
-                UUID(str(row.event_id)) if row.event_id else None
-            ),
+            trigger_event_id=(UUID(str(row.event_id)) if row.event_id else None),
             trigger_summary=(
-                f"override of {row.constraint_name}: "
-                f"{row.proposed_section}.{row.proposed_field}"
+                f"override of {row.constraint_name}: {row.proposed_section}.{row.proposed_field}"
             ),
         )
 
@@ -570,9 +563,7 @@ async def override_rejection(
     )
     new_row = (
         await session.execute(
-            text(
-                "SELECT reviewed_at FROM rejected_updates WHERE id = :rid"
-            ),
+            text("SELECT reviewed_at FROM rejected_updates WHERE id = :rid"),
             {"rid": rejection_id},
         )
     ).first()
@@ -815,9 +806,7 @@ async def get_property_onboarding(
     """
     from backend.services import onboarding  # noqa: PLC0415
 
-    last_fact, last_unc, last_rej = await onboarding._last_mutation_timestamps(
-        session, property_id
-    )
+    last_fact, last_unc, last_rej = await onboarding._last_mutation_timestamps(session, property_id)
     cache_key = onboarding._cache_key(last_fact, last_unc, last_rej)
     cached_briefing = await onboarding._read_cache(session, property_id, cache_key)
 
@@ -1182,8 +1171,7 @@ async def resolve_uncertainty(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "cannot promote — uncertainty is missing relevant_section "
-                    "or relevant_field"
+                    "cannot promote — uncertainty is missing relevant_section or relevant_field"
                 ),
             )
         # Pick the value: explicit override wins, hypothesis second.
@@ -1212,10 +1200,7 @@ async def resolve_uncertainty(
         if scope_value is None:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    "cannot promote — uncertainty has no property/building/"
-                    "liegenschaft scope"
-                ),
+                detail=("cannot promote — uncertainty has no property/building/liegenschaft scope"),
             )
 
         fact_row = (
@@ -1268,9 +1253,7 @@ async def resolve_uncertainty(
         await propagate_after_fact_write(
             session,
             **propagate_kwargs,
-            trigger_event_id=(
-                UUID(str(row.event_id)) if row.event_id else None
-            ),
+            trigger_event_id=(UUID(str(row.event_id)) if row.event_id else None),
             trigger_summary=(
                 f"uncertainty resolved → {row.relevant_section}."
                 f"{row.relevant_field}: {written_value}"
@@ -1336,7 +1319,5 @@ async def resolve_uncertainty(
         action=body.action,
         new_status=new_status,
         fact_id=fact_id,
-        resolved_at=(
-            resolved_row.resolved_at if resolved_row else datetime.utcnow()
-        ),
+        resolved_at=(resolved_row.resolved_at if resolved_row else datetime.utcnow()),
     )

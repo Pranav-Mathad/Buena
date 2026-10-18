@@ -50,7 +50,12 @@ async def _create_property(alias: str) -> tuple[uuid.UUID, uuid.UUID]:
                     RETURNING id
                     """
                 ),
-                {"name": alias, "addr": f"{alias}, 10115 Berlin", "bid": building_id, "alias": alias},
+                {
+                    "name": alias,
+                    "addr": f"{alias}, 10115 Berlin",
+                    "bid": building_id,
+                    "alias": alias,
+                },
             )
         ).scalar_one()
         await session.commit()

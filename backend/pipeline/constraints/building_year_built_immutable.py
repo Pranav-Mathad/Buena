@@ -41,9 +41,7 @@ class BuildingYearBuiltImmutable:
     ) -> ValidationResult:
         stammdaten_value = event_stammdaten(event, "building").get("year_built")
         if current is None:
-            if stammdaten_value is not None and values_differ(
-                proposed.value, stammdaten_value
-            ):
+            if stammdaten_value is not None and values_differ(proposed.value, stammdaten_value):
                 return ValidationResult.rejected(
                     "building year-built contradicts stammdaten "
                     f"({stammdaten_value} on file, event claims "

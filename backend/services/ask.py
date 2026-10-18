@@ -110,8 +110,6 @@ JSON SCHEMA
 }}"""
 
 
-
-
 def _format_events_block(events: list[_EventRef]) -> str:
     if not events:
         return "  (no recent events)"

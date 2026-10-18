@@ -40,8 +40,7 @@ class RentAmountChangeRequiresAddendum:
 
         if event_source(event) == "pdf" and event_document_type(event) == "lease_addendum":
             return ValidationResult.needs_review(
-                "rent change with lease_addendum PDF; needs human "
-                "confirmation before applying",
+                "rent change with lease_addendum PDF; needs human confirmation before applying",
                 required_source_type="lease_addendum",
             )
 
