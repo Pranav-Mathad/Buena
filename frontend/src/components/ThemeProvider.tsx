@@ -1,10 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ThemeContext, type Theme } from "@/hooks/use-theme";
 
-type Theme = "light" | "dark";
-type Ctx = { theme: Theme; toggle: () => void };
-const ThemeCtx = createContext<Ctx | null>(null);
-
-export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === "undefined") return "light";
     const stored = localStorage.getItem("keystone-theme") as Theme | null;
@@ -19,14 +16,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   }, [theme]);
 
   return (
-    <ThemeCtx.Provider value={{ theme, toggle: () => setTheme((t) => (t === "light" ? "dark" : "light")) }}>
+    <ThemeContext.Provider
+      value={{ theme, toggle: () => setTheme((t) => (t === "light" ? "dark" : "light")) }}
+    >
       {children}
-    </ThemeCtx.Provider>
+    </ThemeContext.Provider>
   );
-};
-
-export const useTheme = () => {
-  const ctx = useContext(ThemeCtx);
-  if (!ctx) throw new Error("useTheme outside provider");
-  return ctx;
 };

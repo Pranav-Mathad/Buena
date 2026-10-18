@@ -280,7 +280,7 @@ function renderInline(
 
 // Apply **bold**, *italic*, `code` styling within a non-link span.
 function renderEmphasis(text: string, baseKey: number): ReactNode[] {
-  let out = text;
+  const out = text;
   // Strip and convert in passes — we wrap in marker tokens then split.
   // Simpler approach: regex replace with HTML-like markers, then split.
   // Cheap & correct enough for the renderer's actual output shape.

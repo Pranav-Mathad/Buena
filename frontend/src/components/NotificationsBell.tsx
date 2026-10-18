@@ -8,7 +8,7 @@ import {
 import {
   useNotifications,
   type Notification,
-} from "@/providers/NotificationProvider";
+} from "@/hooks/use-notifications";
 
 const formatRelative = (ts: number): string => {
   const diffMs = Date.now() - ts;

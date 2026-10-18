@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,30 +11,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE_URL } from "@/lib/api";
+import {
+  NotificationContext,
+  type Notification,
+  type NotificationContextValue,
+} from "@/hooks/use-notifications";
 import type { Property } from "@/lib/data";
 
 const MAX_NOTIFICATIONS = 50;
 
-export type Notification = {
-  id: string;
-  eventId: string;
-  propertyId: string | null;
-  propertyName: string;
-  category: string;
-  description: string;
-  factsWritten: number;
-  receivedAt: number;
-  readAt: number | null;
-};
-
-type NotificationContextValue = {
-  notifications: Notification[];
-  unreadCount: number;
-  markAllRead: () => void;
-  clear: () => void;
-};
-
-const NotificationContext = createContext<NotificationContextValue | null>(null);
 
 // One global SSE subscription that drives BOTH the toast and the
 // bell dropdown. State lives here in a single provider so the bell's
@@ -146,13 +129,6 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useNotifications = (): NotificationContextValue => {
-  const ctx = useContext(NotificationContext);
-  if (!ctx) {
-    throw new Error("useNotifications must be used inside NotificationProvider");
-  }
-  return ctx;
-};
 
 // ---------------------------------------------------------------------------
 // Toast card — kept here so the provider owns both surfaces.

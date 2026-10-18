@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "./ThemeProvider";
+import { useTheme } from "@/hooks/use-theme";
 import { NotificationsBell } from "./NotificationsBell";
 
 const navItems = [
