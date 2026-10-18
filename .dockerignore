@@ -1,0 +1,20 @@
+# Keep the backend build context to what the image needs.
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+Extracted
+frontend
+docs
+eval
+tools
+**/tests
+conftest.py
+*.log
