@@ -90,7 +90,11 @@ curl -X POST localhost:8000/debug/trigger_event -H 'content-type: application/js
 
 Development without containers: `docker compose up -d postgres`, then
 `pip install -e ".[dev]"` and `./scripts/dev.sh` (API with reload plus the Vite
-dev server). Tests: `pytest` against that Postgres; no keys or other services.
+dev server). Tests: `pytest` against that Postgres, with no keys or other
+services, and `npm test` in `frontend/`. `pre-commit install` adds ruff,
+prettier and a check that blocks real addresses, IBANs and deployment URLs;
+CI (`.github/workflows/ci.yml`) runs those plus mypy, ESLint, the type check,
+both test suites and the frontend build.
 
 ## Evaluation
 
@@ -113,7 +117,9 @@ Every number here is traced to its command or report in
 Python 3.11, FastAPI, SQLAlchemy 2 (async, asyncpg), PostgreSQL, APScheduler,
 pydantic, structlog; Google Gemini and an OpenAI-compatible gateway for LLM
 calls; MCP Python SDK. Frontend: React 18, TypeScript, Vite, TanStack Query,
-Tailwind CSS, Radix UI. Tests: pytest, pytest-asyncio.
+Tailwind CSS, Radix UI. Tooling: pytest and pytest-asyncio, Vitest and
+Testing Library, ruff, mypy (strict), ESLint, Prettier, pre-commit, GitHub
+Actions.
 
 ## Project layout
 
@@ -124,17 +130,17 @@ eval/           ground truth, runner, metrics
 mcp_server/     MCP adapter over the REST API
 frontend/       React client
 seed/           sample data and schema bootstrap
-scripts/        dev runner, single-property backfill, demo-data synthesis
+scripts/        dev runner, backfill, demo-data synthesis, release checks
 tools/mock_erp/ optional stand-in ERP feed
-docs/           architecture, decisions, evaluation, facts, eval run reports
+docs/           architecture, decisions, evaluation, facts, release, eval runs
 Extracted_demo/ synthetic master data (committed)
 ```
 
 ## Limitations
 
 No authentication; approved actions are written to an outbox, never sent;
-scheduled jobs are not safe to run in several instances; extraction quality is
-measured on only 30 emails. The full list is in
+scheduled jobs run in every API instance, so several instances repeat the
+same work; extraction quality is measured on only 30 emails. The full list is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 
 ## License
