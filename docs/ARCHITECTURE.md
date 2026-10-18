@@ -181,8 +181,8 @@ Events enter through:
   - emails (`buena_email_loader`) are routed across all three tiers with
     `router.route_text_event`, then extracted, diffed and applied in process,
     with the cost ledger and dead-lettering around each call.
-- **Live sources**: the IMAP poller (`backend/services/imap_poller.py`, no-op
-  without credentials), the Slack webhook with signature verification
+- **Live sources**: the IMAP poller (`backend/services/imap_poller.py`,
+  scheduled only when credentials are set), the Slack webhook with signature verification
   (`POST /webhooks/slack`), PDF upload (`POST /uploads/pdf`), and an optional
   ERP payment poller that only runs when `MOCK_ERP_URL` is set.
 - **Manual injection**: `POST /debug/trigger_event` inserts one event and
@@ -294,9 +294,9 @@ externally proposed.
 - **One transaction per event.** Facts, uncertainties, rejections and the
   materialized files commit together or not at all.
 - **Scheduled jobs** (`backend/scheduler.py`) run inside the API process with
-  `coalesce=True, max_instances=1`: worker every 2 s, IMAP every 10 s, signal
-  evaluator every 30 s, ERP poller every 30 s
-  when configured. A slow run is never stacked on top of itself.
+  `coalesce=True, max_instances=1`: the worker every 2 s and the signal
+  evaluator every 30 s, plus the IMAP poller (10 s) and ERP poller (30 s) only
+  when they are configured. A slow run is never stacked on top of itself.
 - **Cost ledger.** `cost_ledger.charge` reads and updates the row under
   `SELECT ... FOR UPDATE`. The concurrent email backfill additionally
   serializes charges behind an `asyncio.Lock`, so with `N` parallel workers
@@ -402,6 +402,18 @@ data rules are enforced. `KEYSTONE_BASE_URL` points it at any running backend.
 | `propose_action(property_id, action)` | `POST /signals/propose`, always `pending` |
 
 `mcp_server/README.md` has the client configuration.
+
+## Running it
+
+`docker compose up` starts three services: `postgres:16`, the API (the root
+`Dockerfile`: dependencies installed in a build stage, a slim runtime stage
+running as an unprivileged user) and the frontend (a Vite build served by
+unprivileged nginx). The API's entrypoint (`scripts/entrypoint.sh`) applies the
+schema and migrations when `RUN_MIGRATIONS=true` and loads the synthetic sample
+data when `LOAD_SAMPLE_DATA=true`; compose sets both, and every step is
+idempotent. `FEATURED_PROPERTY` (a property UUID or alias, default `EH-029`)
+names the property the UI opens first; `GET /properties` marks it with
+`is_hero`.
 
 ## Privacy and data handling
 
