@@ -190,11 +190,28 @@ def charge(
     )
 
 
-def reset_label(label: str, *, url: str | None = None) -> None:
+# Labels with this prefix belong to tests and may be reset freely.
+TEST_LABEL_PREFIX = "test_"
+
+
+def reset_label(label: str, *, url: str | None = None, allow_production: bool = False) -> None:
     """Delete the ledger row for ``label``. Used by ``--reset-cost-ledger``.
 
-    The CLI prompts ``y/N`` before calling this.
+    Only labels starting with :data:`TEST_LABEL_PREFIX` can be reset by
+    default. Any other label is a real spend record, and deleting it while
+    a backfill is charging it crashes that backfill; resetting one needs
+    ``allow_production=True``, which the CLI passes only after its ``y/N``
+    prompt.
+
+    Raises:
+        ValueError: ``label`` is not a test label and ``allow_production``
+            is false. Nothing is deleted.
     """
+    if not label.startswith(TEST_LABEL_PREFIX) and not allow_production:
+        raise ValueError(
+            f"refusing to reset cost ledger label {label!r}: only labels starting with "
+            f"{TEST_LABEL_PREFIX!r} can be reset without allow_production=True"
+        )
     with _connect(url) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM cost_ledger WHERE source_label = %s", (label,))
         conn.commit()

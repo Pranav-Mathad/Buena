@@ -242,7 +242,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
         if answer != "y":
             print("aborted: cost ledger NOT reset", file=sys.stderr)
             return 4
-        cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL)
+        cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL, allow_production=True)
         print(f"cost ledger row '{EMAIL_LEDGER_LABEL}' reset")
 
     from decimal import Decimal as _Decimal  # noqa: PLC0415 (local import)

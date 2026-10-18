@@ -634,7 +634,10 @@ fix for a real class of mistake, but was not blocking at the time.
 
 **Revisit if.** Any test touches `reset_label` with a shared label again.
 
-**Status.** Still open; `reset_label` has no guard yet.
+**Status.** Resolved. `reset_label` refuses any label that does not start
+with `test_` and raises `ValueError` before opening a connection; resetting a
+real label needs `allow_production=True`, which only the CLI passes, after its
+`y/N` prompt. `connectors/tests/test_cost_ledger.py` covers both paths.
 
 ## 2026-04-25: concurrent backfill with a bounded cost-cap overshoot
 
