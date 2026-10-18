@@ -34,7 +34,12 @@ export class MockEventSource {
   }
 
   emit(type: string, data: unknown) {
-    const event = new MessageEvent(type, { data: JSON.stringify(data) });
+    this.emitRaw(type, JSON.stringify(data));
+  }
+
+  /** Deliver `raw` as the event's data without encoding it. */
+  emitRaw(type: string, raw: string) {
+    const event = new MessageEvent(type, { data: raw });
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
