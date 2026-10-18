@@ -11,12 +11,14 @@ rule-based extractor.
 
 Built solo in a hackathon window, then cleaned up and hardened.
 
-<!-- Screenshots: add these files to docs/img/ -->
+<!-- Screenshots: add these five files to docs/img/, then move the table out
+of this comment.
 | Portfolio | Property file | Ask |
 |---|---|---|
 | ![Portfolio](docs/img/portfolio.png) | ![Property file](docs/img/property-file.png) | ![Ask](docs/img/ask-panel.png) |
 | **Approval inbox** | **MCP in Claude Desktop** | |
 | ![Approval inbox](docs/img/approval-inbox.png) | ![MCP](docs/img/mcp-claude-desktop.png) | |
+-->
 
 ## How it works
 
