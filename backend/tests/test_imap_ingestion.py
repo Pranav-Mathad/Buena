@@ -178,6 +178,6 @@ async def test_poll_once_is_safe_noop_when_not_configured(
     relies on this so a missing IMAP env doesn't crash the worker loop."""
     from backend.services import imap_poller  # noqa: PLC0415
 
-    monkeypatch.setattr(imap_poller, "_imap_configured", lambda: False)
+    monkeypatch.setattr(imap_poller, "is_configured", lambda: False)
     inserted = await imap_poller.poll_once()
     assert inserted == 0
