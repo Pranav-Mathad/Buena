@@ -1,8 +1,9 @@
 """FastAPI entry point.
 
-Phase 1 wires the event-triggering + SSE routers alongside the Phase 0
-properties API, and starts the APScheduler worker/IMAP jobs during the
-lifespan context so a single ``uvicorn backend.main:app`` boots the demo.
+Mounts every router, configures CORS from ``KEYSTONE_CORS_ORIGINS``, and runs
+the background scheduler (event worker, IMAP poller, signal evaluator, optional
+ERP poller) inside the app's lifespan, so ``uvicorn backend.main:app`` is the
+whole backend.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from backend.api.uploads import router as uploads_router
 from backend.api.webhooks import router as webhooks_router
 from backend.config import get_settings
 from backend.logging import configure_logging
+from backend.services.llm import log_configuration as log_llm_configuration
 from backend.scheduler import build_scheduler
 
 
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = build_scheduler()
     scheduler.start()
     log.info("keystone.startup", env=settings.app_env, jobs=len(scheduler.get_jobs()))
+    log_llm_configuration()
     try:
         yield
     finally:

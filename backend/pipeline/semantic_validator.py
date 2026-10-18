@@ -1,23 +1,23 @@
-"""Phase 11 — semantic event validator.
+"""Semantic event validator.
 
 The rule-based validator (:mod:`backend.pipeline.validator`) catches
 known immutable-field contradictions (floor count, address, year
 built, …) using hand-coded constraints. The semantic validator
-complements it: it asks Pioneer/Claude to read the **canonical
-property file** and the **new event** side-by-side and surface every
-claim that contradicts what we already know — not just the dozen
-fields someone hardcoded.
+complements it: it asks the configured LLM provider to read the
+**canonical property file** and the **new event** side by side and
+surface every claim that contradicts what we already know, not just
+the dozen fields someone hardcoded.
 
 Why both layers exist:
 
 - Rule-based constraints are **deterministic**: same input, same
-  verdict, no Pioneer cost. They guard the high-stakes immutable
+  verdict, no LLM cost. They guard the high-stakes immutable
   fields with explicit reasons and required-source-type metadata.
 - The semantic validator is **general**: it covers fields nobody
   thought to write a constraint for ("event mentions a 7th floor in a
   4-floor building", "event names a different tenant than stammdaten",
   "event claims rent of €5000 when the lease says €1100"). It costs
-  one Pioneer call per event, runs after extraction, and emits the
+  one LLM call per event, runs after extraction, and emits the
   same :class:`Rejection` shape so the existing rejected_updates
   inbox surfaces both kinds uniformly.
 
@@ -27,17 +27,13 @@ existing context are the only thing it surfaces.
 
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 import structlog
 
-from backend.config import get_settings
 from backend.pipeline.validator import Rejection
-from backend.services import pioneer_llm
+from backend.services.llm import require_provider
 
 log = structlog.get_logger(__name__)
 
@@ -181,22 +177,19 @@ async def semantic_validate(
     event_source: str,
     proposed_facts: list[dict[str, Any]],
     timeout_s: float = 30.0,
-    model_name: str | None = None,
 ) -> SemanticVerdict:
     """Audit one event against the canonical property file.
 
-    Returns a verdict whose ``rejections`` tuple is ready to merge into
-    the worker's existing rule-based rejection list. Empty tuple ⇒
-    nothing contradicts.
+    Returns a verdict whose ``rejections`` tuple is ready to merge into the
+    worker's rule-based rejection list; an empty tuple means nothing
+    contradicts.
 
-    Raises :class:`pioneer_llm.PioneerUnavailable` when Pioneer can't
-    be reached. Callers should treat that as "skip semantic validation
-    for this event" rather than failing the whole pipeline — the
-    rule-based constraints still run and are still authoritative.
+    Raises :class:`LLMNotConfiguredError` when no provider is configured and
+    :class:`LLMUnavailableError` when the call fails. Callers treat both as
+    "skip semantic validation for this event": the rule-based constraints
+    still run and remain authoritative.
     """
-    settings = get_settings()
-    if not pioneer_llm.is_available():
-        raise pioneer_llm.PioneerUnavailable("PIONEER_API_KEY not set")
+    provider = require_provider()
 
     prompt = PROMPT_TEMPLATE.format(
         property_file=property_file_markdown.strip() or "(empty property file)",
@@ -205,54 +198,21 @@ async def semantic_validate(
         proposed_block=_format_proposed_block(proposed_facts),
     )
 
-    model = model_name or pioneer_llm.PIONEER_DEFAULT_MODEL
-    headers = {
-        "Authorization": f"Bearer {settings.pioneer_api_key}",
-        "Content-Type": "application/json",
-    }
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_HINT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.0,
-        "response_format": {"type": "json_object"},
-    }
-
     log.info(
         "semantic_validator.start",
-        model=model,
+        provider=provider.name,
+        model=provider.model,
         prompt_chars=len(prompt),
         proposed_count=len(proposed_facts),
         event_source=event_source,
     )
 
-    start = time.perf_counter()
-    try:
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
-            response = await client.post(
-                f"{pioneer_llm.PIONEER_BASE_URL}/chat/completions",
-                headers=headers,
-                json=body,
-            )
-        response.raise_for_status()
-        payload = response.json()
-        text = payload["choices"][0]["message"].get("content") or ""
-        data = pioneer_llm._parse_json_payload(text)
-    except httpx.HTTPError as exc:
-        latency_ms = (time.perf_counter() - start) * 1000
-        log.warning(
-            "semantic_validator.error",
-            model=model,
-            latency_ms=round(latency_ms, 1),
-            error=str(exc)[:200],
-        )
-        raise pioneer_llm.PioneerUnavailable(
-            f"semantic_validate failed: {exc!r}"
-        ) from exc
-
-    latency_ms = (time.perf_counter() - start) * 1000
+    completion = await provider.complete_json(
+        system=SYSTEM_HINT, prompt=prompt, temperature=0.0, timeout_s=timeout_s
+    )
+    data = completion.data
+    latency_ms = completion.latency_ms
+    model = completion.model
     verdict_raw = str(data.get("verdict") or "").strip()
     if verdict_raw not in {"all_consistent", "has_contradictions"}:
         # Tolerate model mistakes — treat as consistent rather than

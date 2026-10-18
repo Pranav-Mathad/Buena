@@ -348,11 +348,13 @@ filename heuristics without a Gemini key.
 | Fact extraction | configured provider | Rule-based keyword extractor (German and English lexicon) |
 | Signal drafting | configured provider | Four-part template |
 | Onboarding briefing | configured provider | Deterministic sections plus a "Briefing unavailable" notice |
-| Semantic validator | Pioneer | Skipped; rule constraints still apply |
-| Ask (`POST /properties/{id}/ask`) | Pioneer | HTTP 503 |
-| Draft reply (`POST /draft-reply`) | Pioneer | HTTP 503 |
+| Semantic validator | configured provider | Skipped; rule constraints still apply |
+| Ask (`POST /properties/{id}/ask`) | configured provider | HTTP 503 naming the missing key |
+| Draft reply (`POST /draft-reply`) | configured provider | HTTP 503 naming the missing key |
 
-The last three rows are a known gap; see [Known limitations](#known-limitations).
+The setup is logged once at startup (`llm.provider` or
+`llm.provider.not_configured`), so a missing key is visible without a warning
+per event.
 
 ## Trust layer
 
@@ -430,10 +432,6 @@ data rules are enforced. `KEYSTONE_BASE_URL` points it at any running backend.
   several processes (`SKIP LOCKED`), but the scheduled jobs run in every API
   instance. The evaluator's dedupe is check-then-insert, so two instances can
   create duplicate signals for the same finding.
-- **Some LLM features need Pioneer.** Ask, draft replies and the semantic
-  validator call only Pioneer. Without `PIONEER_API_KEY`, Ask and draft
-  replies return 503 even when a Gemini key is configured, and the worker logs
-  a skipped semantic check for every event.
 - **Redaction keeps email local parts.** `jane.doe@provider.com` becomes
   `jane.doe@example.com`, so a name embedded in an address survives.
 - **Source precedence is incomplete.** The differ ranks `pdf`, `erp`, `email`,

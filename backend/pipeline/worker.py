@@ -38,7 +38,7 @@ from backend.pipeline.validator import (
     persist_rejections,
     validate,
 )
-from backend.services import pioneer_llm
+from backend.services.llm import LLMNotConfiguredError, LLMUnavailableError
 
 # Importing the constraints package registers every constraint in
 # the validator's REGISTRY at module load. The validator only uses
@@ -311,12 +311,11 @@ async def _process_event_body(
             current_facts=current_facts,
         )
 
-        # Semantic auditor — Pioneer reads the canonical property file
-        # and the new event side-by-side, surfaces every claim that
-        # contradicts what's already on file. Catches contradictions
-        # the rule-based validator wasn't pre-coded for. Failures here
-        # never block the pipeline: if Pioneer is unreachable we keep
-        # the rule-based verdict and move on.
+        # Semantic check: the LLM reads the current property file and the
+        # new event side by side and reports claims that contradict what is
+        # on file, covering fields no rule constraint was written for. It
+        # never blocks the pipeline: without a provider (logged once at
+        # startup) or when the call fails, the rule-based verdict stands.
         try:
             property_file_md = await render_markdown(session, property_id)
             semantic = await semantic_validate(
@@ -358,9 +357,11 @@ async def _process_event_body(
                         ],
                         skipped=validated_plan.skipped,
                     )
-        except pioneer_llm.PioneerUnavailable as exc:
+        except LLMNotConfiguredError:
+            pass
+        except LLMUnavailableError as exc:
             log.warning(
-                "worker.semantic_skipped",
+                "worker.semantic_failed",
                 event_id=str(event_id),
                 error=str(exc)[:200],
             )

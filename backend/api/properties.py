@@ -29,7 +29,7 @@ from backend.pipeline.renderer import (
     render_markdown,
 )
 from backend.services import ask as ask_service
-from backend.services import pioneer_llm
+from backend.services.llm import LLMUnavailableError
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 log = structlog.get_logger(__name__)
@@ -1200,8 +1200,7 @@ async def property_ask(
         property_file_markdown = await render_markdown(session, property_id)
     except ValueError as exc:
         # Should be unreachable — the property existence check above
-        # already 404s — but guard anyway so we never feed a half-built
-        # prompt to Pioneer.
+        # already 404s, but guard anyway so a half-built prompt is never sent.
         log.warning("properties.ask.render_failed", error=str(exc))
         raise HTTPException(status_code=404, detail="property not found") from exc
 
@@ -1212,11 +1211,13 @@ async def property_ask(
             property_file_markdown=property_file_markdown,
             recent_events=events,
         )
-    except pioneer_llm.PioneerUnavailable as exc:
-        log.warning("properties.ask.unavailable", error=str(exc))
+    except LLMUnavailableError as exc:
+        # Covers both "no provider configured" (the message names the missing
+        # variable) and "provider call failed".
+        log.warning("properties.ask.unavailable", error=str(exc)[:300])
         raise HTTPException(
             status_code=503,
-            detail=f"ask service unavailable: {exc}",
+            detail=f"Ask is unavailable: {exc}",
         ) from exc
 
     sources: list[AskSourceItem] = []

@@ -42,6 +42,28 @@ pseudonymisation and are kept unchanged.
 for the old address and for `DE` + 20 digits outside `Extracted_demo/` guards
 against regressions.
 
+## 2026-10-17: Ask, reply drafting and the semantic check use the configured provider
+
+**Context.** These three features built their own HTTP requests to the Pioneer
+gateway. With only a Gemini key, `POST /properties/{id}/ask` and
+`POST /draft-reply` returned 503 "PIONEER_API_KEY not set", and the worker
+logged a skipped semantic check for every single event.
+
+**Decision.** All three call the configured provider's `complete_json`. Without
+a provider, Ask and reply drafting return 503 with a message naming the missing
+variable, and the semantic check is skipped without a log line; the LLM setup
+is logged once at startup instead (`llm.provider` or
+`llm.provider.not_configured`). A configured provider that fails still logs a
+warning per event, because that is a real failure.
+
+**Reason.** A feature should work with whichever provider is configured, and a
+known, static condition should be reported once rather than on every event,
+where it buries real warnings.
+
+**Revisit if.** Different features need different models; give the provider
+interface a per-call model override rather than reintroducing vendor-specific
+code paths.
+
 ## 2026-10-17: LLM calls go through one provider interface, Gemini by default
 
 **Context.** Two vendor clients had grown side by side. Extraction tried

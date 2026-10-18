@@ -1,9 +1,9 @@
 """Property-scoped Q&A service.
 
-Powers ``POST /properties/{id}/ask``. Per Phase 9 trust-layer rules,
-the answer must say "I don't know" when the context doesn't support a
-confident answer — confabulation is the failure mode this whole
-project pushes back against.
+Powers ``POST /properties/{id}/ask``. The answer must say "I don't know"
+when the context does not support a confident answer: a fluent but
+unsupported answer is the failure mode the whole trust layer exists to
+prevent.
 
 The LLM picks one of three statuses:
 
@@ -20,16 +20,12 @@ frontend always has ``{id, channel, date, snippet}`` shaped citations.
 
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 import structlog
 
-from backend.config import get_settings
-from backend.services import pioneer_llm
+from backend.services.llm import require_provider
 
 log = structlog.get_logger(__name__)
 
@@ -132,28 +128,23 @@ async def answer_question(
     question: str,
     property_file_markdown: str,
     recent_events: list[dict[str, Any]],
-    model_name: str | None = None,
     timeout_s: float = 30.0,
 ) -> dict[str, Any]:
-    """Ask Claude (via Pioneer) a property-scoped question.
+    """Ask the configured LLM provider a property-scoped question.
 
-    The model reads the canonical rendered markdown for the property
-    (stammdaten + sectioned facts + uncertainties + parent-tier
-    context) plus a small block of raw recent-event snippets that
-    enable direct quotation. Whatever the markdown contains is
-    answerable; whatever it doesn't, the model says "I don't know".
+    The model reads the rendered property file (master data, sectioned facts,
+    uncertainties, parent-tier context) plus a short block of recent raw event
+    snippets it can quote. Whatever the file contains is answerable; whatever
+    it does not, the model must say it does not know.
 
-    Returns parsed JSON dict with status/answer/confidence/reasoning
-    plus the cited / partial-context event-id lists. The API layer
-    joins those IDs back to event records.
+    Returns the parsed answer: status, answer, confidence and reasoning plus
+    the cited and partial-context event ids, which the API layer joins back
+    to event records.
 
-    Raises :class:`pioneer_llm.PioneerUnavailable` when Pioneer can't
-    be reached or every attempt fails.
+    Raises :class:`LLMNotConfiguredError` when no provider is configured and
+    :class:`LLMUnavailableError` when the call fails.
     """
-    settings = get_settings()
-    if not pioneer_llm.is_available():
-        raise pioneer_llm.PioneerUnavailable("PIONEER_API_KEY not set")
-
+    provider = require_provider()
     events = [_EventRef(**e) for e in recent_events]
 
     prompt = PROMPT_TEMPLATE.format(
@@ -163,55 +154,22 @@ async def answer_question(
         events_block=_format_events_block(events),
     )
 
-    model = model_name or pioneer_llm.PIONEER_DEFAULT_MODEL
-    headers = {
-        "Authorization": f"Bearer {settings.pioneer_api_key}",
-        "Content-Type": "application/json",
-    }
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_HINT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"},
-    }
-
     log.info(
         "ask.start",
-        model=model,
+        provider=provider.name,
+        model=provider.model,
         property=property_name,
         prompt_chars=len(prompt),
         property_file_chars=len(property_file_markdown),
         event_count=len(events),
     )
 
-    start = time.perf_counter()
-    try:
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
-            response = await client.post(
-                f"{pioneer_llm.PIONEER_BASE_URL}/chat/completions",
-                headers=headers,
-                json=body,
-            )
-        response.raise_for_status()
-        payload = response.json()
-        choice = payload["choices"][0]
-        text = choice["message"].get("content") or ""
-        data = pioneer_llm._parse_json_payload(text)
-    except httpx.HTTPError as exc:
-        latency_ms = (time.perf_counter() - start) * 1000
-        log.warning(
-            "ask.error",
-            model=model,
-            latency_ms=round(latency_ms, 1),
-            error=str(exc),
-        )
-        raise pioneer_llm.PioneerUnavailable(f"ask failed: {exc!r}") from exc
-
-    latency_ms = (time.perf_counter() - start) * 1000
-    usage = payload.get("usage") or {}
+    completion = await provider.complete_json(
+        system=SYSTEM_HINT, prompt=prompt, temperature=0.1, timeout_s=timeout_s
+    )
+    data = completion.data
+    model = completion.model
+    latency_ms = completion.latency_ms
 
     status = str(data.get("status") or "").strip()
     if status not in {"answered", "insufficient_context", "out_of_scope"}:
@@ -223,8 +181,8 @@ async def answer_question(
         "ask.ok",
         model=model,
         latency_ms=round(latency_ms, 1),
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
+        prompt_tokens=completion.prompt_tokens,
+        completion_tokens=completion.completion_tokens,
         status=status,
         cited=len(data.get("cited_event_ids") or []),
         partial=len(data.get("partial_context_event_ids") or []),

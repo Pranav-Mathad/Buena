@@ -87,7 +87,8 @@ cd frontend && cp .env.example .env.local && npm ci && npm run dev   # http://lo
 
 No API key is needed: extraction falls back to the rule-based extractor and
 signal drafts to templates. Ask, reply drafting and the LLM contradiction check
-currently need `PIONEER_API_KEY`. Try the pipeline with:
+need a provider key: `GEMINI_API_KEY` by default, or `LLM_PROVIDER=pioneer`
+with `PIONEER_API_KEY`. Try the pipeline with:
 
 ```bash
 curl -X POST localhost:8000/debug/trigger_event -H 'content-type: application/json' \
@@ -138,9 +139,8 @@ Extracted_demo/ synthetic master data (committed)
 ## Limitations
 
 No authentication; approved actions are written to an outbox, never sent;
-scheduled jobs are not safe to run in several instances; some LLM features
-require one specific provider; extraction quality is measured on only 30
-emails. The full list is in
+scheduled jobs are not safe to run in several instances; extraction quality is
+measured on only 30 emails. The full list is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 
 ## License

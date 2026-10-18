@@ -11,23 +11,17 @@ frontend:
 - input: ``{property_id?, property_name?, channel, tone, subject?, body}``
 - output: ``{subject, body, context[], knows_about_incident, elapsed_ms}``
 
-The LLM call routes through Pioneer (Claude) by default — Phase 11
-parked extraction on Pioneer while Gemini Pro quota is exhausted, and
-keeping the drafter on the same backbone avoids two LLM dependencies.
+The call goes to the configured LLM provider (:mod:`backend.services.llm`).
 """
 
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 import structlog
 
-from backend.config import get_settings
-from backend.services import pioneer_llm
+from backend.services.llm import require_provider
 
 log = structlog.get_logger(__name__)
 
@@ -140,23 +134,17 @@ async def draft_inbound_reply(
     tone: str,
     recent_facts: list[dict[str, Any]],
     recent_events: list[dict[str, Any]],
-    model_name: str | None = None,
     timeout_s: float = 30.0,
 ) -> dict[str, Any]:
-    """Run the draft-reply prompt against Claude via Pioneer.
+    """Draft a reply to an inbound message with the configured LLM provider.
 
-    ``recent_facts`` and ``recent_events`` come from the API layer's
-    Postgres queries — this service stays SQL-free so it's easy to
-    unit-test with fixture data.
+    ``recent_facts`` and ``recent_events`` come from the API layer's queries;
+    this service stays SQL-free so it is easy to test with fixture data.
 
-    Returns the parsed JSON dict. Raises
-    :class:`pioneer_llm.PioneerUnavailable` when Pioneer cannot be
-    used or every attempt failed.
+    Returns the parsed draft. Raises :class:`LLMNotConfiguredError` when no
+    provider is configured and :class:`LLMUnavailableError` when the call fails.
     """
-    settings = get_settings()
-    if not pioneer_llm.is_available():
-        raise pioneer_llm.PioneerUnavailable("PIONEER_API_KEY not set")
-
+    provider = require_provider()
     facts = [_Fact(**f) for f in recent_facts]
     events = [_EventRef(**e) for e in recent_events]
 
@@ -170,24 +158,10 @@ async def draft_inbound_reply(
         events_block=_format_events_block(events),
     )
 
-    model = model_name or pioneer_llm.PIONEER_DEFAULT_MODEL
-    headers = {
-        "Authorization": f"Bearer {settings.pioneer_api_key}",
-        "Content-Type": "application/json",
-    }
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM_HINT},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-    }
-
     log.info(
         "draft_reply.start",
-        model=model,
+        provider=provider.name,
+        model=provider.model,
         channel=inbound_channel,
         property=property_name,
         prompt_chars=len(prompt),
@@ -195,45 +169,24 @@ async def draft_inbound_reply(
         event_count=len(events),
     )
 
-    start = time.perf_counter()
-    try:
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
-            response = await client.post(
-                f"{pioneer_llm.PIONEER_BASE_URL}/chat/completions",
-                headers=headers,
-                json=body,
-            )
-        response.raise_for_status()
-        payload = response.json()
-        choice = payload["choices"][0]
-        text = choice["message"].get("content") or ""
-        data = pioneer_llm._parse_json_payload(text)
-    except httpx.HTTPError as exc:
-        latency_ms = (time.perf_counter() - start) * 1000
-        log.warning(
-            "draft_reply.error",
-            model=model,
-            latency_ms=round(latency_ms, 1),
-            error=str(exc),
-        )
-        raise pioneer_llm.PioneerUnavailable(
-            f"draft_reply failed: {exc!r}"
-        ) from exc
-
-    latency_ms = (time.perf_counter() - start) * 1000
-    usage = payload.get("usage") or {}
+    completion = await provider.complete_json(
+        system=SYSTEM_HINT, prompt=prompt, temperature=0.2, timeout_s=timeout_s
+    )
+    data = completion.data
+    model = completion.model
+    latency_ms = completion.latency_ms
     log.info(
         "draft_reply.ok",
         model=model,
         latency_ms=round(latency_ms, 1),
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
+        prompt_tokens=completion.prompt_tokens,
+        completion_tokens=completion.completion_tokens,
         knows_about_incident=bool(data.get("knows_about_incident")),
         context_count=len(data.get("context") or []),
     )
 
-    # Defensive shape coercion — Pioneer returns the schema almost
-    # always, but we don't want a stray missing field to 500 the API.
+    # Coerce defensively: models return the schema almost always, but a
+    # missing field must not turn into a 500.
     return {
         "subject": str(data.get("subject") or ""),
         "body": str(data.get("body") or ""),
