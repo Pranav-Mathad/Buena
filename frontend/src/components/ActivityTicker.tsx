@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchPortfolioSummary } from "@/lib/api";
+import { usePortfolioSummary } from "@/hooks/queries";
 
 const POLL_INTERVAL_MS = 30_000;
 const COUNT_UP_MS = 200;
@@ -59,12 +58,7 @@ const Stat = ({
 );
 
 export const ActivityTicker = () => {
-  const { data, isError } = useQuery({
-    queryKey: ["portfolio-summary"],
-    queryFn: fetchPortfolioSummary,
-    refetchInterval: POLL_INTERVAL_MS,
-    staleTime: POLL_INTERVAL_MS / 2,
-  });
+  const { data, isError } = usePortfolioSummary(POLL_INTERVAL_MS);
 
   const events = data?.eventsLastHour ?? 0;
   const facts = data?.factsToday ?? 0;

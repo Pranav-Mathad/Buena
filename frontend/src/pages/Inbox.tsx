@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, HelpCircle, Inbox as InboxIcon, ShieldAlert } from "lucide-react";
+import { useOpenUncertainties, usePendingRejections, usePendingSignals } from "@/hooks/queries";
 import {
-  fetchOpenUncertainties,
-  fetchPendingRejections,
-  fetchPendingSignals,
   relativeTime,
+  type InboxRejection,
+  type InboxSignal,
+  type InboxUncertainty,
 } from "@/lib/api";
 import { Card, StatusPill } from "@/components/ui-bits";
 
@@ -15,21 +15,9 @@ type Tab = "signals" | "uncertainty" | "rejected";
 const Inbox = () => {
   const [tab, setTab] = useState<Tab>("signals");
 
-  const signalsQuery = useQuery({
-    queryKey: ["inbox-signals"],
-    queryFn: () => fetchPendingSignals(50),
-    staleTime: 15_000,
-  });
-  const uncertaintiesQuery = useQuery({
-    queryKey: ["inbox-uncertainties"],
-    queryFn: () => fetchOpenUncertainties(50),
-    staleTime: 15_000,
-  });
-  const rejectionsQuery = useQuery({
-    queryKey: ["inbox-rejections"],
-    queryFn: () => fetchPendingRejections(50),
-    staleTime: 15_000,
-  });
+  const signalsQuery = usePendingSignals();
+  const uncertaintiesQuery = useOpenUncertainties();
+  const rejectionsQuery = usePendingRejections();
 
   const signalCount = signalsQuery.data?.length ?? 0;
   const uncertaintyCount = uncertaintiesQuery.data?.length ?? 0;
@@ -181,9 +169,7 @@ const SignalsList = ({
 }: {
   loading: boolean;
   error: boolean;
-  rows: ReturnType<typeof useQuery<Awaited<ReturnType<typeof fetchPendingSignals>>>>["data"] extends infer T
-    ? T extends undefined ? never : T
-    : never;
+  rows: InboxSignal[] | undefined;
 }) => {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState />;
@@ -226,7 +212,7 @@ const UncertaintyList = ({
 }: {
   loading: boolean;
   error: boolean;
-  rows: Awaited<ReturnType<typeof fetchOpenUncertainties>>;
+  rows: InboxUncertainty[];
 }) => {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState />;
@@ -290,7 +276,7 @@ const RejectionsList = ({
 }: {
   loading: boolean;
   error: boolean;
-  rows: Awaited<ReturnType<typeof fetchPendingRejections>>;
+  rows: InboxRejection[];
 }) => {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState />;

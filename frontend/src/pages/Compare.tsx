@@ -1,10 +1,6 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { compareQuestions } from "@/lib/data";
-import {
-  fetchProperties,
-  fetchPropertyInbox,
-} from "@/lib/api";
+import { useFeaturedProperty, usePropertyInbox } from "@/hooks/queries";
+import { compareQuestions } from "@/lib/constants";
 import { Card } from "@/components/ui-bits";
 import { AskPanel } from "@/components/AskPanel";
 import { Search } from "lucide-react";
@@ -48,23 +44,13 @@ function extractKeyword(question: string): string {
 const Compare = () => {
   const [question, setQuestion] = useState(compareQuestions[0]);
 
-  const { data: liveProperties } = useQuery({
-    queryKey: ["properties"],
-    queryFn: fetchProperties,
-    staleTime: 30_000,
-  });
-  const featured = liveProperties?.find((p) => p.isHero);
+  const featured = useFeaturedProperty();
   const heroId = featured?.id ?? "";
   const heroName = featured?.name ?? "";
 
   const keyword = useMemo(() => extractKeyword(question), [question]);
 
-  const inboxQuery = useQuery({
-    queryKey: ["compare-inbox", heroId, keyword],
-    queryFn: () => fetchPropertyInbox(heroId, keyword, 20),
-    staleTime: 30_000,
-    enabled: !!heroId,
-  });
+  const inboxQuery = usePropertyInbox(featured?.id, keyword);
 
   const inboxRows = inboxQuery.data?.rows ?? [];
   const totalInbox = inboxQuery.data?.totalInboxSize ?? 0;
@@ -175,7 +161,7 @@ const Compare = () => {
           </div>
           <h2 className="text-[20px] font-semibold mt-2">Now: ask Keystone</h2>
           <Card className="p-6 mt-6">
-            <AskPanel presetQuestion={question} compact propertyId={heroId} />
+            <AskPanel presetQuestion={question} compact propertyId={featured?.id} />
           </Card>
         </div>
       </div>

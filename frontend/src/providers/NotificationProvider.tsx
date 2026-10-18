@@ -16,7 +16,8 @@ import {
   type Notification,
   type NotificationContextValue,
 } from "@/hooks/use-notifications";
-import type { Property } from "@/lib/data";
+import { queryKeys } from "@/hooks/queries";
+import type { Property } from "@/lib/types";
 
 const MAX_NOTIFICATIONS = 50;
 
@@ -57,7 +58,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         seenRef.current.add(payload.event_id);
 
         const properties =
-          queryClient.getQueryData<Property[]>(["properties"]) ?? [];
+          queryClient.getQueryData<Property[]>(queryKeys.properties) ?? [];
         const property = properties.find((p) => p.id === payload.property_id);
         const propertyName = property?.name ?? "Unrouted event";
         const propertyId = property?.id ?? payload.property_id ?? null;
@@ -104,9 +105,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           { duration: 7000 },
         );
 
-        queryClient.invalidateQueries({ queryKey: ["properties"] });
-        queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] });
-        queryClient.invalidateQueries({ queryKey: ["portfolio-activity"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.properties });
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioActivity });
       } catch {
         // Malformed payload — ignore. EventSource auto-reconnects.
       }

@@ -1,18 +1,23 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { Moon, Sun } from "lucide-react";
+import { useFeaturedProperty } from "@/hooks/queries";
 import { useTheme } from "@/hooks/use-theme";
 import { NotificationsBell } from "./NotificationsBell";
 
-const navItems = [
-  { to: "/", label: "Portfolio", end: true },
-  { to: "/properties/509393da-6806-49ef-9e59-3da0213008cd", label: "Properties" },
-  { to: "/inbox", label: "Inbox" },
-  { to: "/compare", label: "Compare" },
-  { to: "/draft-reply", label: "Drafts" },
-];
+type NavItem = { to: string; label: string; end?: boolean };
 
 export const Layout = () => {
   const { theme, toggle } = useTheme();
+  const featured = useFeaturedProperty();
+  // "Properties" opens the featured property (FEATURED_PROPERTY on the API);
+  // the link is omitted until one is known.
+  const navItems: NavItem[] = [
+    { to: "/", label: "Portfolio", end: true },
+    ...(featured ? [{ to: `/properties/${featured.id}`, label: "Properties" }] : []),
+    { to: "/inbox", label: "Inbox" },
+    { to: "/compare", label: "Compare" },
+    { to: "/draft-reply", label: "Drafts" },
+  ];
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-sm">

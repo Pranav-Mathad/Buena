@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Download, X, FileText, ExternalLink } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchPropertyMarkdown, type MarkdownDoc } from "@/lib/api";
+import { usePropertyMarkdown } from "@/hooks/queries";
 import { stripInlineMarkdown } from "@/lib/text";
 import { PrimaryButton, Swatch } from "./ui-bits";
 import { SourceModal, type SourceModalSource } from "./SourceModal";
@@ -27,13 +26,7 @@ export const MarkdownModal = ({
 }: MarkdownModalProps) => {
   const [source, setSource] = useState<SourceModalSource | null>(null);
 
-  const { data, isLoading, isError, refetch, error } = useQuery<MarkdownDoc>({
-    queryKey: ["property-markdown", propertyId],
-    queryFn: () => fetchPropertyMarkdown(propertyId),
-    enabled: open,
-    staleTime: 0,
-    gcTime: 0,
-  });
+  const { data, isLoading, isError, refetch, error } = usePropertyMarkdown(propertyId, open);
 
   if (!open) return null;
 

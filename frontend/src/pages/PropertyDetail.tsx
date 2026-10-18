@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useProperties, usePropertyFile, queryKeys } from "@/hooks/queries";
 import { API_BASE_URL } from "@/lib/api";
 import { ChevronLeft, ClipboardList, Building2, X, Lightbulb, RefreshCw, FileText, ExternalLink, ChevronDown, Pencil } from "lucide-react";
-import { editFact, fetchOnboarding, fetchProperties, fetchPropertyFile, relativeTime } from "@/lib/api";
-import type { Fact } from "@/lib/data";
+import { editFact, fetchOnboarding, relativeTime } from "@/lib/api";
+import type { Fact } from "@/lib/types";
 import type { BriefingItem } from "@/lib/text";
 import { Card, StatusPill, Swatch, PrimaryButton, SecondaryButton } from "@/components/ui-bits";
 import { AskPanel } from "@/components/AskPanel";
@@ -390,25 +391,14 @@ const PropertyDetail = () => {
   const [openSource, setOpenSource] = useState<SourceModalSource | null>(null);
   const [editing, setEditing] = useState<EditFactState | null>(null);
 
-  // Cached from Portfolio's useQuery — same key, same fetcher, so this
-  // resolves instantly when navigating in from the listing.
-  const { data: livePropertiesRaw } = useQuery({
-    queryKey: ["properties"],
-    queryFn: fetchProperties,
-    staleTime: 30_000,
-  });
+  // Shares the cache with the portfolio listing, so it resolves instantly
+  // when navigating in from there.
+  const { data: livePropertiesRaw } = useProperties();
   const properties = livePropertiesRaw ?? [];
 
-  // Per-property structured file. The hero falls back to the curated
-  // mock when the live payload errors so the demo doesn't break if the
-  // backend is offline; non-hero falls through to the "extraction in
-  // progress" placeholder card the page already had.
-  const { data: liveFile, isError: fileError } = useQuery({
-    queryKey: ["property-file", id],
-    queryFn: () => fetchPropertyFile(id ?? ""),
-    enabled: !!id,
-    staleTime: 30_000,
-  });
+  // The structured property file. A failed request shows an error card; an
+  // empty file shows the "no facts yet" state.
+  const { data: liveFile, isError: fileError } = usePropertyFile(id);
 
   const propertyMeta = properties.find((p) => p.id === id);
   const heroProperty = properties.find((p) => p.isHero);
@@ -450,10 +440,10 @@ const PropertyDetail = () => {
         if (payload.event_id) lastEventRef.current = payload.event_id;
         // Re-fetch the structured file + activity, plus the portfolio
         // listing so card stats also update without a full refresh.
-        queryClient.invalidateQueries({ queryKey: ["property-file", id] });
-        queryClient.invalidateQueries({ queryKey: ["properties"] });
-        queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] });
-        queryClient.invalidateQueries({ queryKey: ["portfolio-activity"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.propertyFile(id) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.properties });
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
+        queryClient.invalidateQueries({ queryKey: queryKeys.portfolioActivity });
         setPulse((n) => n + 1);
       } catch {
         // Malformed payload — ignore. EventSource auto-reconnects.
@@ -731,9 +721,9 @@ const PropertyDetail = () => {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
-            queryClient.invalidateQueries({ queryKey: ["property-file", id] });
-            queryClient.invalidateQueries({ queryKey: ["properties"] });
-            queryClient.invalidateQueries({ queryKey: ["property-markdown", id] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.propertyFile(id) });
+            queryClient.invalidateQueries({ queryKey: queryKeys.properties });
+            queryClient.invalidateQueries({ queryKey: queryKeys.propertyMarkdown(id) });
           }}
         />
       )}

@@ -1,45 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  type AskResponse,
-  suggestedQuestions,
-} from "@/lib/data";
-import { fetchAsk, fetchProperties, type AskResult } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+import { useFeaturedProperty } from "@/hooks/queries";
+import { fetchAsk } from "@/lib/api";
+import { adaptAskResult, type AskResponse } from "@/lib/ask";
+import { suggestedQuestions } from "@/lib/constants";
 import { Card, PrimaryButton } from "./ui-bits";
 import { AlertTriangle, ExternalLink, HelpCircle } from "lucide-react";
 import { SourceModal, type SourceModalSource } from "./SourceModal";
-
-function adaptAskResult(r: AskResult): AskResponse {
-  if (r.status === "answered") {
-    return {
-      status: "answered",
-      answer: r.answer ?? "",
-      confidence: r.confidence,
-      sources: r.sources,
-      elapsed_ms: r.elapsedMs,
-      retrieved_count: r.retrievedCount,
-    };
-  }
-  if (r.status === "out_of_scope") {
-    return {
-      status: "out_of_scope",
-      answer: null,
-      confidence: r.confidence,
-      reasoning: r.reasoning,
-      elapsed_ms: r.elapsedMs,
-    };
-  }
-  return {
-    status: "insufficient_context",
-    answer: null,
-    confidence: r.confidence,
-    reasoning: r.reasoning,
-    partial_context: r.partialContext,
-    elapsed_ms: r.elapsedMs,
-    retrieved_count: r.retrievedCount,
-  };
-}
 
 const SourceCard = ({
   s,
@@ -77,9 +44,8 @@ export const AskPanel = ({
   presetQuestion?: string;
   compact?: boolean;
   unavailable?: boolean;
-  // When omitted, the panel queries the hero property by default —
-  // matches Compare's usage where the question is asked of "the demo
-  // property" without specifying which one.
+  // When omitted, the panel asks about the featured property (Compare
+  // asks its questions without choosing a property).
   propertyId?: string;
 }) => {
   const [input, setInput] = useState(presetQuestion ?? "");
@@ -89,17 +55,12 @@ export const AskPanel = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { data: liveProperties } = useQuery({
-    queryKey: ["properties"],
-    queryFn: fetchProperties,
-    staleTime: 30_000,
-  });
-  const heroProperty = liveProperties?.find((p) => p.isHero);
+  const heroProperty = useFeaturedProperty();
 
   const targetPropertyId = propertyId ?? heroProperty?.id;
 
-  // Sync when preset changes (compare view)
-  useMemo(() => {
+  // Sync when the preset changes (Compare view).
+  useEffect(() => {
     if (presetQuestion !== undefined) {
       setInput(presetQuestion);
       setSubmitted(presetQuestion);

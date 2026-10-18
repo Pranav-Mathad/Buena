@@ -1,22 +1,13 @@
 import { Link } from "react-router-dom";
 import { Building2, ArrowUpRight, AlertTriangle } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchPortfolioActivity, fetchProperties, relativeTime } from "@/lib/api";
+import { usePortfolioActivity, useProperties } from "@/hooks/queries";
+import { API_BASE_URL, relativeTime } from "@/lib/api";
 import { Card, StatusPill, Swatch } from "@/components/ui-bits";
 import { ActivityTicker } from "@/components/ActivityTicker";
 
 const Portfolio = () => {
-  const { data: properties, isLoading, isError, refetch } = useQuery({
-    queryKey: ["properties"],
-    queryFn: fetchProperties,
-    staleTime: 30_000,
-  });
-
-  const { data: liveActivity, isError: activityError } = useQuery({
-    queryKey: ["portfolio-activity"],
-    queryFn: () => fetchPortfolioActivity(8),
-    staleTime: 30_000,
-  });
+  const { data: properties, isLoading, isError, refetch } = useProperties();
+  const { data: liveActivity, isError: activityError } = usePortfolioActivity(8);
 
   const activityRows =
     !activityError && liveActivity
@@ -51,7 +42,7 @@ const Portfolio = () => {
       <section className="pb-20">
         {isLoading && (
           <p className="text-[13px] text-muted-foreground mb-4 font-mono">
-            loading properties from {import.meta.env.VITE_API_BASE_URL ?? "backend"}…
+            loading properties from {API_BASE_URL}…
           </p>
         )}
         {isError && (
@@ -64,7 +55,7 @@ const Portfolio = () => {
             </div>
             <p className="text-[13px] text-muted-foreground mt-2 font-mono">
               GET /properties failed. Check that uvicorn is running on{" "}
-              {import.meta.env.VITE_API_BASE_URL ?? "the configured base URL"}.
+              {API_BASE_URL}.
             </p>
             <button
               onClick={() => refetch()}

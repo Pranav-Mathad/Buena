@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { draftExamples, type DraftExample } from "@/lib/data";
-import { fetchDraftReply, fetchProperties } from "@/lib/api";
+import { useFeaturedProperty, useProperties } from "@/hooks/queries";
+import { fetchDraftReply, type DraftReplyContext } from "@/lib/api";
+import { sampleInboundMessages, type SampleInboundMessage } from "@/lib/constants";
 import { Card, PrimaryButton, SecondaryButton } from "@/components/ui-bits";
 import { Copy, Pencil } from "lucide-react";
 
@@ -12,31 +12,43 @@ vielen Dank für Ihre Nachricht. Wir prüfen das Anliegen und melden uns zeitnah
 Mit freundlichen Grüßen,
 Hausverwaltung`;
 
+type DraftedReply = {
+  subject: string;
+  body: string;
+  context: DraftReplyContext[];
+  knows_about_incident: boolean;
+  elapsed_ms: number;
+};
+
 const DraftReply = () => {
-  const [example, setExample] = useState<DraftExample | null>(null);
+  const [example, setExample] = useState<SampleInboundMessage | null>(null);
   const [form, setForm] = useState({
-    property: "Musterstraße 26 WE 29",
+    property: "",
     channel: "Email" as "Email" | "Slack",
     tone: "Neutral",
     subject: "",
     body: "",
   });
-  const [drafted, setDrafted] = useState<DraftExample["drafted"] | null>(null);
+  const [drafted, setDrafted] = useState<DraftedReply | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
-  // Cached property listing — used to map the form's property name back
-  // to its UUID when calling the backend. Falls back to name-only when
-  // the listing isn't loaded yet (e.g. backend offline).
-  const { data: properties } = useQuery({
-    queryKey: ["properties"],
-    queryFn: fetchProperties,
-    staleTime: 30_000,
-  });
+  // The property list fills the selector and maps the chosen name back to
+  // its id for the API call. Until the user picks one, the featured
+  // property is selected.
+  const { data: properties } = useProperties();
+  const featured = useFeaturedProperty();
+  const selectedProperty = form.property || featured?.name || "";
 
-  const loadExample = (ex: DraftExample) => {
+  const loadExample = (ex: SampleInboundMessage) => {
     setExample(ex);
-    setForm({ ...ex.incoming });
+    setForm({
+      property: selectedProperty,
+      channel: ex.channel,
+      tone: ex.tone,
+      subject: ex.subject,
+      body: ex.body,
+    });
     setDrafted(null);
     setDraftError(null);
   };
@@ -46,10 +58,10 @@ const DraftReply = () => {
     setDrafting(true);
     setDraftError(null);
     try {
-      const matched = properties?.find((p) => p.name === form.property);
+      const matched = properties?.find((p) => p.name === selectedProperty);
       const result = await fetchDraftReply({
         propertyId: matched?.id,
-        propertyName: form.property,
+        propertyName: selectedProperty,
         channel: form.channel,
         tone: form.tone,
         subject: form.subject,
@@ -99,7 +111,7 @@ const DraftReply = () => {
           <h2 className="text-[22px] font-semibold tracking-tight">Incoming message</h2>
           <div className="mt-5 flex flex-wrap gap-2">
             <span className="text-[13px] text-muted-foreground mr-1 self-center">load example:</span>
-            {draftExamples.map((ex) => (
+            {sampleInboundMessages.map((ex) => (
               <button
                 key={ex.key}
                 onClick={() => loadExample(ex)}
@@ -116,14 +128,15 @@ const DraftReply = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Field label="Property">
                 <select
-                  value={form.property}
+                  value={selectedProperty}
                   onChange={(e) => setForm({ ...form, property: e.target.value })}
                   className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
                 >
-                  <option>Musterstraße 26 WE 29</option>
-                  <option>Berliner Straße 12, 4B</option>
-                  <option>Berliner Straße 12, 2A</option>
-                  <option>Müllerstraße 7, EG</option>
+                  {(properties ?? []).map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Channel">
@@ -269,7 +282,7 @@ const SingleDraftedContent = ({
   drafted,
   footerOverride,
 }: {
-  drafted: DraftExample["drafted"];
+  drafted: DraftedReply;
   footerOverride?: string;
 }) => (
   <div className="space-y-5 animate-fade-in">

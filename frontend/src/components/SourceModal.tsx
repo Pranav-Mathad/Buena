@@ -1,10 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { fetchEventRaw } from "@/lib/api";
+import { useEventRaw } from "@/hooks/queries";
 
-// TODO(phase-12): reconcile two divergent source shapes (Fact.source: string
-// vs Q&A sources: {id, channel, date, snippet}) when wiring to backend.
-// Each call site adapts to this normalized shape for now.
+// Facts and Ask citations describe their source differently (a label string
+// versus {id, channel, date, snippet}); each call site adapts to this shape.
 export type SourceModalSource = {
   channel: string;
   date: string;
@@ -25,12 +23,7 @@ export const SourceModal = ({
 }) => {
   const eventId = source?.eventId;
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["event-raw", eventId],
-    queryFn: () => fetchEventRaw(eventId!),
-    enabled: !!eventId,
-    staleTime: 60_000,
-  });
+  const { data, isLoading, isError } = useEventRaw(eventId);
 
   return (
     <Dialog open={source !== null} onOpenChange={onOpenChange}>
