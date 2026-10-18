@@ -7,7 +7,8 @@ section names the commit it was measured at.
 
 ## Size
 
-Measured at commit `f0ef47a` (2026-10-17). Physical lines including blanks and
+Measured at commit `f0ef47a` (2026-10-17); route and rule counts updated as
+those change. Physical lines including blanks and
 comments.
 
 | Claim | Value | Command |
@@ -20,10 +21,10 @@ comments.
 | TypeScript/TSX, excluding `components/ui` | 4,671 lines | `git ls-files 'frontend/src/*.ts' 'frontend/src/*.tsx' \| grep -v 'frontend/src/components/ui/' \| xargs wc -l \| tail -1` |
 | Generated shadcn components kept | 314 lines | `git ls-files 'frontend/src/components/ui/*' \| xargs wc -l \| tail -1` |
 | Frontend dependencies | 14 runtime, 19 dev | `node -e 'const p=require("./frontend/package.json"); console.log(Object.keys(p.dependencies).length, Object.keys(p.devDependencies).length)'` |
-| HTTP routes | 55 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
+| HTTP routes | 52 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
 | Additive migrations | 13 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
 | Rule constraints | 8 | modules in `backend/pipeline/constraints/` |
-| Signal rules | 4 | `_RULES` in `backend/signals/evaluator.py` |
+| Signal rules | 3 | `_RULES` in `backend/signals/evaluator.py` |
 | MCP tools | 5 | `grep -c '@mcp.tool' mcp_server/main.py` |
 
 ## Tests

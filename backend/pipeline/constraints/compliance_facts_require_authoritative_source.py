@@ -33,7 +33,7 @@ _AUTHORITATIVE_PDF_TYPES: frozenset[str] = frozenset(
 class ComplianceFactsRequireAuthoritativeSource:
     """Email/Slack-sourced compliance proposals are rejected.
 
-    Web-sourced (Tavily) and PDF-with-recognised-document-type
+    Web-sourced and PDF-with-recognised-document-type
     proposals pass without review since the source itself carries
     weight. PDFs whose document_type is ``other`` or unset land in
     needs_review — we know there's a document, we don't know if it's
@@ -54,7 +54,7 @@ class ComplianceFactsRequireAuthoritativeSource:
         doctype = event_document_type(event)
 
         if source == "web":
-            # Tavily / authority-page lookup. Trust the source.
+            # Web lookup (e.g. an authority page). Trust the source.
             return ValidationResult.passed("web source, authoritative")
 
         if source == "pdf":

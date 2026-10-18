@@ -14,7 +14,7 @@ WEG — and events at higher tiers genuinely affect the unit even when
 not directly attributed to it.
 
 Every fact line carries the inline ``[source: <event_id>]`` link.
-Web-sourced facts (Tavily) get a 🌐 badge.
+Facts from web-sourced events get a 🌐 badge.
 """
 
 from __future__ import annotations

@@ -42,6 +42,33 @@ pseudonymisation and are kept unchanged.
 for the old address and for `DE` + 20 digits outside `Extracted_demo/` guards
 against regressions.
 
+## 2026-10-17: web enrichment and the regulation watcher are removed
+
+**Context.** Two features used a web-search API: enrichment of newly created
+properties (a market snapshot and a regulation note written as facts) and an
+hourly regulation watcher whose results raised `regulation_change` signals.
+Neither had a test. Without an API key, which is the default, both wrote fixed
+text: enrichment an "offline snapshot" fact on every new property, the watcher
+three illustrative headlines that never appeared anywhere, which then showed up
+as signals in the approval inbox.
+
+**Decision.** Remove `backend/services/tavily.py`, the `regulation_change`
+rule, the hourly job, `POST /settings/regulation_watch`,
+`POST /properties/{id}/enrich`, enrichment on `POST /properties`, the
+`TAVILY_API_KEY` setting, the `tavily-python` dependency, and
+`seed/demo_bootstrap.py`, which existed mainly to run those steps. The renderer
+keeps its generic badge for web-sourced facts, which the hand-written seed data
+still contains.
+
+**Reason.** An untested integration whose default behaviour is to present
+invented content as live signals costs more trust than it adds features.
+Regulation monitoring is a reasonable product idea; it should come back with a
+real source, tests, and no offline fabrication.
+
+**Revisit if.** Regulation monitoring is wanted again: ingest real feeds as
+`web` events through the normal pipeline and raise signals from extracted
+facts rather than from raw headlines.
+
 ## 2026-10-17: the ERP poller is opt-in
 
 **Context.** The scheduler polled `MOCK_ERP_URL` every 30 seconds with a
@@ -930,6 +957,8 @@ regulation signal without a key.
 signals about headlines that were never published. The offline mode should go,
 or the job should not run without a key.
 
+**Status.** Superseded on 2026-10-17 by "web enrichment and the regulation watcher are removed".
+
 ## 2026-04-24: the security-scan badge reports its source
 
 **Context.** A settings page showed a "security scan: passing" badge from a
@@ -1099,6 +1128,8 @@ worker later.
 **Revisit if.** Web results are rich enough that LLM extraction would beat the
 fixed summary.
 
+**Status.** Superseded on 2026-10-17 by "web enrichment and the regulation watcher are removed".
+
 ## 2026-04-24: web enrichment falls back to a labelled offline snapshot
 
 **Context.** `TAVILY_API_KEY` is absent on most development machines and in CI.
@@ -1111,6 +1142,8 @@ goal, and labelling avoided presenting it as live data.
 
 **Revisit if.** The fixed text is mistaken for real data; it is listed as a
 known limitation in the architecture document.
+
+**Status.** Superseded on 2026-10-17 by "web enrichment and the regulation watcher are removed".
 
 ## 2026-04-24: the mock ERP re-reads its JSON file on every request
 

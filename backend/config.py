@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     gemini_embed_model: str = Field(default="text-embedding-004")
 
     # --- Partners ---
-    tavily_api_key: str = Field(default="")
     pioneer_api_key: str = Field(default="")
 
     # --- IMAP / Slack / Mock ERP (used by later phases) ---

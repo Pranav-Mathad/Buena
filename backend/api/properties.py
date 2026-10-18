@@ -1,4 +1,4 @@
-"""Properties API — listing, creation (with Tavily enrichment), markdown, activity."""
+"""Properties API: listing, creation, files, markdown, activity, search, Ask."""
 
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ from backend.pipeline.renderer import (
 )
 from backend.services import ask as ask_service
 from backend.services import pioneer_llm
-from backend.services.tavily import enrich_property
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 log = structlog.get_logger(__name__)
@@ -73,15 +72,6 @@ class PropertyCreateResponse(BaseModel):
     id: UUID
     name: str
     address: str
-    tavily_event_id: UUID | None
-
-
-class EnrichmentResponse(BaseModel):
-    """Response for POST /properties/{id}/enrich."""
-
-    property_id: UUID
-    tavily_event_id: UUID | None
-    already_enriched: bool
 
 
 class PropertySearchHit(BaseModel):
@@ -446,7 +436,7 @@ async def create_property(
     payload: PropertyCreateRequest,
     session: AsyncSession = Depends(get_session),
 ) -> PropertyCreateResponse:
-    """Create a property and kick off Tavily enrichment (runs once, per Part IV)."""
+    """Create a property."""
     result = await session.execute(
         text(
             """
@@ -466,55 +456,7 @@ async def create_property(
     property_id: UUID = result.scalar_one()
     await session.commit()
     log.info("properties.create", property_id=str(property_id), name=payload.name)
-
-    tavily_event_id = await enrich_property(property_id, payload.name, payload.address)
-    return PropertyCreateResponse(
-        id=property_id,
-        name=payload.name,
-        address=payload.address,
-        tavily_event_id=tavily_event_id,
-    )
-
-
-@router.post("/{property_id}/enrich", response_model=EnrichmentResponse)
-async def enrich_existing_property(
-    property_id: UUID,
-    session: AsyncSession = Depends(get_session),
-) -> EnrichmentResponse:
-    """Re-run Tavily enrichment for an existing (seeded) property.
-
-    Idempotent — a second call is a no-op. Intended as an admin utility so
-    the seeded portfolio can show the "Updated from web sources" badge
-    without requiring a reseed.
-    """
-    row = (
-        await session.execute(
-            text("SELECT name, address FROM properties WHERE id = :pid"),
-            {"pid": property_id},
-        )
-    ).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="property not found")
-    before_count = (
-        await session.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM events
-                WHERE property_id = :pid AND source = 'web'
-                  AND source_ref LIKE 'tavily:%'
-                """
-            ),
-            {"pid": property_id},
-        )
-    ).scalar_one()
-
-    event_id = await enrich_property(property_id, row.name, row.address)
-    return EnrichmentResponse(
-        property_id=property_id,
-        tavily_event_id=event_id,
-        already_enriched=event_id is None and int(before_count or 0) > 0,
-    )
+    return PropertyCreateResponse(id=property_id, name=payload.name, address=payload.address)
 
 
 @router.get("/{property_id}/markdown", response_class=PlainTextResponse)

@@ -274,7 +274,7 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         key="berlin_4b_tavily_neighborhood",
         source="web",
         raw_content=(
-            "Tavily snapshot (Wilmersdorf): median 2BR cold rent EUR 1,280; "
+            "Web snapshot (Wilmersdorf): median 2BR cold rent EUR 1,280; "
             "Berlin Mietspiegel 2025 caps rent adjustments at CPI+1.5% for "
             "pre-1990 stock."
         ),
@@ -674,7 +674,7 @@ _MUNICH_EVENTS: list[EventSeed] = [
         key="munich_tavily_mar",
         source="web",
         raw_content=(
-            "Tavily snapshot (Schwabing, Munich): median 2BR cold rent "
+            "Web snapshot (Schwabing, Munich): median 2BR cold rent "
             "EUR 1,920. Munich Mietpreisbremse extended through 2029."
         ),
         received_at=days_ago(40),
@@ -699,7 +699,7 @@ _MUNICH_FACTS: list[FactSeed] = [
              "Leopoldstrasse 45 — 2015 build, Schwabing, geothermal heat pump.",
              0.95, "munich_lease_2025"),
     FactSeed("overview", "neighborhood",
-             "Schwabing. Median 2BR cold rent EUR 1,920 (Tavily / Mietspiegel).",
+             "Schwabing. Median 2BR cold rent EUR 1,920 (Mietspiegel).",
              0.8, "munich_tavily_mar"),
     FactSeed("tenants", "primary_tenants", "Maximilian Bauer and Julia Bauer (couple)",
              0.97, "munich_lease_2025"),

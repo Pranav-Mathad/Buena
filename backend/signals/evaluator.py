@@ -33,7 +33,6 @@ from backend.signals.rules import (
     cross_property_pattern,
     lease_expiring,
     recurring_maintenance,
-    regulation_change,
 )
 from backend.signals.types import SignalCandidate
 
@@ -50,7 +49,6 @@ _RULES = [
     recurring_maintenance,
     lease_expiring,
     cross_property_pattern,
-    regulation_change,
 ]
 
 

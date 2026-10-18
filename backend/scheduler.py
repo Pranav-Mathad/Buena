@@ -6,7 +6,6 @@ Called from the FastAPI lifespan. The scheduler runs:
 - imap_poll every 10s: fetches new mail
 - erp_poll every 30s (only when MOCK_ERP_URL is set)
 - signal_eval every 30s
-- regulation_watch every 60m
 
 All jobs are coalescing + no-overlap.
 """
@@ -22,7 +21,6 @@ from backend.config import get_settings
 from backend.pipeline.worker import process_batch
 from backend.services.erp_poller import poll_once as erp_poll_once
 from backend.services.imap_poller import poll_once as imap_poll_once
-from backend.services.tavily import watch_regulations
 from backend.signals.evaluator import evaluate_all as evaluate_signals
 
 log = structlog.get_logger(__name__)
@@ -78,17 +76,6 @@ def build_scheduler() -> AsyncIOScheduler:
         "interval",
         seconds=30,
         id="signal_eval",
-        coalesce=True,
-        max_instances=1,
-        next_run_time=_now(),
-    )
-
-    # Regulation watcher
-    scheduler.add_job(
-        watch_regulations,
-        "interval",
-        minutes=60,
-        id="regulation_watch",
         coalesce=True,
         max_instances=1,
         next_run_time=_now(),

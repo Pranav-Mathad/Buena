@@ -139,8 +139,7 @@ Extracted_demo/ synthetic master data (committed)
 
 No authentication; approved actions are written to an outbox, never sent;
 scheduled jobs are not safe to run in several instances; some LLM features
-require one specific provider; without a web-search key the regulation watcher
-inserts fixed illustrative headlines; extraction quality is measured on only 30
+require one specific provider; extraction quality is measured on only 30
 emails. The full list is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 

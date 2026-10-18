@@ -1,4 +1,4 @@
-"""Settings surface: learning dashboard and regulation trigger."""
+"""Settings surface: approval-rate statistics."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
 from backend.services.approval_stats import compute_learning, snapshot_to_json
-from backend.services.tavily import watch_regulations
-from backend.signals.evaluator import evaluate_all
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 log = structlog.get_logger(__name__)
@@ -27,12 +25,6 @@ class LearningStatsOut(BaseModel):
     signal_types: list[dict[str, Any]]
 
 
-class WatchResponse(BaseModel):
-    """Response for ``POST /settings/regulation_watch``."""
-
-    ingested_events: int
-    new_signals: int
-
 
 @router.get("/learning", response_model=LearningStatsOut)
 async def learning_dashboard(
@@ -42,23 +34,3 @@ async def learning_dashboard(
     snapshot = await compute_learning(session)
     return LearningStatsOut(**snapshot_to_json(snapshot))
 
-
-@router.post("/regulation_watch", response_model=WatchResponse)
-async def run_regulation_watch(
-    session: AsyncSession = Depends(get_session),
-) -> WatchResponse:
-    """Manually fire the Tavily regulation watcher for demo determinism.
-
-    Runs the watcher, then evaluates the rule set once so any fresh
-    regulation events that warrant signals are visible in the inbox
-    immediately (instead of waiting for the 30s scheduler tick).
-    """
-    inserted = await watch_regulations()
-    created = await evaluate_all(session)
-    await session.commit()
-    log.info(
-        "settings.regulation_watch",
-        inserted=inserted,
-        signals_created=created,
-    )
-    return WatchResponse(ingested_events=inserted, new_signals=created)

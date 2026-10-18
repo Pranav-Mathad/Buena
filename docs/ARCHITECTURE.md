@@ -267,9 +267,9 @@ sequenceDiagram
 ### Signals
 
 Rules live in `backend/signals/rules/`: recurring maintenance on one property,
-leases expiring within 60 days, cross-property patterns (a shared boiler across
-units in one building, or the same issue across a building-age cohort), and
-regulation changes. The evaluator (`backend/signals/evaluator.py`) runs every
+leases expiring within 60 days, and cross-property patterns (a shared boiler
+across units in one building, or the same issue across a building-age cohort).
+The evaluator (`backend/signals/evaluator.py`) runs every
 30 seconds and on `POST /signals/evaluate`. For each candidate it computes the
 natural key and skips it while a signal with that key is pending or was
 resolved within `SIGNAL_RESOLUTION_COOLDOWN_DAYS` (default 7), so an operator's
@@ -294,7 +294,7 @@ externally proposed.
   materialized files commit together or not at all.
 - **Scheduled jobs** (`backend/scheduler.py`) run inside the API process with
   `coalesce=True, max_instances=1`: worker every 2 s, IMAP every 10 s, signal
-  evaluator every 30 s, regulation watcher every 60 min, ERP poller every 30 s
+  evaluator every 30 s, ERP poller every 30 s
   when configured. A slow run is never stacked on top of itself.
 - **Cost ledger.** `cost_ledger.charge` reads and updates the row under
   `SELECT ... FOR UPDATE`. The concurrent email backfill additionally
@@ -419,11 +419,6 @@ data rules are enforced. `KEYSTONE_BASE_URL` points it at any running backend.
   validator call only Pioneer. Without `PIONEER_API_KEY`, Ask and draft
   replies return 503 even when a Gemini key is configured, and the worker logs
   a skipped semantic check for every event.
-- **The regulation watcher invents headlines offline.** Without
-  `TAVILY_API_KEY`, the hourly job inserts a fixed set of illustrative
-  regulation headlines, marked `offline` in their metadata, which then raise
-  `regulation_change` signals. Property enrichment likewise writes an
-  "offline snapshot" fact.
 - **Redaction keeps email local parts.** `jane.doe@provider.com` becomes
   `jane.doe@example.com`, so a name embedded in an address survives.
 - **Source precedence is incomplete.** The differ ranks `pdf`, `erp`, `email`,
