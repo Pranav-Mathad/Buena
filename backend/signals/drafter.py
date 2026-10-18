@@ -1,9 +1,10 @@
 """Turn a :class:`SignalCandidate` into a :class:`ProposedAction`.
 
-Uses Gemini Pro when ``GEMINI_API_KEY`` is configured — the Signal Quality
-Bar in KEYSTONE Part I calls out "expert speaking, not a database emitting
-rows" — and falls back to a deterministic template that still hits the
-four-part structure: observation, risk, concrete next step, deadline.
+A signal is only useful if its message reads like an expert's recommendation
+rather than a database row. The configured LLM provider writes the message
+when available; otherwise a deterministic template per signal type does,
+following the same four-part structure: observation, risk, concrete next
+step, deadline.
 """
 
 from __future__ import annotations
@@ -15,14 +16,26 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.services.gemini import (
-    GeminiUnavailable,
-    draft_action_message,
-    is_available as gemini_available,
-)
+from backend.services.llm import LLMUnavailableError, get_provider
 from backend.signals.types import ProposedAction, SignalCandidate
 
 log = structlog.get_logger(__name__)
+
+DRAFT_PROMPT_TEMPLATE = """You are drafting an operational message for a property manager.
+
+Tone: crisp, specific, expert. Avoid vague softeners like 'maybe', 'might'.
+Open with the observation and the risk. End with a concrete next step and a
+deadline. 4-6 sentences, no signature block, no greetings.
+
+Signal type: {signal_type}
+Severity: {severity}
+Property context:
+{context}
+
+Evidence summary:
+{evidence_summary}
+
+Write the message body now."""
 
 
 async def _owner_context(
@@ -134,17 +147,18 @@ async def draft(
     )
 
     drafted_message: str | None = None
-    if gemini_available():
+    provider = get_provider()
+    if provider is not None:
+        prompt = DRAFT_PROMPT_TEMPLATE.format(
+            signal_type=candidate.type,
+            severity=candidate.severity,
+            context=candidate.message or "(no prior context)",
+            evidence_summary=evidence_summary or "(no evidence)",
+        )
         try:
-            drafted_message = await draft_action_message(
-                signal_type=candidate.type,
-                severity=candidate.severity,
-                context=candidate.message,
-                evidence_summary=evidence_summary,
-            )
-        except GeminiUnavailable as exc:
-            log.warning("drafter.gemini_unavailable", error=str(exc))
-            drafted_message = None
+            drafted_message = await provider.complete_text(system=None, prompt=prompt)
+        except LLMUnavailableError as exc:
+            log.warning("drafter.llm_unavailable", provider=provider.name, error=str(exc)[:300])
 
     if not drafted_message:
         drafted_message = _template_fallback(candidate, recipient["name"])

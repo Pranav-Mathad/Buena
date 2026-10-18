@@ -27,7 +27,7 @@ import pytest
 from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
-from backend.services.gemini import ExtractionResult
+from backend.services.llm import ExtractionResult
 from connectors import buena_email_loader
 from connectors import cost_ledger as cost_ledger_module
 from connectors.base import ConnectorEvent

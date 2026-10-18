@@ -309,30 +309,45 @@ externally proposed.
 
 ## LLM layer
 
-LLM calls go through two client modules: `backend/services/gemini.py` (Google
-Gemini; models from `GEMINI_FLASH_MODEL` and `GEMINI_PRO_MODEL`, defaults
-`gemini-2.5-flash` and `gemini-2.5-pro`) and `backend/services/pioneer_llm.py`
-(Pioneer, an OpenAI-compatible gateway; default model `claude-sonnet-4-6`).
+Features call models through one interface, `LLMProvider`
+(`backend/services/llm/base.py`), with three operations: `extract_facts`,
+`complete_json` and `complete_text`. Two providers implement it:
+
+- `GeminiProvider` (`backend/services/llm/gemini.py`), model `GEMINI_PRO_MODEL`
+  (default `gemini-2.5-pro`).
+- `PioneerProvider` (`backend/services/llm/pioneer.py`), an OpenAI-compatible
+  gateway, model `PIONEER_MODEL` (default `claude-sonnet-4-6`).
+
+`LLM_PROVIDER` selects one (default `gemini`); `get_provider()` returns it when
+its key is set and `None` otherwise. There is no silent fallback to the other
+provider. The extraction schema, prompts and field vocabulary are shared
+(`backend/services/llm/extraction.py`), so both providers extract into the
+same `(section, field)` space. The PDF document-type classifier is the one
+exception: it calls Gemini Flash (`GEMINI_FLASH_MODEL`) directly and uses only
+filename heuristics without a Gemini key.
 
 - **Structured output.** Extraction requests a JSON response validated against
   `EXTRACTION_SCHEMA`. The prompt (`backend/services/prompts/`) exists in
   German and English and includes a controlled field vocabulary so the same
   concept lands in the same `(section, field)`.
-- **Timeouts.** Every call is bounded: 60 s for extraction, 45 s for the
-  onboarding briefing, 30 s for Ask, draft replies and the semantic validator.
+- **Timeouts.** Every call is bounded: 60 s for extraction, 45 s for signal
+  drafts and the onboarding briefing, 30 s for Ask, draft replies and the
+  semantic validator.
   The extraction timeout exists because a provider call once hung without
   returning or raising, freezing a backfill (see DECISIONS.md).
-- **Retries.** Extraction retries up to three times with linear backoff
-  (`0.4 s × attempt`); drafting and briefing calls retry twice.
+- **Retries.** A shared helper (`with_retries`) bounds every attempt with a
+  timeout and retries with linear backoff (`0.4 s × attempt`): three attempts
+  for extraction, two for signal drafts and briefings. A missing key is never
+  retried.
 - **Logging.** Each call logs a prompt hash, latency, token counts and model.
 - **Fallbacks.** Without a key, or after retries are exhausted, each feature
   degrades predictably:
 
-| Feature | Order tried | Without any key |
+| Feature | Uses | Without a configured provider |
 |---|---|---|
-| Fact extraction | Pioneer, Gemini, rule-based | Rule-based keyword extractor (German and English lexicon) |
-| Signal drafting | Gemini | Four-part template |
-| Onboarding briefing | Pioneer, Gemini | Deterministic sections plus a "Briefing unavailable" notice |
+| Fact extraction | configured provider | Rule-based keyword extractor (German and English lexicon) |
+| Signal drafting | configured provider | Four-part template |
+| Onboarding briefing | configured provider | Deterministic sections plus a "Briefing unavailable" notice |
 | Semantic validator | Pioneer | Skipped; rule constraints still apply |
 | Ask (`POST /properties/{id}/ask`) | Pioneer | HTTP 503 |
 | Draft reply (`POST /draft-reply`) | Pioneer | HTTP 503 |

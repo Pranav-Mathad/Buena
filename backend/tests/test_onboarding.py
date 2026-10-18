@@ -15,9 +15,22 @@ import pytest
 from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
-from backend.services import gemini, onboarding
+from backend.services import onboarding
 
 pytestmark = pytest.mark.asyncio
+
+
+class _StubProvider:
+    """Stands in for an LLM provider; delegates complete_text to a test function."""
+
+    name = "stub"
+    model = "stub"
+
+    def __init__(self, draft: Any) -> None:
+        self._draft = draft
+
+    async def complete_text(self, **kwargs: Any) -> str:
+        return str(await self._draft(**kwargs))
 
 
 async def _seed_property(
@@ -138,8 +151,8 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
         }
     )
     try:
-        # Force the Gemini-unavailable path so we don't hit the network.
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        # No LLM provider: the briefing degrades to a notice, nothing hits the network.
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -175,7 +188,7 @@ async def test_render_onboarding_surfaces_open_issues(
     shows all three under "Open issues right now"."""
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -262,17 +275,16 @@ async def test_render_onboarding_surfaces_open_issues(
 
 
 # ----------------------------------------------------------------------------
-# DB integration — Gemini briefing path with cache
+# DB integration: LLM briefing path with cache
 # ----------------------------------------------------------------------------
 
 
 @pytest.mark.usefixtures("db")
 async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    """First render calls Gemini; second render reuses the cached briefing."""
+    """First render calls the LLM; second render reuses the cached briefing."""
     bid, pid = await _seed_property()
     try:
-        # Force "available" + stub the Gemini drafter so the test stays offline.
-        monkeypatch.setattr(gemini, "is_available", lambda: True, raising=True)
+        # A stub provider keeps the test offline while exercising the LLM path.
         call_count = {"n": 0}
 
         async def _stub_draft(**kwargs: Any) -> str:
@@ -283,9 +295,7 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
                 "- Gap: no rent history captured."
             )
 
-        monkeypatch.setattr(
-            gemini, "draft_onboarding_briefing", _stub_draft, raising=True
-        )
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -303,19 +313,16 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.usefixtures("db")
 async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inserting a new fact bumps last-fact timestamp → cache key flips → Gemini called again."""
+    """Inserting a new fact bumps last-fact timestamp → cache key flips, so the LLM is called again."""
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: True, raising=True)
         call_count = {"n": 0}
 
         async def _stub_draft(**kwargs: Any) -> str:
             call_count["n"] += 1
             return f"- Briefing call #{call_count['n']}.\n- Gap: ongoing."
 
-        monkeypatch.setattr(
-            gemini, "draft_onboarding_briefing", _stub_draft, raising=True
-        )
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -373,7 +380,7 @@ async def test_watch_out_surfaces_recurring_constraint(
     'Watch out for'. Single-trigger constraints do not (noise filter)."""
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:

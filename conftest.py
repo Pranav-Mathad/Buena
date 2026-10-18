@@ -17,6 +17,12 @@ fixtures make that safe to do repeatedly against a developer's database:
     a test *failure* with instructions, never a silent skip: a skipped
     integration test looks exactly like a passing one in a summary line.
 
+``_no_llm_keys`` (autouse)
+    Blanks the LLM API keys for every test. Environment variables take
+    precedence over ``.env``, so a developer's real keys never turn a test run
+    into paid, nondeterministic API calls. Tests that need a "configured"
+    provider set a fake key themselves.
+
 ``_no_leaked_rows`` (autouse, session)
     Counts rows in the core tables before and after the run and errors if any
     count changed. Tests must clean up what they create; this keeps the suite
@@ -102,6 +108,16 @@ def db(_db_error: str | None) -> None:
             _apply_schema(cur)
     conn.close()
     apply_all()
+
+
+@pytest.fixture(autouse=True)
+def _no_llm_keys(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("PIONEER_API_KEY", "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)

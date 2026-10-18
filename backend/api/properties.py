@@ -517,7 +517,7 @@ async def property_markdown(
 
 
 # Display labels per backend section enum. Keep in sync with the
-# section names in ``backend.services.gemini.EXTRACTION_SCHEMA``.
+# section names in ``backend.services.llm.extraction.EXTRACTION_SCHEMA``.
 _SECTION_LABELS: dict[str, str] = {
     "overview": "Overview",
     "tenants": "Tenants",

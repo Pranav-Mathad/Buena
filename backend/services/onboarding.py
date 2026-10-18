@@ -40,9 +40,49 @@ from backend.pipeline.renderer import (
     _fetch_current_facts,
     _fetch_open_uncertainties,
 )
-from backend.services import gemini, pioneer_llm
+from backend.services.llm import LLMUnavailableError, get_provider
 
 log = structlog.get_logger(__name__)
+
+# The briefing is written for the operator, who reads English, so it is
+# always English even when the property's sources and headings are German.
+BRIEFING_SYSTEM_HINT = (
+    "You are briefing a property-management operator who is opening a "
+    "property for the first time. Plain prose only: no markdown formatting "
+    "(**, *, _, `, #), no headings, no markdown links. Output one bullet per "
+    "line, prefix each with '- '. Always write in English regardless of the "
+    "source-event language."
+)
+
+BRIEFING_PROMPT = """You are briefing a property manager who is reading {property_name}
+for the first time.
+
+Write 5 to 7 bullets. Each bullet is ≤ 25 words. The reader has 60 seconds.
+
+HARD RULES:
+- Honesty over completeness. If a key piece is missing, say so plainly.
+  Use the literal prefix "Gap:" and name what is missing.
+- Do not invent dates, amounts, names, or facts. If something is uncertain,
+  treat it as a gap, not as a fact.
+- Lead with what is operationally relevant TODAY (open issues, recent
+  changes), then context, then risks to watch.
+- Plain text, no headings, no preamble like "Here is the briefing".
+- One bullet per line, prefix each with "- ".
+- Write in English.
+
+CURRENT FACTS (authoritative, already validated):
+{facts_summary}
+
+OPEN UNCERTAINTIES (noticed but not committed; call out as gaps):
+{uncertainties_summary}
+
+VALIDATOR REJECTIONS (proposed but rejected; note as known conflicts):
+{rejections_summary}
+
+RECENT EVENT ACTIVITY (last 12 months, by category):
+{activity_summary}
+
+Write the bullets now."""
 
 
 # How many bullets per "open issues" / "watch out" subsection. The
@@ -725,7 +765,7 @@ async def _render_key_context(
     lang: str,
     cache_key: str,
 ) -> list[str]:
-    """The Gemini-Pro 5–7 bullet briefing, cached on properties.metadata."""
+    """The LLM-written 5 to 7 bullet briefing, cached on ``properties.metadata``."""
     title = (
         "## Key context (last 12 months)"
         if lang == "en"
@@ -747,49 +787,29 @@ async def _render_key_context(
     activity_summary = _summarise_activity(activity)
 
     briefing: str | None = None
-
-    # Pioneer (Claude) is the primary path. The briefing always renders
-    # in English — Pioneer's prompt enforces that regardless of how the
-    # source events are written.
-    if pioneer_llm.is_available():
+    provider = get_provider()
+    if provider is not None:
+        prompt = BRIEFING_PROMPT.format(
+            property_name=header.name,
+            facts_summary=facts_summary or "(no facts yet)",
+            uncertainties_summary=uncertainties_summary or "(none)",
+            rejections_summary=rejections_summary or "(none)",
+            activity_summary=activity_summary or "(no recent activity)",
+        )
         try:
-            briefing = await pioneer_llm.draft_onboarding_briefing(
-                property_name=header.name,
-                facts_summary=facts_summary,
-                uncertainties_summary=uncertainties_summary,
-                rejections_summary=rejections_summary,
-                activity_summary=activity_summary,
-            )
-        except pioneer_llm.PioneerUnavailable as exc:
+            briefing = await provider.complete_text(system=BRIEFING_SYSTEM_HINT, prompt=prompt)
+        except LLMUnavailableError as exc:
             log.warning(
-                "onboarding.briefing.pioneer_unavailable",
+                "onboarding.briefing.llm_unavailable",
                 property_id=str(property_id),
-                error=str(exc)[:200],
-            )
-
-    # Gemini is a fallback for environments where Pioneer is missing.
-    if briefing is None and gemini.is_available():
-        try:
-            briefing = await gemini.draft_onboarding_briefing(
-                property_name=header.name,
-                facts_summary=facts_summary,
-                uncertainties_summary=uncertainties_summary,
-                rejections_summary=rejections_summary,
-                activity_summary=activity_summary,
-                lang="en",
-            )
-        except gemini.GeminiUnavailable as exc:
-            log.warning(
-                "onboarding.briefing.gemini_unavailable",
-                property_id=str(property_id),
+                provider=provider.name,
                 error=str(exc)[:200],
             )
 
     if briefing is None:
         msg = (
-            "Briefing unavailable — neither Pioneer nor Gemini is "
-            "reachable. All deterministic sections above are still "
-            "complete."
+            "Briefing unavailable: no LLM provider is configured or reachable. "
+            "All deterministic sections above are still complete."
         )
         return [title, "", msg, ""]
 

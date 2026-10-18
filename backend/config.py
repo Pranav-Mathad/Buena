@@ -8,6 +8,7 @@ object. This keeps configuration testable and free of global state.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,19 +41,18 @@ class Settings(BaseSettings):
         default="postgresql://keystone:keystone@localhost:5432/keystone"
     )
 
-    # --- Gemini ---
+    # --- LLM ---
+    # Which backend serves every LLM call (see backend/services/llm/). With no
+    # key for the selected provider, features use their deterministic
+    # fallbacks; Ask and reply drafting return 503.
+    llm_provider: Literal["gemini", "pioneer"] = Field(default="gemini")
     gemini_api_key: str = Field(default="")
-    # Model defaults updated 2026-04-25 — Phase 8.1. The previous
-    # ``gemini-2.0-{flash,pro}`` names were retired for new API users.
-    # Pinning explicit versions makes docs/eval-runs reproducible across
-    # weeks; flip to ``gemini-flash-latest`` if we explicitly want
-    # tracking-the-edge behavior.
+    # Explicit model versions keep eval runs comparable over time.
     gemini_flash_model: str = Field(default="gemini-2.5-flash")
     gemini_pro_model: str = Field(default="gemini-2.5-pro")
     gemini_embed_model: str = Field(default="text-embedding-004")
-
-    # --- Partners ---
     pioneer_api_key: str = Field(default="")
+    pioneer_model: str = Field(default="claude-sonnet-4-6")
 
     # --- IMAP / Slack / Mock ERP (used by later phases) ---
     imap_host: str = Field(default="imap.gmail.com")

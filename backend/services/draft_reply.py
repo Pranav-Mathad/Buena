@@ -1,7 +1,7 @@
 """Inbound-reply drafting service.
 
-Powers ``POST /draft-reply``. Distinct from ``draft_action_message``
-(``backend.services.gemini``) which drafts *outbound* signal messages —
+Powers ``POST /draft-reply``. Distinct from the signal drafter
+(``backend.signals.drafter``), which drafts *outbound* signal messages:
 this module drafts replies to *inbound* tenant/owner messages, citing
 prior facts and events as context.
 

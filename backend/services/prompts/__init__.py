@@ -1,1 +1,1 @@
-"""Prompt templates loaded by :mod:`backend.services.gemini`."""
+"""Extraction prompt templates and field vocabulary, loaded by :mod:`backend.services.llm.extraction`."""

@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -35,16 +36,14 @@ import structlog
 
 from decimal import Decimal
 
+from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.logging import configure_logging
-from backend.pipeline import extractor as extractor_module
 from backend.pipeline.extractor import extract as run_extractor
 from backend.pipeline.router import (
     route_structured,
     route_text_event,
 )
-from backend.services import pioneer_llm
-from backend.services.gemini import GeminiUnavailable
 from connectors import cost_ledger
 from connectors.cost_ledger import CostCapExceeded
 from connectors.migrations import apply_all as ensure_migrations
@@ -161,32 +160,6 @@ def _gemini_call_cost(model: str, prompt_tokens: int, completion_tokens: int) ->
     return cost.quantize(Decimal("0.000001"))
 
 
-async def _pioneer_as_gemini(**kwargs: Any) -> Any:
-    """Adapter so the production extractor wrapper can call Pioneer transparently.
-
-    The wrapper in ``backend.pipeline.extractor.extract`` catches
-    :class:`GeminiUnavailable` and falls back to the rule-based path —
-    we want the same behavior on Pioneer transport failures so the
-    eval row still gets scored (with ``extractor.source="rule"``)
-    instead of crashing the whole run mid-set.
-    """
-    try:
-        return await pioneer_llm.extract_facts(**kwargs)
-    except pioneer_llm.PioneerUnavailable as exc:
-        raise GeminiUnavailable(str(exc)) from exc
-
-
-def _install_pioneer_backend() -> None:
-    """Swap the LLM backend the production extractor calls.
-
-    The wrapper imported ``gemini_extract`` and ``gemini_available`` as
-    module-level names; reassigning those names on
-    ``backend.pipeline.extractor`` flips the backend for this process
-    only. Production code paths are untouched.
-    """
-    extractor_module.gemini_extract = _pioneer_as_gemini  # type: ignore[assignment]
-    extractor_module.gemini_available = pioneer_llm.is_available  # type: ignore[assignment]
-    log.info("eval.backend.installed", backend="pioneer")
 
 
 # Mutated by ``main()`` based on ``--via``. Read by ``_score_one`` to
@@ -244,8 +217,7 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         except Exception as exc:  # noqa: BLE001
             log.warning("eval.ledger_error", error=str(exc))
     elif extractor_source == "pioneer":
-        # Pioneer keys are sponsor-supplied for the hackathon; no ledger charge.
-        # Tokens are still surfaced in scored row metadata for reporting.
+        # No pricing table for the gateway; tokens are still reported per row.
         pass
 
     scored = score_row(
@@ -327,10 +299,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["gemini", "pioneer"],
         default="gemini",
         help=(
-            "LLM backend the production extractor wrapper calls. 'pioneer' "
-            "monkey-patches backend.pipeline.extractor for this run only and "
-            "writes to the step5_eval_pioneer ledger label. Production code "
-            "paths are untouched."
+            "LLM provider for this run, equivalent to LLM_PROVIDER. Without that "
+            "provider's API key the extractor falls back to its rule-based path."
         ),
     )
     return p
@@ -345,8 +315,9 @@ def main(argv: list[str] | None = None) -> int:
     ACTIVE_LEDGER_LABEL = (
         EVAL_LEDGER_LABEL_PIONEER if args.via == "pioneer" else EVAL_LEDGER_LABEL_GEMINI
     )
-    if args.via == "pioneer":
-        _install_pioneer_backend()
+    # --via selects the provider exactly as LLM_PROVIDER does in production.
+    os.environ["LLM_PROVIDER"] = args.via
+    get_settings.cache_clear()
     try:
         report, raw_payloads = asyncio.run(run(args.set))
     except FileNotFoundError as exc:

@@ -38,7 +38,7 @@ from backend.pipeline.validator import (
     validate,
 )
 from backend.pipeline.worker import _needs_review_to_uncertainty
-from backend.services.gemini import ExtractionResult
+from backend.services.llm import ExtractionResult
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark_async = pytest.mark.asyncio

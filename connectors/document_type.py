@@ -105,19 +105,19 @@ def _classify_with_gemini(
         return "other"
 
     # 2. Lazy import so non-LLM tests don't require google-generativeai.
+    # This classifier is deliberately Gemini-specific (Flash, synchronous) and
+    # does not go through the LLM provider interface; without a Gemini key the
+    # filename heuristics are the only signal.
     try:
-        from backend.services.gemini import (  # noqa: PLC0415
-            GeminiUnavailable,
-            _configure_client,  # type: ignore[attr-defined]
-        )
-    except Exception as exc:  # noqa: BLE001 — service module unavailable
-        log.warning("doctype.gemini_import_failed", error=str(exc))
-        return "other"
+        from backend.services.llm.gemini import configure_client  # noqa: PLC0415
+        from backend.services.llm.base import LLMNotConfiguredError  # noqa: PLC0415
 
-    try:
-        genai = _configure_client()
-    except GeminiUnavailable as exc:
+        genai = configure_client()
+    except LLMNotConfiguredError as exc:
         log.info("doctype.gemini_unavailable", reason=str(exc))
+        return "other"
+    except ImportError as exc:
+        log.warning("doctype.gemini_import_failed", error=str(exc))
         return "other"
 
     prompt = _GEMINI_PROMPT_TEMPLATE.format(

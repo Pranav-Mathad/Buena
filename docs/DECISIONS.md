@@ -42,6 +42,33 @@ pseudonymisation and are kept unchanged.
 for the old address and for `DE` + 20 digits outside `Extracted_demo/` guards
 against regressions.
 
+## 2026-10-17: LLM calls go through one provider interface, Gemini by default
+
+**Context.** Two vendor clients had grown side by side. Extraction tried
+Pioneer, then Gemini, then rules; onboarding briefings tried Pioneer, then
+Gemini; signal drafting used only Gemini; Ask, reply drafting and the semantic
+validator each built their own Pioneer HTTP requests. Which model answered
+depended on which keys happened to be set, prompts and schemas were duplicated,
+and every new feature had to choose a vendor.
+
+**Decision.** `backend/services/llm/` defines an `LLMProvider` protocol
+(`extract_facts`, `complete_json`, `complete_text`) with `GeminiProvider` and
+`PioneerProvider`. `LLM_PROVIDER` selects one, default `gemini`; without that
+provider's key, `get_provider()` returns `None` and features use their
+deterministic fallback. There is no automatic fallback to the other provider.
+The extraction schema, prompts and vocabulary live in one shared module;
+features own their own prompts. Every call goes through one retry helper with
+a per-attempt timeout. The PDF document-type classifier stays a direct,
+synchronous Gemini Flash call.
+
+**Reason.** One explicit setting makes behaviour predictable and testable: the
+configured provider is the one that runs, and eval results name the backend
+they measured. A shared retry helper keeps the hang protection from the
+backfill incident in one place instead of six.
+
+**Revisit if.** Cross-provider failover becomes a requirement; it should be an
+explicit, logged policy in `get_provider()`, not an accident of key presence.
+
 ## 2026-10-17: web enrichment and the regulation watcher are removed
 
 **Context.** Two features used a web-search API: enrichment of newly created
@@ -409,6 +436,11 @@ one more template to maintain.
 
 **Revisit if.** A third language appears, or a property's sources are evenly
 bilingual (ties fall back to English).
+
+**Status.** Superseded in practice: a later change made the briefing always
+English, because the operator who reads it works in English, while the
+deterministic onboarding sections still follow the property's language. The
+provider refactor kept that behaviour and removed the unused German prompt.
 
 ## 2026-04-25: the IMAP transport loop stays untested offline
 

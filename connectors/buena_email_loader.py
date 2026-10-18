@@ -45,7 +45,7 @@ from backend.pipeline.router import (
     StructuredRoute,
     route_text_event,
 )
-from backend.services.gemini import ExtractionResult
+from backend.services.llm import ExtractionResult
 from connectors import buena_archive, cost_ledger, eml_archive
 from connectors.base import ConnectorEvent
 from connectors.cost_ledger import CostCapExceeded
