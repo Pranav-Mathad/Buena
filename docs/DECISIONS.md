@@ -574,7 +574,7 @@ rich extracted facts. Among the 99 property-routed events from the partial
 backfill, the strongest candidates were GE 37 (9 events, 6 facts), WE 29 (8
 events, 6 facts) and WE 50 (6 events, 7 facts).
 
-**Decision.** `KEYSTONE_DEMO_HERO_PROPERTY = 509393da-6806-49ef-9e59-3da0213008cd`
+**Decision.** `KEYSTONE_DEMO_HERO_PROPERTY = 509393da-6806-49ef-9e59-3da0213008cd` (now `FEATURED_PROPERTY=EH-029`, see Status)
 (`Musterstraße 26 WE 29`). The targeted backfill filters on its unit-specific
 aliases (`EH-029`, `WE 29`, `4. OG mitte`) and skips building-wide ones
 (`HAUS-14`, the bare street), which would pull in other units' mail.
@@ -585,6 +585,13 @@ naturally as "an apartment"; WE 50 had fewer events to replay.
 
 **Revisit if.** The targeted backfill yields fewer than 30 events, or a richer
 property emerges after a full backfill.
+
+**Status.** 2026-10-17: the setting is now `FEATURED_PROPERTY`, defaulting to
+the alias `EH-029` rather than the UUID. The UUID belonged to one deployed
+database and matched nothing on a fresh install, because property ids are
+generated per database; an alias resolves everywhere. `GET /properties` marks
+the resolved property with `is_hero`, and the one-click replay moved to
+`POST /admin/replay/featured`. The seed does not need the setting.
 
 ## 2026-04-25: `cost_ledger.reset_label` cannot tell test labels from production labels
 

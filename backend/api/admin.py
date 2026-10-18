@@ -705,41 +705,44 @@ async def replay_status(run_id: UUID) -> ReplayRunStatus:
     return ReplayRunStatus(**snapshot)
 
 
-@router.post("/demo/replay", response_model=ReplayRunStatus)
-async def demo_replay() -> ReplayRunStatus:
-    """Thin wrapper that runs the canonical demo replay on the hero property.
+@router.post("/replay/featured", response_model=ReplayRunStatus)
+async def replay_featured_property() -> ReplayRunStatus:
+    """Replay the featured property's history with preset parameters.
 
-    All parameters come from configuration:
+    A body-free shortcut for :func:`replay.start_run`:
 
-    - ``KEYSTONE_DEMO_HERO_PROPERTY`` env var (default: WE 29 from
-      Step 6's hero pin) → ``property_id``.
-    - ``KEYSTONE_DEMO_SPEED_MULTIPLIER`` (default 10) →
-      ``speed_multiplier``.
-    - Hardcoded: ``source_filter=['email','invoice','bank']``,
-      ``reset_property=True``, and a single
-      ``scheduled_pauses[0] = {at_seconds: 50, message: 'validator beat'}``
-      that drives the Phase 10 demo's Beat 3 (validator rejecting the
-      "8 floors" email live).
+    - property: ``FEATURED_PROPERTY`` (UUID or alias, default ``EH-029``)
+    - speed: ``REPLAY_SPEED_MULTIPLIER`` (default 10)
+    - sources: email, invoice, bank; the property's facts are reset first
+    - one checkpoint pause at 50 s, where the replayed history reaches the
+      email that the floor-count constraint rejects
 
-    Everything is configurable via :func:`replay.start_run` for ad-hoc
-    runs; this endpoint just removes the body so the demo button is a
-    one-click affair.
+    Use ``POST /admin/replay/start`` for any other combination.
     """
+    from fastapi import HTTPException  # noqa: PLC0415
+
     from backend.config import get_settings  # noqa: PLC0415
+    from backend.db.session import get_sessionmaker  # noqa: PLC0415
     from backend.services import replay  # noqa: PLC0415
+    from backend.services.featured import resolve_featured_property_id  # noqa: PLC0415
 
     settings = get_settings()
+    async with get_sessionmaker()() as session:
+        property_id = await resolve_featured_property_id(session)
+    if property_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"FEATURED_PROPERTY={settings.featured_property!r} matches no property",
+        )
     snapshot = await replay.start_run(
-        property_id=UUID(settings.keystone_demo_hero_property),
-        speed_multiplier=settings.keystone_demo_speed_multiplier,
+        property_id=property_id,
+        speed_multiplier=settings.replay_speed_multiplier,
         source_filter=["email", "invoice", "bank"],
-        scheduled_pauses=[
-            {"at_seconds": 50.0, "message": "validator beat"},
-        ],
+        scheduled_pauses=[{"at_seconds": 50.0, "message": "constraint checkpoint"}],
         reset_property=True,
     )
     log.info(
-        "admin.demo_replay.started",
+        "admin.replay_featured.started",
         run_id=snapshot["run_id"],
         property_id=snapshot["property_id"],
     )

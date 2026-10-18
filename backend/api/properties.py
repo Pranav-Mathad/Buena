@@ -29,6 +29,7 @@ from backend.pipeline.renderer import (
     render_markdown,
 )
 from backend.services import ask as ask_service
+from backend.services.featured import resolve_featured_property_id
 from backend.services.llm import LLMUnavailableError
 
 router = APIRouter(prefix="/properties", tags=["properties"])
@@ -54,6 +55,8 @@ class PropertySummary(BaseModel):
     facts: int = 0
     needs_review: int = 0
     open_issues: int = 0
+    #: True for the property named by ``FEATURED_PROPERTY``.
+    is_hero: bool = False
 
 
 class PropertyCreateRequest(BaseModel):
@@ -157,7 +160,8 @@ class PropertyGraph(BaseModel):
 async def list_properties(
     session: AsyncSession = Depends(get_session),
 ) -> list[PropertySummary]:
-    """Return every seeded property, joined with owner + building context."""
+    """Return every property with owner, building and count context."""
+    featured_id = await resolve_featured_property_id(session)
     result = await session.execute(
         text(
             """
@@ -193,6 +197,7 @@ async def list_properties(
             facts=int(row.facts or 0),
             needs_review=int(row.needs_review or 0),
             open_issues=int(row.open_issues or 0),
+            is_hero=featured_id is not None and str(row.id) == str(featured_id),
         )
         for row in result.all()
     ]

@@ -69,18 +69,13 @@ class Settings(BaseSettings):
     # the same finding (same natural key) again for this many days.
     signal_resolution_cooldown_days: int = Field(default=7, ge=0)
 
-    # --- Phase 10 demo ---
-    # Hero property the no-arg ``POST /admin/demo/replay`` runs against.
-    # Default: WE 29 (Step 6 hero, see docs/DECISIONS.md). Override via env when
-    # a different property has richer coverage post-hackathon.
-    keystone_demo_hero_property: str = Field(
-        default="509393da-6806-49ef-9e59-3da0213008cd"
-    )
-    # Replay engine speed multiplier the demo uses by default.
-    keystone_demo_speed_multiplier: int = Field(default=10)
-    # ``hand_crafted`` falls back to the Berliner 4B beats for safety;
-    # ``buena`` is the primary file-builds-itself replay.
-    keystone_demo_mode: str = Field(default="buena")
+    # --- Featured property ---
+    # The property the UI opens first and POST /admin/replay/featured targets:
+    # a property UUID or any of its aliases. UUIDs differ per database, so the
+    # default is a unit alias present in the sample data.
+    featured_property: str = Field(default="EH-029")
+    # Replay speed for the featured-property replay (1 = real time).
+    replay_speed_multiplier: int = Field(default=10, ge=1)
 
     # --- Phase 10 Step 10.4 — document linking ---
     # Filesystem root that ``GET /files/<path>`` is allowed to serve. Any
