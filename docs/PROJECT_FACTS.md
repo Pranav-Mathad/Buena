@@ -17,9 +17,10 @@ comments.
 | of which `connectors/` | 4,902 | same, restricted to `connectors/*.py` |
 | of which `eval/`, `seed/`, `scripts/`, `mcp_server/`, `tools/` | 1,117 / 1,385 / 591 / 259 / 87 | same, per directory |
 | Python tests (including `conftest.py`) | 5,011 lines | `git ls-files '*.py' \| grep -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
-| TypeScript/TSX, excluding `components/ui` | 4,671 lines | `git ls-files 'frontend/src/*.ts' 'frontend/src/*.tsx' \| grep -v 'frontend/src/components/ui/' \| xargs wc -l \| tail -1` |
+| TypeScript/TSX, excluding `components/ui` and tests | 4,557 lines (at `4917074`) | `git ls-files 'frontend/src/*.ts' 'frontend/src/*.tsx' \| grep -v -E 'components/ui/\|\.test\.\|/test/' \| xargs wc -l \| tail -1` |
+| Frontend tests and test helpers | 427 lines (at `4917074`) | `git ls-files 'frontend/src/*.test.ts' 'frontend/src/*.test.tsx' 'frontend/src/test/*' \| xargs wc -l \| tail -1` |
 | Generated shadcn components kept | 314 lines | `git ls-files 'frontend/src/components/ui/*' \| xargs wc -l \| tail -1` |
-| Frontend dependencies | 14 runtime, 19 dev | `node -e 'const p=require("./frontend/package.json"); console.log(Object.keys(p.dependencies).length, Object.keys(p.devDependencies).length)'` |
+| Frontend dependencies | 14 runtime, 20 dev (at `4917074`) | `node -e 'const p=require("./frontend/package.json"); console.log(Object.keys(p.dependencies).length, Object.keys(p.devDependencies).length)'` |
 | HTTP routes | 52 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
 | Additive migrations | 14 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
 | Rule constraints | 8 | modules in `backend/pipeline/constraints/` |
@@ -44,7 +45,7 @@ keys set, without the private dataset.
 | `eval/tests` | 4 | 0 | 0 | `pytest eval/tests -q` |
 | `mcp_server/tests` | 3 | 0 | 0 | `pytest mcp_server/tests -q` |
 | All four | 182 | 13 | 0 | `pytest -q` (all four suites are in `testpaths`) |
-| Frontend | 0 test files | | | `git ls-files 'frontend/src/*.test.ts' 'frontend/src/*.test.tsx'` |
+| Frontend (at `4917074`) | 12 | 0 | 0 | `cd frontend && npm test` |
 
 All 13 skips need the private dataset under `Extracted/` and say so in the
 skip reason. Before this cleanup the three suites that existed then gave 126
