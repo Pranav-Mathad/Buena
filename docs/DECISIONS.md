@@ -877,7 +877,7 @@ another $20.
 
 **Decision.** `cost_ledger(source_label, cumulative_usd, cap_usd, hit_at)` in
 Postgres. Every extraction charges it; reaching the cap stamps `hit_at` and
-raises `CostCapExceeded`; later runs read the row and stop immediately. Reset
+raises `CostCapExceededError`; later runs read the row and stop immediately. Reset
 requires `--reset-cost-ledger` and an interactive confirmation.
 
 **Reason.** Spend across runs is the only definition that makes the cap real,

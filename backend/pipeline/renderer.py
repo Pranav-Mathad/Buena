@@ -20,7 +20,7 @@ Facts from web-sourced events get a 🌐 badge.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -448,8 +448,8 @@ def _classify_tier(fact: FactRow, *, now: datetime | None = None) -> FactTier:
     if occurred is None:
         return "active"
     if occurred.tzinfo is None:
-        occurred = occurred.replace(tzinfo=timezone.utc)
-    reference = now or datetime.now(timezone.utc)
+        occurred = occurred.replace(tzinfo=UTC)
+    reference = now or datetime.now(UTC)
     age = reference - occurred
     if age <= timedelta(days=ACTIVE_DAYS):
         return "active"
@@ -470,8 +470,8 @@ def _is_compact(fact: FactRow, *, now: datetime | None = None) -> bool:
     if occurred is None:
         return False
     if occurred.tzinfo is None:
-        occurred = occurred.replace(tzinfo=timezone.utc)
-    reference = now or datetime.now(timezone.utc)
+        occurred = occurred.replace(tzinfo=UTC)
+    reference = now or datetime.now(UTC)
     return (reference - occurred) > timedelta(days=ACTIVE_CUTOFF_DAYS)
 
 
@@ -515,7 +515,7 @@ def _format_fact_line_compact(fact: FactRow) -> str:
     if fact.occurred_at is not None:
         occurred = fact.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         date_str = occurred.strftime("%Y-%m")
     else:
         date_str = "unknown"
@@ -547,7 +547,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
             continue
         occurred = fact.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         by_year.setdefault(str(occurred.year), []).append(fact)
     if not by_year:
         return []
@@ -559,7 +559,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         latest = max(
             rows,
             key=lambda f: f.occurred_at  # type: ignore[arg-type,return-value]
-            or datetime.min.replace(tzinfo=timezone.utc),
+            or datetime.min.replace(tzinfo=UTC),
         )
         link = (
             f"[open detail](/events/{latest.source_event_id}/source)"
@@ -866,7 +866,7 @@ def _format_conflict_line(rej: RejectionRow, *, lang: str) -> str:
     if rej.occurred_at is not None:
         occurred = rej.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         when = f" ({occurred.strftime('%Y-%m-%d')})"
     label = "Konflikt" if lang == "de" else "Conflict"
     review = "Überprüfen" if lang == "de" else "Review"
@@ -903,7 +903,7 @@ def _format_open_conflicts_block(
         if rej.occurred_at is not None:
             occurred = rej.occurred_at
             if occurred.tzinfo is None:
-                occurred = occurred.replace(tzinfo=timezone.utc)
+                occurred = occurred.replace(tzinfo=UTC)
             when = f" ({occurred.strftime('%Y-%m-%d')})"
         preview = _truncate(rej.proposed_value, limit=100)
         section_label = _format_field(rej.section)
@@ -954,7 +954,7 @@ def _emit_sections(
         if lang == "de"
         else "Older entries grouped by year — click any line to open the original"
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     def _title(section: str) -> str:
         label = titles.get(section)
@@ -1003,7 +1003,7 @@ def _emit_sections(
         if section in _CAPPED_SECTIONS and len(active_rows) > ACTIVITY_ACTIVE_LIMIT:
             active_rows.sort(
                 key=lambda f: (
-                    f.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
+                    f.occurred_at or datetime.min.replace(tzinfo=UTC)
                 ),
                 reverse=True,
             )
@@ -1013,7 +1013,7 @@ def _emit_sections(
 
         recent_rows.sort(
             key=lambda f: (
-                f.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
+                f.occurred_at or datetime.min.replace(tzinfo=UTC)
             ),
             reverse=True,
         )
@@ -1106,7 +1106,7 @@ def _format_frontmatter(
         f"property_id: {property_id}",
         f"name: {name}",
         f"address: {address}",
-        f"tier: property",
+        "tier: property",
         f"language: {lang}",
         f"as_of: {rendered_at.strftime('%Y-%m-%dT%H:%M:%SZ')}",
         f"fact_count: {len(facts)}",
@@ -1176,7 +1176,7 @@ async def render_property_full(
             session, building_id
         )
 
-    rendered_at = datetime.now(timezone.utc)
+    rendered_at = datetime.now(UTC)
     coverage = compute_coverage(stammdaten, facts, lang=lang)
 
     log.debug(

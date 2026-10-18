@@ -23,8 +23,9 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, field as dc_field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from dataclasses import field as dc_field
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ from backend.pipeline.router import (
 from backend.services.llm import ExtractionResult
 from connectors import buena_archive, cost_ledger, eml_archive
 from connectors.base import ConnectorEvent
-from connectors.cost_ledger import CostCapExceeded
+from connectors.cost_ledger import CostCapExceededError
 from connectors.migrations import apply_all as ensure_migrations
 
 log = structlog.get_logger(__name__)
@@ -269,8 +270,8 @@ def _is_historical(received_at: datetime | None, *, threshold_days: int) -> bool
     if received_at is None:
         return False
     if received_at.tzinfo is None:
-        received_at = received_at.replace(tzinfo=timezone.utc)
-    age_days = (datetime.now(tz=timezone.utc) - received_at).days
+        received_at = received_at.replace(tzinfo=UTC)
+    age_days = (datetime.now(tz=UTC) - received_at).days
     return age_days > threshold_days
 
 
@@ -582,7 +583,7 @@ async def _process_event(
                 try:
                     async with ledger_lock:
                         cost_ledger.charge(label, cost)
-                except CostCapExceeded as exc:
+                except CostCapExceededError as exc:
                     log.warning(
                         "buena_email.cost_cap_post_charge",
                         cumulative=str(exc.cumulative),

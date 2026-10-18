@@ -43,7 +43,7 @@ async def _event_stream(property_id: UUID | None) -> AsyncIterator[bytes]:
         while True:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Heartbeat keeps intermediaries (nginx, etc.) from closing.
                 yield b": keep-alive\n\n"
                 continue

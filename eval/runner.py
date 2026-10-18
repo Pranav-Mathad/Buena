@@ -29,12 +29,11 @@ import json
 import os
 import sys
 from dataclasses import asdict
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import structlog
-
-from decimal import Decimal
 
 from backend.config import get_settings
 from backend.db.session import get_sessionmaker
@@ -45,7 +44,7 @@ from backend.pipeline.router import (
     route_text_event,
 )
 from connectors import cost_ledger
-from connectors.cost_ledger import CostCapExceeded
+from connectors.cost_ledger import CostCapExceededError
 from connectors.migrations import apply_all as ensure_migrations
 from eval.metrics import Report, score_row
 
@@ -211,7 +210,7 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         try:
             cost = _gemini_call_cost(model, int(prompt_tokens), int(completion_tokens))
             cost_ledger.charge(ACTIVE_LEDGER_LABEL, cost)
-        except CostCapExceeded:
+        except CostCapExceededError:
             log.warning("eval.cost_cap_hit", event_id=event_id)
             raise
         except Exception as exc:  # noqa: BLE001

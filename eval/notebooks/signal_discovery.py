@@ -331,6 +331,7 @@ SECTIONS: list[tuple[str, str, str]] = [
 async def _execute_all() -> str:
     """Run every section against the live DB and return Markdown."""
     from sqlalchemy import text  # noqa: PLC0415 — local import, lazy DB binding
+
     from backend.db.session import get_sessionmaker  # noqa: PLC0415
 
     factory = get_sessionmaker()

@@ -12,12 +12,12 @@ from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
 from backend.pipeline.router import (
-    StructuredRoute,
     WEG_KEYWORDS,
+    StructuredRoute,
     route_structured,
 )
 from connectors import buena_loader
-from connectors.base import DataMissing
+from connectors.base import DataMissingError
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
@@ -27,7 +27,7 @@ def _ensure_buena_stammdaten() -> None:
     """Idempotent loader call — costs nothing if data is already loaded."""
     try:
         buena_loader.load_from_disk()
-    except DataMissing as exc:
+    except DataMissingError as exc:
         pytest.skip(f"Buena dataset not available — {exc}")
 
 

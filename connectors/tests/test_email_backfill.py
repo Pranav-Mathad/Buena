@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -51,7 +51,7 @@ def _connector_event(idx: int) -> ConnectorEvent:
         source_ref=f"{_REF_PREFIX}{idx:04d}@example.com",
         raw_content=f"From: a@b\nSubject: test {idx}\n\nbody {idx}",
         metadata={"from": "a@b", "subject": f"test {idx}"},
-        received_at=datetime(2026, 4, 25, 9, 0, 0, tzinfo=timezone.utc),
+        received_at=datetime(2026, 4, 25, 9, 0, 0, tzinfo=UTC),
     )
 
 
@@ -187,7 +187,7 @@ async def test_cost_cap_aborts_loop_cleanly(
 
     assert summary.aborted_on_cost_cap is True, summary.as_json()
     # First call: $0.0125 → ledger goes to $0.0125 (below cap).
-    # Second call: $0.0125 → $0.025 > $0.02 cap → CostCapExceeded raised.
+    # Second call: $0.0125 → $0.025 > $0.02 cap → CostCapExceededError raised.
     assert summary.extraction_attempts <= 5
     assert Decimal(summary.cumulative_usd) > Decimal("0.02")
 

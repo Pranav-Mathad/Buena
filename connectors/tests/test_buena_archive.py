@@ -11,13 +11,13 @@ from __future__ import annotations
 import pytest
 
 from connectors import buena_archive, camt_bank, eml_archive, redact
-from connectors.base import DataMissing
+from connectors.base import DataMissingError
 
 
 def _root_or_skip():
     try:
         return buena_archive.require_root()
-    except DataMissing as exc:
+    except DataMissingError as exc:
         pytest.skip(f"Buena dataset not present locally — {exc}")
 
 
@@ -29,7 +29,7 @@ def test_get_extracted_root_falls_back_to_default() -> None:
 
 
 def test_require_root_raises_for_missing_path(tmp_path) -> None:
-    with pytest.raises(DataMissing):
+    with pytest.raises(DataMissingError):
         buena_archive.require_root(str(tmp_path / "does_not_exist"))
 
 

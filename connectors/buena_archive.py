@@ -49,8 +49,8 @@ from typing import Any
 import structlog
 
 from connectors import camt_bank, eml_archive, pdf_invoice_archive, pdf_letter_archive, redact
-from connectors.base import ConnectorEvent, DataMissing
-from connectors.csv_stammdaten import ColumnMap, EntityType, parse_iso_date
+from connectors.base import ConnectorEvent, DataMissingError
+from connectors.csv_stammdaten import ColumnMap, parse_iso_date
 
 log = structlog.get_logger(__name__)
 
@@ -71,7 +71,7 @@ def require_root(env_value: str | None = None) -> Path:
     """Like :func:`get_extracted_root` but raises if the folder is missing."""
     root = get_extracted_root(env_value)
     if not root.is_dir():
-        raise DataMissing(
+        raise DataMissingError(
             f"Buena dataset not found at {root!s}; set EXTRACTED_ROOT or "
             "place the folder there."
         )
@@ -160,7 +160,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
     stammdaten_dir = root / "stammdaten"
     json_path = stammdaten_dir / "stammdaten.json"
     if not json_path.is_file():
-        raise DataMissing(f"missing stammdaten.json under {stammdaten_dir!s}")
+        raise DataMissingError(f"missing stammdaten.json under {stammdaten_dir!s}")
 
     payload: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
 

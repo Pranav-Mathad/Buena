@@ -81,11 +81,6 @@ async def test_ingest_inserts_real_buena_eml() -> None:
     """Calling _ingest with real .eml bytes lands a routable event."""
     eml_path = await _setup_or_skip()
     raw = eml_path.read_bytes()
-
-    import email  # noqa: PLC0415
-
-    parsed = email.message_from_bytes(raw)
-    message_id = parsed.get("Message-ID", f"test-{eml_path.stem}").strip("<>").strip()
     # Insert with a unique source_ref to keep the test self-contained.
     test_ref = f"test-imap-{eml_path.stem}"
 

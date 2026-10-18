@@ -23,6 +23,11 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Importing the constraints package registers every constraint in
+# the validator's REGISTRY at module load. The validator only uses
+# whatever is registered — silent omission is the failure mode we'd
+# never want, so this import is non-optional.
+import backend.pipeline.constraints  # noqa: F401
 from backend.db.session import get_sessionmaker
 from backend.pipeline.applier import apply as apply_plan
 from backend.pipeline.applier import apply_uncertainties
@@ -39,12 +44,6 @@ from backend.pipeline.validator import (
     validate,
 )
 from backend.services.llm import LLMNotConfiguredError, LLMUnavailableError
-
-# Importing the constraints package registers every constraint in
-# the validator's REGISTRY at module load. The validator only uses
-# whatever is registered — silent omission is the failure mode we'd
-# never want, so this import is non-optional.
-import backend.pipeline.constraints  # noqa: F401
 
 
 def _needs_review_to_uncertainty(rejection: Rejection) -> dict[str, Any]:

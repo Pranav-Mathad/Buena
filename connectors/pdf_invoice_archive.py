@@ -26,7 +26,7 @@ from __future__ import annotations
 import csv
 import hashlib
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +53,7 @@ def _parse_filename_date(name: str) -> datetime | None:
     if len(name) < 8 or not name[:8].isdigit():
         return None
     try:
-        return datetime.strptime(name[:8], "%Y%m%d").replace(tzinfo=timezone.utc)
+        return datetime.strptime(name[:8], "%Y%m%d").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -82,7 +82,7 @@ def parse_one(
     document_type = classify(path.name, head_text, use_llm=use_llm and read_text)
 
     received_at = _parse_filename_date(path.name) or datetime.fromtimestamp(
-        path.stat().st_mtime, tz=timezone.utc
+        path.stat().st_mtime, tz=UTC
     )
 
     relative_path = (
@@ -157,7 +157,7 @@ def walk_index_csv(
             if not filename:
                 continue
             doctype = classify(filename, head_text="", use_llm=False)
-            received_at = _parse_filename_date(filename) or datetime.now(timezone.utc)
+            received_at = _parse_filename_date(filename) or datetime.now(UTC)
             content_sha256 = row.get("content_sha256") or _hash16(filename.encode())
             metadata: dict[str, Any] = {
                 "filename": filename,

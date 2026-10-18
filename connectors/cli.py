@@ -20,10 +20,13 @@ from typing import Any
 import structlog
 
 from backend.logging import configure_logging
-from connectors.base import DataMissing
+from backend.pipeline.materializer import run_materialize_all
 from connectors import cost_ledger as cost_ledger_module
+from connectors.base import DataMissingError
 from connectors.buena_email_loader import (
     LEDGER_LABEL as EMAIL_LEDGER_LABEL,
+)
+from connectors.buena_email_loader import (
     EmailBackfillSummary,
     run_backfill_emails,
 )
@@ -35,7 +38,6 @@ from connectors.buena_event_loader import (
     run_re_route,
 )
 from connectors.buena_loader import load_from_disk
-from backend.pipeline.materializer import run_materialize_all
 
 log = structlog.get_logger("connectors.cli")
 
@@ -74,7 +76,7 @@ def _cmd_load_stammdaten(args: argparse.Namespace) -> int:
 
     try:
         summary = load_from_disk(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
 
@@ -135,7 +137,7 @@ def _cmd_backfill_bank(args: argparse.Namespace) -> int:
         return 2
     try:
         summary = run_backfill_bank(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
     if args.json:
@@ -156,7 +158,7 @@ def _cmd_backfill_invoices(args: argparse.Namespace) -> int:
         return 2
     try:
         summary = run_backfill_invoices(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
     if args.json:
@@ -258,7 +260,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
             limit=args.limit,
             concurrency=args.concurrency,
         )
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
 

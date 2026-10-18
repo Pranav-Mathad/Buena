@@ -12,7 +12,7 @@ All jobs are coalescing + no-overlap.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -28,7 +28,7 @@ log = structlog.get_logger(__name__)
 
 def _now():
     """Return current UTC time for immediate scheduling."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def build_scheduler() -> AsyncIOScheduler:

@@ -18,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.admin import router as admin_router
 from backend.api.buildings import (
     building_router as buildings_router,
+)
+from backend.api.buildings import (
     liegenschaft_router as liegenschaften_router,
 )
 from backend.api.draft_reply import router as draft_reply_router
@@ -31,14 +33,16 @@ from backend.api.signals import router as signals_router
 from backend.api.source_links import router as source_links_router
 from backend.api.sse import (
     portfolio_router as sse_portfolio_router,
+)
+from backend.api.sse import (
     router as sse_router,
 )
 from backend.api.uploads import router as uploads_router
 from backend.api.webhooks import router as webhooks_router
 from backend.config import get_settings
 from backend.logging import configure_logging
-from backend.services.llm import log_configuration as log_llm_configuration
 from backend.scheduler import build_scheduler
+from backend.services.llm import log_configuration as log_llm_configuration
 
 
 @asynccontextmanager

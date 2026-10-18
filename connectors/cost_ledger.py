@@ -45,7 +45,7 @@ class LedgerState:
     exhausted: bool
 
 
-class CostCapExceeded(RuntimeError):
+class CostCapExceededError(RuntimeError):
     """Raised when a charge would push spend beyond ``cap_usd``."""
 
     def __init__(self, label: str, cumulative: Decimal, cap: Decimal) -> None:
@@ -120,7 +120,7 @@ def charge(
     """Add ``amount_usd`` to ``label`` and return the post-charge state.
 
     Raises:
-        CostCapExceeded: if the post-charge cumulative would exceed the
+        CostCapExceededError: if the post-charge cumulative would exceed the
             stored ``cap_usd``. The row's ``hit_at`` is set on first
             breach so future calls also short-circuit.
     """
@@ -161,7 +161,7 @@ def charge(
                 cumulative=str(cumulative),
                 cap=str(cap),
             )
-            raise CostCapExceeded(label, cumulative, cap)
+            raise CostCapExceededError(label, cumulative, cap)
 
         cur.execute(
             """

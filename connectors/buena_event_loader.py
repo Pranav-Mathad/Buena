@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ from backend.pipeline.structured_extractors import (
     stamp_processed,
 )
 from connectors import buena_archive
-from connectors.base import ConnectorEvent, DataMissing
+from connectors.base import ConnectorEvent, DataMissingError
 from connectors.migrations import apply_all as ensure_migrations
 
 log = structlog.get_logger(__name__)
@@ -159,9 +159,8 @@ def _normalise_ts(received: datetime | None) -> datetime | None:
     if received is None:
         return None
     if received.tzinfo is None:
-        from datetime import timezone  # noqa: PLC0415
 
-        return received.replace(tzinfo=timezone.utc)
+        return received.replace(tzinfo=UTC)
     return received
 
 
@@ -418,5 +417,5 @@ __all__ = [
     "run_backfill_bank",
     "run_backfill_invoices",
     "run_re_route",
-    "DataMissing",
+    "DataMissingError",
 ]

@@ -24,7 +24,7 @@ import email
 import hashlib
 import re
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -84,7 +84,7 @@ def _parse_filename_timestamp(name: str) -> datetime | None:
     try:
         return datetime.strptime(
             f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S"
-        ).replace(tzinfo=timezone.utc)
+        ).replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -122,8 +122,8 @@ def _parse_date_header(raw_date: str | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _stable_message_id(headers: dict[str, str]) -> str:
@@ -187,7 +187,7 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
         _parse_date_header(headers["date"]) or _parse_filename_timestamp(path.name)
     )
     if received_at is None:
-        received_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        received_at = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
     relative_path = (
         str(path.relative_to(root)) if root is not None and path.is_relative_to(root)

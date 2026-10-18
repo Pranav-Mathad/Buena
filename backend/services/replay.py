@@ -214,7 +214,7 @@ async def stop_run(run_id: UUID) -> dict[str, Any]:
         if handle.task is not None and not handle.task.done():
             try:
                 await asyncio.wait_for(handle.task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 handle.task.cancel()
     await _set_status(run_id, "stopped")
     await _publish_control(run_id, "replay.stopped", {"reason": "operator"})

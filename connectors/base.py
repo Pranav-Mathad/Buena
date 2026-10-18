@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -66,7 +66,7 @@ class ConnectorEvent:
     raw_content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     property_id: UUID | None = None
-    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     document_type: str | None = None
 
 
@@ -109,5 +109,5 @@ class ConnectorError(RuntimeError):
     """Recoverable connector error. Message is safe to surface to the user."""
 
 
-class DataMissing(ConnectorError):
+class DataMissingError(ConnectorError):
     """The customer dataset is not present at the configured path."""

@@ -8,7 +8,7 @@ widen it when no real lease is imminent (``LEASE_WINDOW_DAYS``).
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 
 import structlog
 from sqlalchemy import text
@@ -36,8 +36,7 @@ def _parse_end_date(value: str) -> date | None:
 
 async def evaluate(session: AsyncSession) -> list[SignalCandidate]:
     """Return one candidate per property with a lease expiring in the window."""
-    today = datetime.now(timezone.utc).date()
-    horizon = today + timedelta(days=LEASE_WINDOW_DAYS)
+    today = datetime.now(UTC).date()
 
     result = await session.execute(
         text(

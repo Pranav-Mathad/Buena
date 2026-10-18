@@ -8,6 +8,7 @@ exercised end-to-end against a real DB row, so cleanup matters.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -108,9 +109,9 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
 
 async def test_cache_key_stable_for_same_inputs() -> None:
     """Identical timestamps → identical cache key."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ts = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
     a = onboarding._cache_key(ts, ts, ts)
     b = onboarding._cache_key(ts, ts, ts)
     assert a == b
@@ -118,10 +119,10 @@ async def test_cache_key_stable_for_same_inputs() -> None:
 
 async def test_cache_key_changes_when_any_timestamp_moves() -> None:
     """A shift in any of the three timestamps changes the cache key."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ts = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
-    later = datetime(2026, 4, 1, 12, 0, 1, tzinfo=timezone.utc)
+    ts = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+    later = datetime(2026, 4, 1, 12, 0, 1, tzinfo=UTC)
     base = onboarding._cache_key(ts, ts, ts)
     assert onboarding._cache_key(later, ts, ts) != base
     assert onboarding._cache_key(ts, later, ts) != base

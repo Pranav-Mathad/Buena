@@ -31,7 +31,6 @@ from backend.pipeline.lexicon import (
     TENANT_CHANGE,
     WATER,
     WINDOW_DOOR,
-    Topic,
     categorize,
 )
 from backend.services.lang import detect_language

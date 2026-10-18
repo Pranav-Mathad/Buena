@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -56,7 +56,7 @@ def test_parse_one_uses_filename_timestamp_when_date_missing(tmp_path: Path) -> 
     event = eml_archive.parse_one(eml, root=tmp_path)
     # filename has 09:00:00 UTC; tolerate parser dropping seconds
     assert event.received_at.tzinfo is not None
-    assert event.received_at.astimezone(timezone.utc).hour == 9
+    assert event.received_at.astimezone(UTC).hour == 9
 
 
 def test_walk_directory_yields_one_per_eml(tmp_path: Path) -> None:

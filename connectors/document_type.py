@@ -21,7 +21,7 @@ from typing import Final, Literal, get_args
 import structlog
 
 from connectors import cost_ledger
-from connectors.cost_ledger import CostCapExceeded
+from connectors.cost_ledger import CostCapExceededError
 
 log = structlog.get_logger(__name__)
 
@@ -100,7 +100,7 @@ def _classify_with_gemini(
     cost_ledger.ensure_label(DOCTYPE_LEDGER_LABEL, sub_cap_usd)
     try:
         cost_ledger.charge(DOCTYPE_LEDGER_LABEL, ESTIMATED_CLASSIFY_COST_USD)
-    except CostCapExceeded as exc:
+    except CostCapExceededError as exc:
         log.warning("doctype.cap_exhausted", filename=filename, error=str(exc))
         return "other"
 
@@ -109,8 +109,8 @@ def _classify_with_gemini(
     # does not go through the LLM provider interface; without a Gemini key the
     # filename heuristics are the only signal.
     try:
-        from backend.services.llm.gemini import configure_client  # noqa: PLC0415
         from backend.services.llm.base import LLMNotConfiguredError  # noqa: PLC0415
+        from backend.services.llm.gemini import configure_client  # noqa: PLC0415
 
         genai = configure_client()
     except LLMNotConfiguredError as exc:

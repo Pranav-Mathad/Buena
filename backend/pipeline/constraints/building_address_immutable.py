@@ -21,7 +21,6 @@ from backend.pipeline.validator import (
     values_differ,
 )
 
-
 _AUTHORITATIVE_DOC_TYPES = {
     "structural_permit",
     "vermessungsprotokoll",

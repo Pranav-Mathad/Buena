@@ -12,9 +12,8 @@ the dev Postgres on :5433.
 
 from __future__ import annotations
 
-import structlog
-
 import psycopg2
+import structlog
 
 from backend.config import get_settings
 

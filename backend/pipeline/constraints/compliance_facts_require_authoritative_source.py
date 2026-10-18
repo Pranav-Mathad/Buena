@@ -24,7 +24,6 @@ from backend.pipeline.validator import (
     register,
 )
 
-
 _AUTHORITATIVE_PDF_TYPES: frozenset[str] = frozenset(
     {"structural_permit", "vermessungsprotokoll", "kaufvertrag"}
 )

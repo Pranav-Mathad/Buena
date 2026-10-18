@@ -27,7 +27,6 @@ import textwrap
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # Confidence buckets for the calibration curve.
 CALIBRATION_BUCKETS: tuple[tuple[float, float], ...] = (
     (0.0, 0.5),

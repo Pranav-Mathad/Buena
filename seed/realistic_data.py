@@ -13,10 +13,10 @@ spans the trailing six months relative to the demo.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-UTC = timezone.utc
+UTC = UTC
 DEMO_NOW: datetime = datetime(2026, 4, 24, 12, 0, 0, tzinfo=UTC)
 
 

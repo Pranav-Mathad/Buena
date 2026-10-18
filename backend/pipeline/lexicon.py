@@ -30,7 +30,7 @@ class Topic:
 
     def matches(self, text: str, *, lang: str | None = None) -> str | None:
         """Return the matched substring, or ``None`` if neither pattern fires."""
-        for code, regex in self._dispatch(lang):
+        for _code, regex in self._dispatch(lang):
             m = regex.search(text)
             if m:
                 return m.group(0)
