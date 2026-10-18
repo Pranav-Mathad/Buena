@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { compareQuestions, properties as mockProperties } from "@/lib/data";
+import { compareQuestions } from "@/lib/data";
 import {
   fetchProperties,
   fetchPropertyInbox,
-  HERO_PROPERTY_ID,
 } from "@/lib/api";
 import { Card } from "@/components/ui-bits";
 import { AskPanel } from "@/components/AskPanel";
@@ -54,11 +53,9 @@ const Compare = () => {
     queryFn: fetchProperties,
     staleTime: 30_000,
   });
-  const properties = liveProperties ?? mockProperties;
-  const heroId =
-    properties.find((p) => p.isHero)?.id ?? HERO_PROPERTY_ID;
-  const heroName =
-    properties.find((p) => p.isHero)?.name ?? "Musterstraße 26 WE 29";
+  const featured = liveProperties?.find((p) => p.isHero);
+  const heroId = featured?.id ?? "";
+  const heroName = featured?.name ?? "";
 
   const keyword = useMemo(() => extractKeyword(question), [question]);
 

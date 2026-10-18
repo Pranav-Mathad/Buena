@@ -1,16 +1,87 @@
-import type { Property, Section } from "./data";
-import {
-  parseBriefingMarkdown,
-  stripInlineMarkdown,
-  type BriefingItem,
-} from "./text";
+// Typed client for the Keystone REST API.
+//
+// Every endpoint goes through `request`, which prefixes API_BASE_URL and turns
+// failures into typed errors: `NetworkError` when the API cannot be reached,
+// `ApiError` (with status and the server's `detail`) for non-2xx responses.
+// DTO types mirror the backend's snake_case JSON; each fetcher maps them to
+// the camelCase shapes the UI uses.
 
-export const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
-  "http://localhost:8080";
+import { API_BASE_URL } from "./config";
+import { parseBriefingMarkdown, stripInlineMarkdown, type BriefingItem } from "./text";
+import type { Property, Section } from "./types";
 
-export const HERO_PROPERTY_ID =
-  "509393da-6806-49ef-9e59-3da0213008cd";
+export { API_BASE_URL };
+
+export class ApiError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly status: number,
+    readonly detail: string | null,
+  ) {
+    super(`${method} ${path} failed with ${status}${detail ? `: ${detail}` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
+export class NetworkError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    cause: unknown,
+  ) {
+    super(`Could not reach the API (${method} ${path})`, { cause });
+    this.name = "NetworkError";
+  }
+}
+
+// FastAPI errors carry {"detail": "..."} or a list of validation issues.
+async function readDetail(res: Response): Promise<string | null> {
+  const body = await res.text().catch(() => "");
+  if (!body) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object" && "detail" in parsed) {
+      const detail = (parsed as { detail: unknown }).detail;
+      return typeof detail === "string" ? detail : JSON.stringify(detail);
+    }
+  } catch {
+    // Not JSON; fall through to the raw body.
+  }
+  return body.slice(0, 300);
+}
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, init);
+  } catch (err) {
+    throw new NetworkError(method, path, err);
+  }
+  if (!res.ok) {
+    throw new ApiError(method, path, res.status, await readDetail(res));
+  }
+  return res;
+}
+
+/** GET (or any method via `init`) and parse the JSON body as `T`. */
+export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await request(path, init);
+  return (await res.json()) as T;
+}
+
+async function sendJson<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
+  return fetchJson<T>(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function fetchText(path: string): Promise<string> {
+  return (await request(path)).text();
+}
 
 type PropertySummaryDTO = {
   id: string;
@@ -22,17 +93,11 @@ type PropertySummaryDTO = {
   facts: number;
   needs_review: number;
   open_issues: number;
+  is_hero: boolean;
 };
 
-// Map the backend's PropertySummary into the UI's Property type.
 export async function fetchProperties(): Promise<Property[]> {
-  const res = await fetch(`${API_BASE_URL}/properties`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /properties failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const rows = (await res.json()) as PropertySummaryDTO[];
+  const rows = await fetchJson<PropertySummaryDTO[]>("/properties");
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -44,7 +109,7 @@ export async function fetchProperties(): Promise<Property[]> {
     },
     status: "active" as const,
     openIssues: r.open_issues,
-    isHero: r.id === HERO_PROPERTY_ID,
+    isHero: r.is_hero,
   }));
 }
 
@@ -98,13 +163,7 @@ type OnboardingDTO = {
 };
 
 export async function fetchOnboarding(id: string): Promise<OnboardingResponse> {
-  const res = await fetch(`${API_BASE_URL}/admin/properties/${id}/onboarding`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /admin/properties/${id}/onboarding failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as OnboardingDTO;
+  const dto = await fetchJson<OnboardingDTO>(`/admin/properties/${id}/onboarding`);
   return {
     propertyId: dto.property_id,
     items: parseBriefingMarkdown(dto.markdown),
@@ -140,20 +199,7 @@ export async function fetchAsk(
   propertyId: string,
   question: string,
 ): Promise<AskResult> {
-  const res = await fetch(
-    `${API_BASE_URL}/properties/${propertyId}/ask`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      `POST /properties/${propertyId}/ask failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as AskDTO;
+  const dto = await sendJson<AskDTO>("POST", `/properties/${propertyId}/ask`, { question });
   const status =
     dto.status === "answered" ||
     dto.status === "insufficient_context" ||
@@ -225,24 +271,14 @@ type DraftReplyDTO = {
 export async function fetchDraftReply(
   input: DraftReplyInput,
 ): Promise<DraftReplyResult> {
-  const res = await fetch(`${API_BASE_URL}/draft-reply`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      property_id: input.propertyId,
-      property_name: input.propertyName,
-      channel: input.channel,
-      tone: input.tone,
-      subject: input.subject,
-      body: input.body,
-    }),
+  const dto = await sendJson<DraftReplyDTO>("POST", "/draft-reply", {
+    property_id: input.propertyId,
+    property_name: input.propertyName,
+    channel: input.channel,
+    tone: input.tone,
+    subject: input.subject,
+    body: input.body,
   });
-  if (!res.ok) {
-    throw new Error(
-      `POST /draft-reply failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as DraftReplyDTO;
   return {
     subject: stripInlineMarkdown(dto.subject),
     body: stripInlineMarkdown(dto.body),
@@ -280,13 +316,7 @@ type PortfolioActivityDTO = {
 export async function fetchPortfolioActivity(
   limit = 8,
 ): Promise<PortfolioActivity[]> {
-  const res = await fetch(`${API_BASE_URL}/portfolio/activity?limit=${limit}`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /portfolio/activity failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const rows = (await res.json()) as PortfolioActivityDTO[];
+  const rows = await fetchJson<PortfolioActivityDTO[]>(`/portfolio/activity?limit=${limit}`);
   return rows.map((r) => ({
     eventId: r.event_id,
     receivedAt: r.received_at,
@@ -333,13 +363,7 @@ type PortfolioSummaryDTO = {
 };
 
 export async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
-  const res = await fetch(`${API_BASE_URL}/portfolio/summary`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /portfolio/summary failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as PortfolioSummaryDTO;
+  const dto = await fetchJson<PortfolioSummaryDTO>("/portfolio/summary");
   return {
     properties: dto.properties,
     pendingSignals: dto.pending_signals,
@@ -375,15 +399,7 @@ type InboxSignalDTO = {
 export async function fetchPendingSignals(
   limit = 50,
 ): Promise<InboxSignal[]> {
-  const res = await fetch(
-    `${API_BASE_URL}/signals?status=pending&limit=${limit}`,
-  );
-  if (!res.ok) {
-    throw new Error(
-      `GET /signals failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const rows = (await res.json()) as InboxSignalDTO[];
+  const rows = await fetchJson<InboxSignalDTO[]>(`/signals?status=pending&limit=${limit}`);
   return rows.map((r) => ({
     id: r.id,
     propertyId: r.property_id,
@@ -427,15 +443,9 @@ type InboxUncertaintyDTO = {
 export async function fetchOpenUncertainties(
   limit = 50,
 ): Promise<InboxUncertainty[]> {
-  const res = await fetch(
-    `${API_BASE_URL}/admin/uncertainties?status=open&limit=${limit}`,
+  const rows = await fetchJson<InboxUncertaintyDTO[]>(
+    `/admin/uncertainties?status=open&limit=${limit}`,
   );
-  if (!res.ok) {
-    throw new Error(
-      `GET /admin/uncertainties failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const rows = (await res.json()) as InboxUncertaintyDTO[];
   return rows.map((r) => ({
     uncertaintyId: r.uncertainty_id,
     eventId: r.event_id,
@@ -484,15 +494,7 @@ type InboxRejectionDTO = {
 export async function fetchPendingRejections(
   limit = 50,
 ): Promise<InboxRejection[]> {
-  const res = await fetch(
-    `${API_BASE_URL}/admin/rejected?status=pending&limit=${limit}`,
-  );
-  if (!res.ok) {
-    throw new Error(
-      `GET /admin/rejected failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const rows = (await res.json()) as InboxRejectionDTO[];
+  const rows = await fetchJson<InboxRejectionDTO[]>(`/admin/rejected?status=pending&limit=${limit}`);
   return rows.map((r) => ({
     rejectionId: r.rejection_id,
     eventId: r.event_id,
@@ -548,15 +550,7 @@ export async function fetchPropertyInbox(
 ): Promise<InboxView> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (q && q.trim()) params.set("q", q.trim());
-  const res = await fetch(
-    `${API_BASE_URL}/properties/${propertyId}/inbox?${params.toString()}`,
-  );
-  if (!res.ok) {
-    throw new Error(
-      `GET /properties/${propertyId}/inbox failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as InboxResponseDTO;
+  const dto = await fetchJson<InboxResponseDTO>(`/properties/${propertyId}/inbox?${params}`);
   return {
     rows: dto.rows.map((r) => ({
       eventId: r.event_id,
@@ -573,23 +567,11 @@ export async function fetchPropertyInbox(
 }
 
 export async function fetchEventRaw(eventId: string): Promise<string> {
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/raw`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /events/${eventId}/raw failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  return await res.text();
+  return fetchText(`/events/${eventId}/raw`);
 }
 
 export async function fetchPropertyFile(id: string): Promise<PropertyFile> {
-  const res = await fetch(`${API_BASE_URL}/properties/${id}/file`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /properties/${id}/file failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  const dto = (await res.json()) as PropertyFileDTO;
+  const dto = await fetchJson<PropertyFileDTO>(`/properties/${id}/file`);
   return {
     id: dto.id,
     name: dto.name,
@@ -647,21 +629,10 @@ export async function editFact(
   value: string,
   editedBy = "operator",
 ): Promise<FactEditResult> {
-  const res = await fetch(
-    `${API_BASE_URL}/properties/${propertyId}/facts/${factId}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value, edited_by: editedBy }),
-    },
-  );
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(
-      `PATCH /properties/${propertyId}/facts/${factId} failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`,
-    );
-  }
-  const dto = (await res.json()) as FactEditDTO;
+  const dto = await sendJson<FactEditDTO>("PATCH", `/properties/${propertyId}/facts/${factId}`, {
+    value,
+    edited_by: editedBy,
+  });
   return {
     factId: dto.fact_id,
     supersededFactId: dto.superseded_fact_id,
@@ -678,17 +649,8 @@ export type MarkdownDoc = {
   body: string;
 };
 
-// GET the canonical markdown for a property — rendered live from
-// facts, stammdaten, and uncertainties on every request.
-export async function fetchPropertyMarkdown(
-  id: string,
-): Promise<MarkdownDoc> {
-  const res = await fetch(`${API_BASE_URL}/properties/${id}/markdown`);
-  if (!res.ok) {
-    throw new Error(
-      `GET /properties/${id}/markdown failed with ${res.status} ${res.statusText}`,
-    );
-  }
-  return { body: await res.text() };
+// The property's canonical markdown (master data, sourced facts, open
+// uncertainties), served from the materialized file when available.
+export async function fetchPropertyMarkdown(id: string): Promise<MarkdownDoc> {
+  return { body: await fetchText(`/properties/${id}/markdown`) };
 }
-

@@ -4,7 +4,7 @@ import {
   type AskResponse,
   suggestedQuestions,
 } from "@/lib/data";
-import { fetchAsk, fetchProperties, HERO_PROPERTY_ID, type AskResult } from "@/lib/api";
+import { fetchAsk, fetchProperties, type AskResult } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { Card, PrimaryButton } from "./ui-bits";
 import { AlertTriangle, ExternalLink, HelpCircle } from "lucide-react";
@@ -96,7 +96,7 @@ export const AskPanel = ({
   });
   const heroProperty = liveProperties?.find((p) => p.isHero);
 
-  const targetPropertyId = propertyId ?? HERO_PROPERTY_ID;
+  const targetPropertyId = propertyId ?? heroProperty?.id;
 
   // Sync when preset changes (compare view)
   useMemo(() => {
@@ -110,7 +110,7 @@ export const AskPanel = ({
   // surface the failure honestly so the user knows the answer they
   // see is real or not at all.
   useEffect(() => {
-    if (!submitted || unavailable) {
+    if (!submitted || unavailable || !targetPropertyId) {
       setResponse(null);
       setErrorMsg(null);
       return;

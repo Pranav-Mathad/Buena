@@ -1,14 +1,9 @@
+import type { Fact, Property, Section } from "./types";
+
+export type { Fact, Property, Section };
+
 export const API_BASE_URL = "https://api.keystone.demo";
 
-export type Property = {
-  id: string;
-  name: string;
-  address: string;
-  stats: { events: number; facts: number; needsReview: number };
-  status: "active";
-  openIssues: number;
-  isHero?: boolean;
-};
 
 export const properties: Property[] = [
   {
@@ -46,25 +41,7 @@ export const properties: Property[] = [
   },
 ];
 
-export type Fact = {
-  value: string;
-  source: string;
-  date: string;
-  dateIso?: string;
-  urgent?: boolean;
-  reason?: string;
-  eventId?: string;
-  factId?: string;
-  humanEdited?: boolean;
-  editedBy?: string | null;
-};
 
-export type Section = {
-  title: string;
-  facts: Fact[];
-  isUncertain?: boolean;
-  isContext?: boolean;
-};
 
 export const propertyFile = {
   id: "509393da-6806-49ef-9e59-3da0213008cd",
