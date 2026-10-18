@@ -42,6 +42,29 @@ pseudonymisation and are kept unchanged.
 for the old address and for `DE` + 20 digits outside `Extracted_demo/` guards
 against regressions.
 
+## 2026-10-17: plain PostgreSQL, no pgvector
+
+**Context.** The schema required the `vector` extension and declared
+`vector(768)` embedding columns on `events` and `facts`, the project depended
+on the `pgvector` Python package, and an embedding-model setting existed.
+Nothing generated, stored or queried embeddings. The dependency forced a
+special Postgres image and made the schema fail on a stock server.
+
+**Decision.** Remove the extension requirement and the columns from the base
+schema, drop the columns from existing databases (migration
+`0014_drop_unused_embeddings`), and remove the Python dependency and the
+`GEMINI_EMBED_MODEL` setting. Compose uses `postgres:16` with a volume named
+for the major version, since a data directory from one major version does not
+start under another. The extension itself is not dropped from existing
+databases, because that can need superuser rights and costs nothing to leave.
+
+**Reason.** Declared-but-unused infrastructure misleads readers about what the
+system does and adds operational requirements for no benefit. Semantic search
+is listed as future work instead.
+
+**Revisit if.** Semantic search over events is built; add the extension,
+column and index in the same change as the code that fills and queries them.
+
 ## 2026-10-17: Ask, reply drafting and the semantic check use the configured provider
 
 **Context.** These three features built their own HTTP requests to the Pioneer
@@ -900,6 +923,8 @@ tag would have failed on `docker compose up`.
 Nothing reads or writes the embedding columns this extension was needed for,
 so dropping the extension is the likely next step.
 
+**Status.** Superseded on 2026-10-17 by "plain PostgreSQL, no pgvector".
+
 ## 2026-04-24: Postgres published on host port 5433
 
 **Context.** Development machines often run a local Postgres on 5432, so
@@ -1075,6 +1100,9 @@ more than it does.
 
 **Revisit if.** An embedding pipeline exists; the endpoint shape can stay while
 the query changes to a vector search.
+
+**Status.** The unused embedding columns were dropped on 2026-10-17; semantic
+search would add them back together with the pipeline that fills them.
 
 ## 2026-04-24: externally proposed actions are always pending
 

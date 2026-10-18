@@ -50,7 +50,6 @@ class Settings(BaseSettings):
     # Explicit model versions keep eval runs comparable over time.
     gemini_flash_model: str = Field(default="gemini-2.5-flash")
     gemini_pro_model: str = Field(default="gemini-2.5-pro")
-    gemini_embed_model: str = Field(default="text-embedding-004")
     pioneer_api_key: str = Field(default="")
     pioneer_model: str = Field(default="claude-sonnet-4-6")
 

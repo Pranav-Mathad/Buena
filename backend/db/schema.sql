@@ -1,5 +1,3 @@
--- Enable pgvector
-CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE buildings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,7 +66,6 @@ CREATE TABLE events (
   received_at TIMESTAMPTZ DEFAULT now(),
   processed_at TIMESTAMPTZ,
   processing_error TEXT,
-  embedding vector(768),
   UNIQUE (source, source_ref)
 );
 CREATE INDEX idx_events_unprocessed ON events (received_at) WHERE processed_at IS NULL;
@@ -85,8 +82,7 @@ CREATE TABLE facts (
   valid_from TIMESTAMPTZ DEFAULT now(),
   valid_to TIMESTAMPTZ,
   superseded_by UUID REFERENCES facts(id),
-  created_at TIMESTAMPTZ DEFAULT now(),
-  embedding vector(768)
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX idx_facts_current ON facts (property_id, section, field) WHERE superseded_by IS NULL;
 

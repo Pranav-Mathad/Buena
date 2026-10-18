@@ -412,6 +412,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
           ON signals (natural_key, resolved_at DESC);
         """,
     ),
+    (
+        "0014_drop_unused_embeddings",
+        """
+        -- The base schema once declared vector(768) embedding columns on
+        -- events and facts. Nothing ever read or wrote them, and they tied
+        -- the database to the pgvector extension. Dropping them lets the
+        -- app run on plain PostgreSQL. The extension itself is left alone:
+        -- dropping it can need superuser rights on managed databases, and an
+        -- unused extension costs nothing.
+        ALTER TABLE events DROP COLUMN IF EXISTS embedding;
+        ALTER TABLE facts DROP COLUMN IF EXISTS embedding;
+        """,
+    ),
 ]
 
 

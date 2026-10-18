@@ -48,8 +48,9 @@ queue and holds the LLM spend ledger.
 ## Data model
 
 The base schema is `backend/db/schema.sql`; later additions are additive
-migrations in `connectors/migrations.py` (`0001` to `0013`), applied in order
-and safe to re-run.
+migrations in `connectors/migrations.py` (`0001` to `0014`), applied in order
+and safe to re-run. Everything runs on plain PostgreSQL 16; no extensions are
+required.
 
 ### Events
 
@@ -448,10 +449,10 @@ data rules are enforced. `KEYSTONE_BASE_URL` points it at any running backend.
 - **The live worker routes to properties only.** Three-tier routing
   (`route_text_event`) is used by the email import; an event arriving through
   the queue either matches a property or is marked unrouted.
-- **Unused embedding columns.** The schema requires the `pgvector` extension
-  and declares `vector(768)` columns on `events` and `facts` that nothing
-  reads or writes. Search is keyword-based. Semantic search over events is
-  future work.
+- **No semantic search.** Property search (and the MCP `search_properties`
+  tool) is keyword matching. Semantic search over events and facts is future
+  work; it would bring back an embedding column and an index, populated by the
+  worker.
 - **IMAP transport is untested offline.** Parsing and idempotent ingestion of
   real `.eml` files are tested; the connect, search and fetch loop against a
   live server is not.
