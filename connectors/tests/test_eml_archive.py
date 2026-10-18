@@ -1,4 +1,4 @@
-"""Tests for the .eml walker — uses fabricated EMLs in a tmp dir."""
+"""Tests for the .eml walker; uses fabricated EMLs in a tmp dir."""
 
 from __future__ import annotations
 

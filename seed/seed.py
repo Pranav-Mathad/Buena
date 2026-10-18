@@ -1,4 +1,4 @@
-"""Idempotent seeder for the Keystone demo dataset.
+"""Idempotent seeder for the Keystone sample dataset.
 
 Run as ``python -m seed.seed``. Safe to re-run: existing records are matched on
 natural keys (email, address, (source, source_ref), …) and left untouched.
@@ -76,8 +76,8 @@ def _upsert_liegenschaft(
 ) -> str:
     """Insert a Liegenschaft (WEG) row keyed on ``buena_liegenschaft_id``.
 
-    Phase 8.1 introduces a tier above buildings: one Liegenschaft owns
-    N Häuser. The loader passes the customer's stable ID; later events
+    A Liegenschaft is the ownership tier above buildings: one
+    Liegenschaft owns N Häuser. The loader passes the customer's stable ID; later events
     that route to a WEG attach to the resulting UUID.
     """
     if buena_liegenschaft_id:
@@ -171,7 +171,7 @@ def _upsert_property(
 ) -> str:
     """Insert a property if absent; return the UUID as a string.
 
-    When ``prop.metadata`` is non-empty (Phase 8 Buena loader path) the
+    When ``prop.metadata`` is non-empty (the Buena loader path) the
     JSONB column carries the richer payload; otherwise the legacy
     ``{"seed_key": prop.key}`` shape is preserved so the hand-crafted
     Berliner seed continues to work bit-identically.
@@ -205,7 +205,7 @@ def _upsert_property(
 def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
     """Insert a tenant if absent; return the UUID as a string.
 
-    When ``tenant.metadata`` is non-empty (Phase 8 Buena loader path)
+    When ``tenant.metadata`` is non-empty (the Buena loader path)
     the JSONB column carries it; the original Berliner seed leaves it
     empty and the column defaults to ``'{}'``.
     """
@@ -272,7 +272,7 @@ def _upsert_event(
     """Insert an event keyed by (source, source_ref); return UUID as string.
 
     Seed events are stamped ``processed_at = received_at`` because their facts
-    were authored by hand — we don't want the live pipeline to re-extract them
+    were authored by hand; we don't want the live pipeline to re-extract them
     on startup and produce noisy rule-based duplicates.
     """
     cur.execute(
@@ -440,12 +440,12 @@ def seed(connection_url: str) -> dict[str, Any]:
 
 
 def main() -> int:
-    """CLI entry point — returns a POSIX exit code."""
+    """CLI entry point; returns a POSIX exit code."""
     configure_logging()
     settings = get_settings()
     try:
         seed(settings.database_url_sync)
-    except Exception:  # noqa: BLE001 — surface any failure clearly
+    except Exception:  # noqa: BLE001 (surface any failure clearly)
         log.exception("seed.failed")
         return 1
     return 0

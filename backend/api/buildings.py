@@ -1,10 +1,10 @@
 """Buildings + Liegenschaften (WEG) read API.
 
-Phase 8.1 surfaced the two new ownership tiers introduced in
-``connectors.migrations`` 0002. Both endpoints render the same
+Serves the two ownership tiers above properties (buildings and
+Liegenschaften), introduced in ``connectors.migrations`` 0002. Both endpoints render the same
 markdown shape the property view uses, with cross-tier context blocks.
 
-Phase 12 — markdown reads now hit the materialized ``building_files``
+Markdown reads hit the materialized ``building_files``
 and ``liegenschaft_files`` cache first (populated by the applier hook
 in :mod:`backend.pipeline.materializer`); live rendering remains as
 the fallback path. Per-tier ``/file`` endpoints expose the full row

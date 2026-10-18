@@ -1,9 +1,9 @@
-"""Adapt Buena Stammdaten dicts onto Phase 0's seed dataclasses + upserts.
+"""Adapt Buena Stammdaten dicts onto the seed dataclasses + upserts.
 
 This module is the bridge between :mod:`connectors.buena_archive` (which
 produces redacted dicts) and :mod:`seed.seed` (which owns the canonical
 ``_upsert_*`` helpers). Reusing the existing helpers keeps a single
-ingestion path for **all** customer master data — Berliner 4B and the
+ingestion path for **all** customer master data: Berliner 4B and the
 Buena dataset travel through the same SQL.
 
 Public entry point: :func:`load_stammdaten` runs the full upsert
@@ -202,14 +202,14 @@ def load_stammdaten(
     with psycopg2.connect(url) as conn:
         conn.autocommit = False
         with conn.cursor() as cur:
-            # Phase 0 schema is the contract; the seed module already knows
+            # The base schema is the contract; the seed module already knows
             # how to apply it idempotently. Re-using that here ensures the
             # canonical tables exist on a fresh DB before our additive
             # migrations + Buena rows land.
             if not _schema_applied(cur):
                 _apply_schema(cur)
 
-            # ---- Liegenschaften (WEG) — must come before buildings so we
+            # ---- Liegenschaften (WEG): must come before buildings so we
             # can stamp building.liegenschaft_id during the building upsert.
             for raw in payload.liegenschaften:
                 lie_key = str(raw.get("buena_liegenschaft_id") or "")
@@ -387,7 +387,7 @@ def load_from_disk(
     extracted_root: str | None = None,
     connection_url: str | None = None,
 ) -> LoadSummary:
-    """Convenience wrapper — read from disk + load. Used by the CLI."""
+    """Convenience wrapper: read from disk + load. Used by the CLI."""
     root = buena_archive.require_root(extracted_root)
     payload = buena_archive.load_stammdaten(root)
     return load_stammdaten(payload, connection_url=connection_url)

@@ -1,15 +1,14 @@
 """Apply a :class:`DiffPlan` to the facts table.
 
 Writes new fact rows and flags any superseded predecessor. The fact table's
-``superseded_by`` column points at the replacement row (bottom-up chain) —
+``superseded_by`` column points at the replacement row (bottom-up chain);
 this is what :func:`render_markdown` relies on via ``superseded_by IS NULL``.
 
-Phase 9 Step 9.1 expands the applier surface: alongside committing
-facts, it persists a parallel list of uncertainty items (from the
-extractor's ``uncertain[]`` field, the confidence-floor demotion path,
-and the validator's ``needs_review`` verdicts). Both writes live
-in the same transaction so a row in ``uncertainty_events`` is always
-linked to a real ``events`` row.
+Alongside committing facts, the applier also persists a parallel list
+of uncertainty items (from the extractor's ``uncertain[]`` field, the
+confidence-floor demotion path, and the validator's ``needs_review``
+verdicts). Both writes live in the same transaction so a row in
+``uncertainty_events`` is always linked to a real ``events`` row.
 """
 
 from __future__ import annotations
@@ -37,8 +36,8 @@ async def apply(
 ) -> int:
     """Persist every decision in ``plan``; return how many facts were written.
 
-    Phase 12 — after the write loop, fan out a materialization update
-    for the property scope. The propagation runs in the same session
+    After the write loop, fan out a materialization update for the
+    property scope. The propagation runs in the same session
     so it shares this transaction: if rendering fails, every fact
     write rolls back too, which preserves the "files are never stale
     relative to facts" invariant.
@@ -82,7 +81,7 @@ async def apply(
 
     if written > 0:
         # Trigger summary defaults to the first decision's value when the
-        # caller didn't pass one — gives a human-readable label on the
+        # caller didn't pass one. That gives a human-readable label on the
         # ``/property_files/changes`` feed without leaking too much.
         summary = trigger_summary
         if summary is None and plan.decisions:

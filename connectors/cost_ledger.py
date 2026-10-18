@@ -6,7 +6,7 @@ entire backfill, not just one run. Hitting the cap mid-run sets
 ``hit_at`` and aborts the process cleanly; subsequent invocations read
 the same row and abort *immediately* before issuing any LLM calls.
 
-Reset is intentional and friction-gated — see
+Reset is intentional and friction-gated; see
 :func:`reset_label` and the ``--reset-cost-ledger`` CLI flag, which
 prompts for ``y/N``.
 
@@ -18,7 +18,7 @@ Wiring:
   against the cap and short-circuits when exceeded.
 - For best-fit accounting, the caller can call :func:`record_actual`
   after the response lands to reconcile against measured token usage.
-  Phase 8 keeps this simple: estimated cost == actual cost.
+  Currently the two are the same: estimated cost == actual cost.
 """
 
 from __future__ import annotations

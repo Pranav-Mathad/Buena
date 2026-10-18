@@ -1,4 +1,4 @@
-"""Async event worker — the critical path.
+"""Async event worker: the critical path.
 
 One tick of :func:`process_one` does:
 
@@ -9,8 +9,8 @@ One tick of :func:`process_one` does:
 5. Stamp ``processed_at``, commit, publish an SSE notification.
 
 The scheduler calls :func:`process_batch` on a tight loop. Postgres is the
-queue (Part III: no Redis, no Kafka) — SKIP LOCKED keeps concurrent workers
-safe if we ever scale horizontally.
+queue; there is no separate broker such as Redis or Kafka. SKIP LOCKED keeps
+concurrent workers safe if we ever scale horizontally.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importing the constraints package registers every constraint in
 # the validator's REGISTRY at module load. The validator only uses
-# whatever is registered — silent omission is the failure mode we'd
+# whatever is registered; silent omission is the failure mode we'd
 # never want, so this import is non-optional.
 import backend.pipeline.constraints  # noqa: F401
 from backend.db.session import get_sessionmaker
@@ -50,7 +50,7 @@ def _needs_review_to_uncertainty(rejection: Rejection) -> dict[str, Any]:
     """Map a validator ``needs_review`` Rejection into an uncertainty item.
 
     The constraint emitted "this proposal *might* be valid but needs a
-    human to confirm" — that's exactly the uncertainty inbox semantic,
+    human to confirm"; that's exactly the uncertainty inbox semantic,
     so we land it there instead of in ``rejected_updates``.
     """
     return {
@@ -123,7 +123,7 @@ async def _load_event_stammdaten(
     The validator's strict-mode constraints (floor count, address,
     year built, square meters) compare proposed values against this
     snapshot, so an email claim that contradicts master data gets
-    rejected even when no fact row exists yet. Empty dicts are safe —
+    rejected even when no fact row exists yet. Empty dicts are safe:
     constraints fall back to legacy "current is None → seed" behaviour
     when stammdaten is missing.
     """
@@ -156,9 +156,9 @@ async def _load_event_stammdaten(
         building_snap["address"] = row.building_address
     if row.building_year_built is not None:
         building_snap["year_built"] = row.building_year_built
-    # Buena's loader stores floor count as ``etagen`` in
-    # buildings.metadata; the legacy seed path uses ``floors``. Read
-    # both so either ingest path works.
+    # The sample-dataset loader (``connectors.buena_loader``) stores
+    # floor count as ``etagen`` in buildings.metadata; the legacy seed
+    # path uses ``floors``. Read both so either ingest path works.
     floors = b_meta.get("etagen") or b_meta.get("floors")
     if floors is not None:
         building_snap["floor_count"] = floors
@@ -409,7 +409,7 @@ async def _process_event_body(session: AsyncSession, event: dict[str, Any]) -> U
                     "conf": max(0.5, min(0.95, 0.7 + len(plan.decisions) * 0.05)),
                 },
             )
-            # Phase 12 — re-render after the activity row lands so the
+            # Re-render after the activity row lands so the
             # cached markdown's "Activity" section reflects the just-
             # processed event. Cheap when the applier already
             # propagated for this property in the same transaction
@@ -446,7 +446,7 @@ async def _process_event_body(session: AsyncSession, event: dict[str, Any]) -> U
             },
         )
         return event_id
-    except Exception as exc:  # noqa: BLE001 — swallow, mark event, keep worker alive
+    except Exception as exc:  # noqa: BLE001 (swallow, mark event, keep worker alive)
         await session.rollback()
         log.exception("worker.error", event_id=str(event_id))
         async with get_sessionmaker()() as fresh:

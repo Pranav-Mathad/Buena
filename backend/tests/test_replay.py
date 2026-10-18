@@ -1,4 +1,4 @@
-"""Tests for Phase 10 Step 10.2 — sequential replay engine.
+"""Tests for the sequential replay engine.
 
 The engine drives :func:`backend.pipeline.worker.process_one`, so we
 monkeypatch that to keep tests offline + fast. Pause / resume / stop

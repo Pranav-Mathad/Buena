@@ -1,10 +1,10 @@
-"""Rule 1 — ``recurring_maintenance`` (the demo hero).
+"""Rule 1: ``recurring_maintenance``, sustained failures on a single unit.
 
 Fires when a single property has ≥3 maintenance facts containing a shared
 issue keyword (``heat``, ``boiler``, ``water``, ``leak``) within the past
-120 days. This is the sustained-failure pattern judges recognize at a
-glance: three heating complaints on the same unit → something is about to
-break.
+120 days. This is a sustained-failure pattern a property manager
+recognizes at a glance: three heating complaints on the same unit →
+something is about to break.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ log = structlog.get_logger(__name__)
 WINDOW_DAYS = 120
 MIN_OCCURRENCES = 3
 
-# (keyword regex, topic label) — topic is what we key the dedupe on.
+# (keyword regex, topic label); topic is what we key the dedupe on.
 KEYWORD_TOPICS: list[tuple[str, str]] = [
     (r"heat|boiler|radiator|hot water", "heating"),
     (r"leak|water damage|p-?trap|drip", "water"),

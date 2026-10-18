@@ -54,9 +54,9 @@ def _apply_confidence_floor(result: ExtractionResult) -> ExtractionResult:
     """Demote sub-floor facts to ``uncertain[]`` so they don't reach the applier.
 
     The extractor (Gemini *or* rule fallback) sometimes emits facts at
-    confidence 0.6 — high enough to be worth surfacing, low enough to
-    not warrant overwriting a canonical fact. Step 9.1's contract is
-    that those land in ``uncertainty_events`` instead of ``facts``.
+    confidence 0.6: high enough to be worth surfacing, low enough to
+    not warrant overwriting a canonical fact. Those land in
+    ``uncertainty_events`` instead of ``facts``.
     """
     keep: list[dict[str, Any]] = []
     demoted: list[dict[str, Any]] = []

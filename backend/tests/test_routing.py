@@ -1,4 +1,8 @@
-"""Tests for the structured router (Phase 8.1).
+"""Tests for the structured router.
+
+The structured router resolves an event to a property, a building or a
+Liegenschaft (WEG) from explicit references: EH / MIE unit ids, HAUS
+ids, the bank ``kategorie`` and German WEG keywords.
 
 These exercise the live routing precedence against a fresh DB seeded
 with the Buena Stammdaten loader. Skipped when the dev Postgres or
@@ -24,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def _ensure_buena_stammdaten() -> None:
-    """Idempotent loader call — costs nothing if data is already loaded."""
+    """Idempotent loader call; costs nothing if data is already loaded."""
     try:
         buena_loader.load_from_disk()
     except DataMissingError as exc:
@@ -147,7 +151,7 @@ async def test_unknown_event_is_unrouted() -> None:
 
 
 async def test_weg_keyword_set_includes_german_lexicon() -> None:
-    """Sanity check on the keyword list — full Hausverwaltung vocabulary."""
+    """Sanity check on the keyword list: full Hausverwaltung vocabulary."""
     expected = {
         "hausgeld",
         "verwaltergebühr",

@@ -1,21 +1,21 @@
 """Stream Buena ``.eml`` archive into events + facts.
 
-Step 6 mirrors the structured backfill loop (see
+The email backfill mirrors the structured backfill loop (see
 :mod:`connectors.buena_event_loader`) but with two free-text-only
 concerns:
 
-- **Routing escalates** — :func:`backend.pipeline.router.route_text_event`
+- **Routing escalates**: :func:`backend.pipeline.router.route_text_event`
   applies the WEG keyword precedence so e.g. a Brandschutznachweis
   email lands at the Liegenschaft instead of being greedily claimed by
   a property's address token-overlap.
-- **Extraction is cost-bounded** — every Gemini call charges the
+- **Extraction is cost-bounded**: every Gemini call charges the
   durable :mod:`connectors.cost_ledger`. When cumulative spend hits the
   cap the loop aborts cleanly and the next invocation refuses to start
   until the operator runs ``--reset-cost-ledger``. Resumability is
   free: ``events.UNIQUE (source, source_ref)`` absorbs re-runs.
 
 Persistent failure (3 attempts that raise) is captured in the
-``failed_events`` table for human triage in Step 9.
+``failed_events`` table for human triage.
 """
 
 from __future__ import annotations
@@ -55,8 +55,8 @@ from connectors.migrations import apply_all as ensure_migrations
 log = structlog.get_logger(__name__)
 
 
-# Cost ledger label dedicated to Step 6 email backfill. Kept separate
-# from ``step5_eval`` so the operator can read the email-only spend
+# Cost ledger label dedicated to the email backfill. Kept separate
+# from the eval runner's label so the operator can read the email-only spend
 # without subtracting other run costs.
 LEDGER_LABEL = "step6_email_backfill"
 
@@ -69,15 +69,16 @@ FLASH_COMPLETION_USD_PER_M = Decimal("0.30")
 
 # After successful extraction, events whose ``received_at`` is older
 # than ``today − HISTORICAL_THRESHOLD_DAYS`` get stamped
-# ``processed_at = received_at`` so Phase 9's validator/uncertainty
-# layers don't silently re-process pre-validator extractions. New
+# ``processed_at = received_at`` so the validator/uncertainty layers
+# treat them as settled history and don't silently re-process
+# extractions that were made before validation existed. New
 # events stamp ``processed_at = now()`` as usual.
 HISTORICAL_THRESHOLD_DAYS = 30
 
 
 # --- Granular unrouted-reason classifiers ----------------------------------
-# Step 6 broke the single "no match" miss reason into auditable buckets.
-# Each regex is named after the bucket it produces.
+# A single "no match" miss reason says nothing about what to fix, so
+# misses are split into auditable buckets. Each regex is named after the bucket it produces.
 
 # Buena unit conventions + generic apartment markers + HAUS-NN.
 _PROPERTY_TOKEN_RE = re.compile(
@@ -86,7 +87,7 @@ _PROPERTY_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Word-boundary, case-insensitive WEG keyword regex — same vocabulary the
+# Word-boundary, case-insensitive WEG keyword regex: same vocabulary the
 # router uses for liegenschaft escalation.
 _WEG_KEYWORD_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(k) for k in WEG_KEYWORDS) + r")\b",
@@ -143,9 +144,10 @@ def _classify_unrouted_reason(
 ) -> str:
     """Bucket a route_text_event miss into an actionable category.
 
-    Hierarchy is intentional — first match wins, ordered from "structural
+    Hierarchy is intentional: first match wins, ordered from "structural
     skip-no-extraction-needed" to "real signal but no alias matched".
-    Each bucket maps to a Step 9 / Step 8 follow-up.
+    Each bucket maps to a distinct operator follow-up (ignore, translate,
+    seed missing units, learn new senders).
 
     Buckets:
         body_too_short
@@ -154,20 +156,21 @@ def _classify_unrouted_reason(
         auto_reply
             "Out of office" / "Abwesenheit" markers in subject or body.
         non_de_en_language_<code>
-            langdetect returns something other than de/en/nl/af. Step 9
-            decides whether to translate or drop.
+            langdetect returns something other than de/en/nl/af. These
+            need a decision on whether to translate or drop them.
         weg_keyword_no_liegenschaft
             Body has a WEG keyword (Hausgeld, Mahnung, …) but no
-            liegenschaft was resolved — interesting only when the
+            liegenschaft was resolved. Interesting only when the
             customer has multiple WEGs (Buena: single WEG, so this is
             effectively "no liegenschaft loaded yet" if it ever fires).
         property_tokens_no_alias_match
             Body has property-shaped tokens (EH-NNN / Wohnung 4B / …)
-            that didn't match any seeded alias — a Step 9 onboarding
-            signal: customer has units we haven't seeded.
+            that didn't match any seeded alias. An onboarding signal:
+            the customer has units we haven't seeded.
         unknown_sender_domain
             Sender domain has no prior routed event in the system.
-            Feeds Step 9's sender_routing_history bootstrap.
+            Useful input for learning which senders map to which
+            properties.
         no_signal_known_sender
             Sender is known but the body is too thin to route.
         no_signal
@@ -265,7 +268,7 @@ def _is_historical(received_at: datetime | None, *, threshold_days: int) -> bool
     """``True`` if ``received_at`` is older than ``threshold_days`` ago.
 
     Matches the live worker's stamping policy so backfilled events
-    don't re-run through Phase 9's validator/uncertainty layers.
+    don't re-run through the validator/uncertainty layers.
     """
     if received_at is None:
         return False
@@ -377,7 +380,7 @@ async def _record_failure(
     """Increment the failed_events row for ``event_id``.
 
     Returns ``True`` when ``retry_count`` has hit (or exceeded) the
-    configured ``dead_letter_after`` ceiling — at that point the row
+    configured ``dead_letter_after`` ceiling; at that point the row
     is the operator's signal that the event is permanently failed.
     """
     truncated = (error or "")[:1000]
@@ -467,12 +470,12 @@ async def _process_event(
 ) -> bool:
     """Full single-event pipeline. Returns ``True`` to keep iterating.
 
-    Returns ``False`` when the cost cap has been hit — the caller stops
+    Returns ``False`` when the cost cap has been hit; the caller stops
     the outer loop. Persistent extraction failures don't stop the loop;
     they land in ``failed_events``.
 
     The mutation surface (``summary``, ``known_sender_domains``) is
-    safe under the asyncio-single-threaded model — increments don't
+    safe under the asyncio-single-threaded model: increments don't
     race because there's no real parallelism, only cooperative
     multitasking. The ``ledger_lock`` is what we need: it serializes
     the read-modify-write inside :func:`cost_ledger.charge` so two
@@ -514,9 +517,9 @@ async def _process_event(
         )
         if route.property_id is not None:
             summary.routed_property += 1
-            # Track this sender's domain as "seen" — feeds Step 9's
-            # sender_routing_history bootstrap and lets the unrouted
-            # classifier distinguish unknown vs no-signal senders.
+            # Track this sender's domain as "seen". This lets the
+            # unrouted classifier distinguish unknown vs no-signal
+            # senders.
             sender = str(ev.metadata.get("from", "") or "")
             domain_match = _DOMAIN_RE.search(sender)
             if domain_match:
@@ -600,7 +603,7 @@ async def _process_event(
                         )
                         await session.commit()
                     return False
-        except Exception as exc:  # noqa: BLE001 — keep loop alive
+        except Exception as exc:  # noqa: BLE001 (keep loop alive)
             summary.extractor_errors += 1
             error_text = f"{type(exc).__name__}: {exc}"[:500]
             if len(summary.error_samples) < 5:
@@ -661,9 +664,9 @@ async def _load_known_sender_domains(factory: Any) -> set[str]:
     Reading existing email events whose property_id is set lets the
     "unknown_sender_domain" bucket distinguish first-time senders from
     senders we've successfully routed before. Empty on a fresh DB; that's
-    fine — every classification will fall through to the
-    unknown-sender-domain bucket on the first run, which is itself the
-    signal Step 9 wants.
+    fine: every classification will fall through to the
+    unknown-sender-domain bucket on the first run, which correctly
+    reports that no sender has been seen yet.
     """
     domains: set[str] = set()
     async with factory() as session:
@@ -700,16 +703,17 @@ async def backfill_emails(
 
     Args:
         root: Override ``EXTRACTED_ROOT``; defaults to the Buena archive.
-        cap_usd: Hard ceiling on the durable cost ledger for label
-            ``step6_email_backfill``.
-        dead_letter_after: Persistent-failure ceiling — once an event's
+        cap_usd: Hard ceiling on the durable cost ledger for
+            :data:`LEDGER_LABEL`.
+        dead_letter_after: Persistent-failure ceiling: once an event's
             ``failed_events.retry_count`` reaches this number, the row
             stays as the operator's dead-letter signal.
         reprocess_historical: When ``False`` (default), events older
             than 30 days are stamped ``processed_at = received_at`` after
-            successful extraction so Phase 9's validator/uncertainty
-            layers don't re-process pre-validator extractions. Phase 9
-            migrations flip this to ``True`` once those layers ship.
+            successful extraction so the validator/uncertainty layers
+            don't re-process extractions made before validation existed.
+            Pass ``True`` to stamp ``processed_at = now()`` instead when
+            the archive should be treated as freshly processed.
         limit: Stop after ``limit`` ``.eml`` files. ``None`` means full
             archive.
         concurrency: Number of parallel extraction workers. Default 1
@@ -749,7 +753,7 @@ async def backfill_emails(
     iterator: Iterable[ConnectorEvent] = eml_archive.walk_directory(emails_dir)
 
     if concurrency <= 1:
-        # Sequential path — preserves the dry-run / test path behaviour.
+        # Sequential path: preserves the dry-run / test path behaviour.
         seen = 0
         for ev in iterator:
             if limit is not None and seen >= limit:
@@ -769,7 +773,7 @@ async def backfill_emails(
             if not proceed:
                 break
     else:
-        # Concurrent path — producer feeds a bounded queue, ``concurrency``
+        # Concurrent path: producer feeds a bounded queue, ``concurrency``
         # consumers process events. ``abort_event`` short-circuits both
         # sides on cost-cap breach; in-flight tasks finish (≤ N × call cost
         # overshoot) but no new work starts.
@@ -809,7 +813,7 @@ async def backfill_emails(
                         ledger_lock=ledger_lock,
                         known_sender_domains=known_sender_domains,
                     )
-                except Exception:  # noqa: BLE001 — keep workers alive
+                except Exception:  # noqa: BLE001 (keep workers alive)
                     log.exception(
                         "buena_email.consumer_error",
                         worker=_worker_id,

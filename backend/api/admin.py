@@ -1,10 +1,13 @@
-"""Admin surface — unrouted inbox, failed events, replay control.
+"""Admin surface: unrouted inbox, failed events, replay control.
 
-Step 3 ships ``GET /admin/unrouted`` so backfilled events that lacked
-the IDs needed for routing surface as a real product UX (per Phase 8
-plan: this is *core* product, not demo polish). Steps 7 and 9 expand
-the surface to include incremental-cursor controls and admin
-overrides.
+``GET /admin/unrouted`` lists backfilled events that lacked the IDs
+needed for routing, so an operator can attach them by hand instead of
+the events silently dropping out of every property file. Unrouted
+events are a normal outcome of ingesting a real archive, so this is
+core product, not a debugging aid. The same router also hosts the
+incremental-feed cursor controls, the rejected-update and uncertainty
+inboxes with their operator overrides, the replay engine, the
+onboarding view and the file-cache backfill.
 """
 
 from __future__ import annotations
@@ -144,7 +147,7 @@ async def list_unrouted(
 
 
 # -----------------------------------------------------------------------------
-# Step 7 — Buena incremental cursor
+# Incremental-feed day cursor (the sample dataset's ``incremental/`` days)
 # -----------------------------------------------------------------------------
 
 
@@ -158,7 +161,7 @@ class CursorStatus(BaseModel):
 
 
 class AdvanceResponse(CursorStatus):
-    """Full advance-one-day result for the demo / admin UI."""
+    """Full advance-one-day result for the admin UI."""
 
     events_inserted: int = 0
     facts_written: int = 0
@@ -172,8 +175,8 @@ class AdvanceResponse(CursorStatus):
 
 @router.get("/buena/cursor_status", response_model=CursorStatus)
 async def cursor_status() -> CursorStatus:
-    """Return the current Buena incremental-feed day cursor."""
-    from connectors.incremental_runner import (  # noqa: PLC0415 — local import
+    """Return the current incremental-feed day cursor."""
+    from connectors.incremental_runner import (  # noqa: PLC0415
         get_cursor_status,
     )
 
@@ -183,11 +186,11 @@ async def cursor_status() -> CursorStatus:
 
 @router.post("/buena/advance_day", response_model=AdvanceResponse)
 async def advance_day() -> AdvanceResponse:
-    """Advance the Buena cursor by one day and process that day's deltas.
+    """Advance the cursor by one day and process that day's deltas.
 
-    Latency budget: < 3 s. Each Buena day is a small batch (~6 events)
-    plus one signal-evaluator pass. Future customers with heavier days
-    can move ``evaluate_all`` to a background task without changing
+    Latency budget: < 3 s. Each day in the sample dataset is a small
+    batch (~6 events) plus one signal-evaluator pass. Feeds with heavier
+    days can move ``evaluate_all`` to a background task without changing
     the response shape.
     """
     from connectors.incremental_runner import (  # noqa: PLC0415
@@ -214,7 +217,7 @@ async def advance_day() -> AdvanceResponse:
 
 @router.post("/buena/reset_cursor", response_model=CursorStatus)
 async def reset_buena_cursor() -> CursorStatus:
-    """Reset the Buena cursor to ``0``. Used by demo-reset flows."""
+    """Reset the cursor to ``0`` so the incremental feed replays from day 1."""
     from connectors.incremental_runner import (  # noqa: PLC0415
         reset_cursor,
     )
@@ -224,7 +227,7 @@ async def reset_buena_cursor() -> CursorStatus:
 
 
 # -----------------------------------------------------------------------------
-# Phase 12 — operational backfill of property/building/liegenschaft files
+# Operational backfill of property/building/liegenschaft files
 # -----------------------------------------------------------------------------
 
 
@@ -240,16 +243,17 @@ class MaterializeAllResponse(BaseModel):
 async def materialize_all_endpoint(
     session: AsyncSession = Depends(get_session),
 ) -> MaterializeAllResponse:
-    """Bootstrap the Phase 12 file cache.
+    """Bootstrap the materialized file cache for every tier.
 
     Mirrors ``python -m connectors.cli materialize-all`` but reachable
-    over HTTP — needed on Cloud Run where the CLI can't connect to
+    over HTTP, which is needed on Cloud Run where the CLI can't connect to
     Cloud SQL directly. Idempotent: re-running just refreshes
     ``last_rendered_at`` and ``content_md`` for every row.
 
     The applier hook propagates updates on every fact write going
-    forward, so this endpoint is meant to be called once after the
-    Phase 12 migration lands.
+    forward, so this endpoint only needs calling once: after the
+    ``*_files`` cache tables are created on an existing database, or
+    after a bulk load that bypassed the applier.
     """
     counts = await materialize_all(session)
     await session.commit()
@@ -258,7 +262,7 @@ async def materialize_all_endpoint(
 
 
 # -----------------------------------------------------------------------------
-# Phase 9 Step 9.2 — rejected_updates inbox
+# rejected_updates inbox
 # -----------------------------------------------------------------------------
 
 
@@ -510,9 +514,9 @@ async def override_rejection(
             },
         )
         fact_written = True
-        # Phase 12 — operator override that promotes a rejected
-        # proposal to a real fact must refresh the materialized file
-        # in the same transaction.
+        # An operator override that promotes a rejected proposal to a
+        # real fact must refresh the materialized file in the same
+        # transaction, or the cached markdown would lag the facts table.
         await propagate_after_fact_write(
             session,
             property_id=UUID(str(row.property_id)),
@@ -592,7 +596,7 @@ def _json(value: dict[str, Any]) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Phase 10 Step 10.2 — replay engine
+# Replay engine
 # -----------------------------------------------------------------------------
 
 
@@ -641,7 +645,8 @@ async def replay_start(body: ReplayStartRequest) -> ReplayRunStatus:
 
     Streams events through the live pipeline at ``speed_multiplier`` ×
     real time. ``reset_property=True`` wipes facts / uncertainties /
-    rejections for that property first so the demo opens at "day zero".
+    rejections for that property first so the replay rebuilds the
+    property file from "day zero".
     Stammdaten links are preserved.
     """
     from backend.services import replay  # noqa: PLC0415
@@ -741,7 +746,7 @@ async def replay_featured_property() -> ReplayRunStatus:
 
 
 # -----------------------------------------------------------------------------
-# Phase 9 Step 9.1 — uncertainty inbox (read-only for now)
+# Uncertainty inbox: read side (the resolve action is further down)
 # -----------------------------------------------------------------------------
 
 
@@ -770,7 +775,7 @@ class UncertaintyResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# Phase 10 Step 10.3 — onboarding view
+# Onboarding view
 # -----------------------------------------------------------------------------
 
 
@@ -801,7 +806,7 @@ async def get_property_onboarding(
     Five sections: stammdaten + counts, open issues, Gemini Pro 12-month
     briefing (the only LLM call), recurring patterns, pointer index.
     The briefing is cached on ``properties.metadata.onboarding`` keyed by
-    a hash of the latest fact/uncertainty/rejection timestamp — so a
+    a hash of the latest fact/uncertainty/rejection timestamp, so a
     re-read is free, but any mutation invalidates.
     """
     from backend.services import onboarding  # noqa: PLC0415
@@ -847,9 +852,8 @@ async def list_uncertainties_for_property(
 ) -> UncertaintyResponse:
     """List the property's open uncertainty events.
 
-    Phase 10 Step 10.6 added the write surface
-    (:func:`resolve_uncertainty`); this endpoint stays the read-side
-    pair so a UI can list → click → resolve in one round-trip.
+    :func:`resolve_uncertainty` is the write side; this endpoint is
+    its read-side pair so a UI can list → click → resolve in one round-trip.
     """
     where = "WHERE property_id = :pid"
     params: dict[str, Any] = {"pid": property_id, "lim": limit}
@@ -936,7 +940,7 @@ async def list_uncertainties_for_property(
 
 
 # -----------------------------------------------------------------------------
-# Phase 11 — cross-property inboxes for the Inbox page
+# Cross-property inboxes for the frontend Inbox page
 # -----------------------------------------------------------------------------
 
 
@@ -1072,7 +1076,7 @@ async def list_rejected_global(
 
 
 # -----------------------------------------------------------------------------
-# Phase 10 Step 10.6 — uncertainty action endpoints
+# Uncertainty action endpoints
 # -----------------------------------------------------------------------------
 
 
@@ -1125,10 +1129,10 @@ async def resolve_uncertainty(
 ) -> UncertaintyResolveResponse:
     """Promote an uncertainty to a fact, or dismiss it.
 
-    Phase 10 Step 10.6: the trust layer's first write surface. Either
-    action transitions the uncertainty out of ``open`` and records an
-    ``approval_log`` entry naming the operator + reason — the audit
-    trail is the whole point. ``promote_to_fact`` requires the
+    Either action transitions the uncertainty out of ``open`` and
+    records an ``approval_log`` entry naming the operator + reason. The
+    audit trail is the point: a human decision overrides the extractor,
+    so it must be attributable after the fact. ``promote_to_fact`` requires the
     uncertainty to carry both ``relevant_section`` and
     ``relevant_field``; the value comes from ``body.value`` or, if
     absent, from the uncertainty's ``hypothesis``. A 422 is returned
@@ -1241,7 +1245,7 @@ async def resolve_uncertainty(
         )
         new_status = "resolved"
 
-        # Phase 12 — promotion writes a real fact at the uncertainty's
+        # Promotion writes a real fact at the uncertainty's
         # original scope; propagate to the matching tier (and cascade
         # if it's a building or liegenschaft fact).
         propagate_kwargs: dict[str, UUID | None] = {

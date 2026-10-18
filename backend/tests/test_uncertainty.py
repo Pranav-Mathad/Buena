@@ -1,19 +1,20 @@
-"""Tests for Phase 9 Step 9.1 — uncertainty as first-class output.
+"""Tests for uncertainty as a first-class pipeline output.
 
 Coverage:
 
 * ``_apply_confidence_floor`` demotes sub-floor facts and preserves
   the rest.
-* The Gemini schema's new ``uncertain[]`` round-trips into
+* The extraction schema's ``uncertain[]`` list round-trips into
   ``ExtractionResult.uncertain``.
 * The validator's ``needs_review`` rejections route to
   ``uncertainty_events`` (via the worker helper) and are *not*
   written to ``rejected_updates``.
 * End-to-end DB integration: a vague-rent email lands in
   ``uncertainty_events``, not in ``facts``.
-* Step 9.2 regression: a building floor-count change from email
-  still ends up in ``rejected_updates`` (hard-reject path), not in
-  ``uncertainty_events``.
+* Hard-reject regression: routing ``needs_review`` rejections to the
+  uncertainty inbox must not divert hard rejections. A building
+  floor-count change from email still ends up in ``rejected_updates``,
+  not in ``uncertainty_events``.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import pytest
 from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
-from backend.pipeline import constraints  # noqa: F401 — registers constraints
+from backend.pipeline import constraints  # noqa: F401 (registers constraints)
 from backend.pipeline.applier import apply_uncertainties
 from backend.pipeline.differ import DiffPlan, FactDecision, load_current_facts
 from backend.pipeline.extractor import (
@@ -45,7 +46,7 @@ pytestmark_async = pytest.mark.asyncio
 
 
 # ----------------------------------------------------------------------------
-# Confidence floor — pure unit tests
+# Confidence floor: pure unit tests
 # ----------------------------------------------------------------------------
 
 
@@ -215,7 +216,7 @@ def test_validate_returns_both_kinds_separately() -> None:
 
 
 # ----------------------------------------------------------------------------
-# DB integration — vague rent email roundtrips through the pipeline
+# DB integration: vague rent email roundtrips through the pipeline
 # ----------------------------------------------------------------------------
 
 
@@ -313,7 +314,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("db")
 async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
-    """Step 9.2 regression: a free-text floor-count change still goes to rejected_updates."""
+    """A free-text floor-count change is still a hard reject, not an uncertainty."""
     ensure_migrations()
 
     factory = get_sessionmaker()

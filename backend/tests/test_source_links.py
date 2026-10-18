@@ -1,4 +1,4 @@
-"""Tests for Phase 10 Step 10.4 — ``/events/<id>/{source,raw,detail}``.
+"""Tests for ``/events/<id>/{source,raw,detail}``.
 
 These exercise the source-link dispatcher: an invoice/letter event
 redirects to ``/files/<original_path>``, an email event to ``/raw``,

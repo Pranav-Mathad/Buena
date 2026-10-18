@@ -1,15 +1,17 @@
-"""Rule 3 — ``cross_property_pattern`` (the portfolio-intelligence closer).
+"""Rule 3: ``cross_property_pattern``, issues that span several properties.
 
-Two flavors from Part IX + the demo script (beats 1:00 and 1:45):
+Two flavors:
 
 A. **Shared building.** If ≥2 properties inside a single building each carry
    recurring heating facts in the last 120 days, fire a portfolio-level
-   signal keyed on the building — this is the "3 heating complaints across
-   units sharing the same boiler" beat.
+   signal keyed on the building. Three heating complaints from units that
+   share a boiler point at the shared system, not at the individual units.
 B. **Building-year cohort.** Group properties by year bucket
    (``pre-1990``, ``1990-2010``, ``post-2010``) and if ≥3 properties in the
    same bucket have heating issues inside the window, fire a portfolio-wide
-   inspection recommendation — this is beat 1:45.
+   inspection recommendation: buildings of a similar age tend to have
+   heating systems of a similar vintage, so a cluster of failures in one
+   cohort is a reason to inspect the rest of it.
 
 Both cases emit a ``property_id=None`` portfolio signal so the UI can
 render it in the portfolio view instead of under a single property.
@@ -32,7 +34,7 @@ HEAT_PATTERN = r"heat|boiler|radiator|hot water"
 
 
 def _year_bucket(year: int | None) -> str | None:
-    """Classify a building's year_built into a demo-friendly cohort label."""
+    """Classify a building's year_built into a human-readable cohort label."""
     if year is None:
         return None
     if year < 1990:
@@ -43,7 +45,7 @@ def _year_bucket(year: int | None) -> str | None:
 
 
 async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
-    """Flavor A — buildings where multiple units share the same issue."""
+    """Flavor A: buildings where multiple units share the same issue."""
     result = await session.execute(
         text(
             """
@@ -112,7 +114,7 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
 
 
 async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
-    """Flavor B — portfolio-wide alert on a building-year cohort."""
+    """Flavor B: portfolio-wide alert on a building-year cohort."""
     result = await session.execute(
         text(
             """

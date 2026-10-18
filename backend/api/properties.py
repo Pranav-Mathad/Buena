@@ -41,10 +41,10 @@ class PropertySummary(BaseModel):
     """Compact property record used by the portfolio listing.
 
     Counts are computed at query time from indexed property_id lookups on
-    ``events``, ``facts`` (current only — ``superseded_by IS NULL``),
+    ``events``, ``facts`` (current only: ``superseded_by IS NULL``),
     ``uncertainty_events`` (``status='open'``), and ``signals``
-    (``status='pending'``). At Buena's 56-property scale this is ~224
-    index hits per request — single-digit ms total.
+    (``status='pending'``). At the sample dataset's 56 properties this is
+    ~224 index hits per request, single-digit ms total.
     """
 
     id: UUID
@@ -214,7 +214,7 @@ async def search_properties(
 ) -> list[PropertySearchHit]:
     """Keyword search across property name, address, aliases, and current facts.
 
-    Per-term scoring — the query is split on whitespace and each term
+    Per-term scoring: the query is split on whitespace and each term
     contributes independently, so ``"heating Berlin"`` picks up a heating
     fact *and* a Berlin address rather than needing both words to appear
     contiguously.
@@ -298,7 +298,7 @@ async def property_graph(
     property_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> PropertyGraph:
-    """Return the context graph for a property — owner, building, tenants, contractors."""
+    """Return the context graph for a property: owner, building, tenants, contractors."""
     prop_row = (
         await session.execute(
             text(
@@ -472,7 +472,7 @@ async def property_markdown(
 ) -> PlainTextResponse:
     """Return the canonical markdown document for a property.
 
-    Phase 12 — reads the materialized ``property_files`` row when one
+    Reads the materialized ``property_files`` row when one
     exists (the common path after the applier hook fired) and falls
     back to a live render only when the cache is missing. The cache is
     refreshed atomically on every fact write, so the materialized row
@@ -541,7 +541,7 @@ _SECTION_LABELS: dict[str, str] = {
 }
 
 # Sections that display under a "Context" heading rather than as a
-# primary fact section — the frontend uses the ``isContext`` flag to
+# primary fact section; the frontend uses the ``isContext`` flag to
 # render these with a quieter visual treatment.
 _CONTEXT_SECTIONS: frozenset[str] = frozenset(
     {
@@ -555,7 +555,7 @@ _CONTEXT_SECTIONS: frozenset[str] = frozenset(
 )
 
 # Sources whose presence implies a fact came from an authoritative
-# document rather than an email — surfaced verbatim in the UI's "via"
+# document rather than an email. Surfaced verbatim in the UI's "via"
 # label so PDFs read as "Mietvertrag.pdf" instead of just "letter".
 _AUTHORITATIVE_DOCUMENT_TYPES: frozenset[str] = frozenset(
     {"lease", "lease_addendum", "kaufvertrag", "structural_permit", "vermessungsprotokoll"}
@@ -567,7 +567,7 @@ def _build_stammdaten_section(s: Stammdaten, lang: str) -> PropertyFileSection |
 
     Stammdaten lives outside the events/facts pipeline (it's the
     authoritative lease/owner registry loaded at ingest), so each row
-    here carries ``source='stammdaten'`` and no ``fact_id`` — the edit
+    here carries ``source='stammdaten'`` and no ``fact_id``; the edit
     affordance stays hidden because there's no fact row to override.
     """
     labels = CONTEXT_LABELS[lang]
@@ -645,7 +645,7 @@ def _build_context_section(
 
     Each event becomes a read-only fact: source pill = the event source
     (``email``/``bank``/``invoice``), event_id wires the source modal,
-    no ``fact_id`` (these aren't facts — they're parent-tier activity).
+    no ``fact_id`` (these aren't facts; they're parent-tier activity).
     """
     facts: list[PropertyFileFact] = []
     for ev in events:
@@ -676,7 +676,7 @@ async def property_file(
     property_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> PropertyFile:
-    """Return the structured property file — sections + facts + uncertainties.
+    """Return the structured property file: sections + facts + uncertainties.
 
     The frontend's ``PropertyDetail`` page renders one section per group
     with a ``[source]`` button on each fact that opens the originating
@@ -758,7 +758,7 @@ async def property_file(
         # ``Mietvertrag`` rather than ``letter``); fall back to the raw
         # event source; ``stammdaten`` for facts that were never linked
         # to an event (master-data load). Hand-edited facts overshadow
-        # all of these — the human is the source of truth.
+        # all of these: the human is the source of truth.
         doc_type = (row.document_type or "").strip()
         if row.human_edited:
             source_label = "operator"
@@ -820,7 +820,7 @@ async def property_file(
             )
         )
 
-    # Stammdaten + parent-tier context — same data the markdown view
+    # Stammdaten + parent-tier context: same data the markdown view
     # surfaces. Detect language once so labels match the property's
     # dominant event language.
     lang = await _detect_property_language(session, property_id)
@@ -828,7 +828,7 @@ async def property_file(
     stammdaten = await _fetch_stammdaten(session, property_id)
     stammdaten_section = _build_stammdaten_section(stammdaten, lang) if stammdaten else None
     if stammdaten_section is not None:
-        # Stammdaten is the master record — prepend so it reads first.
+        # Stammdaten is the master record; prepend so it reads first.
         sections.insert(0, stammdaten_section)
 
     building_id, _ = await _building_for_property(session, property_id)
@@ -887,7 +887,7 @@ class FactEditRequest(BaseModel):
 
 
 class FactEditResponse(BaseModel):
-    """Result of a fact override — both the new and the superseded id."""
+    """Result of a fact override: both the new and the superseded id."""
 
     fact_id: UUID
     superseded_fact_id: UUID
@@ -978,7 +978,7 @@ async def edit_fact(
             },
         )
     ).first()
-    if inserted is None:  # pragma: no cover — RETURNING always yields a row
+    if inserted is None:  # pragma: no cover (RETURNING always yields a row)
         raise HTTPException(status_code=500, detail="insert failed")
 
     await session.execute(
@@ -1037,7 +1037,7 @@ async def edit_fact(
 
 
 class ActivityItem(BaseModel):
-    """Activity feed row — a processed event + its one-line summary."""
+    """Activity feed row: a processed event + its one-line summary."""
 
     event_id: UUID
     source: str
@@ -1089,7 +1089,7 @@ async def property_activity(
 
 
 # -----------------------------------------------------------------------------
-# Phase 11 — property-scoped Q&A
+# Property-scoped Q&A
 # -----------------------------------------------------------------------------
 
 
@@ -1111,8 +1111,9 @@ class AskSourceItem(BaseModel):
 class AskResponse(BaseModel):
     """Q&A response with three status branches the frontend renders distinctly.
 
-    Phase 9 trust-layer rule: an honest "I don't know" beats a confident
-    hallucination. The ``insufficient_context`` and ``out_of_scope``
+    Trust rule: an honest "I don't know" beats a confident
+    hallucination, because an operator acting on a wrong answer costs
+    more than one who goes and checks. The ``insufficient_context`` and ``out_of_scope``
     branches keep ``answer`` ``None`` and surface the partial-context
     or out-of-scope reasoning explicitly.
     """
@@ -1198,7 +1199,7 @@ async def property_ask(
     try:
         property_file_markdown = await render_markdown(session, property_id)
     except ValueError as exc:
-        # Should be unreachable — the property existence check above
+        # Should be unreachable: the property existence check above
         # already 404s, but guard anyway so a half-built prompt is never sent.
         log.warning("properties.ask.render_failed", error=str(exc))
         raise HTTPException(status_code=404, detail="property not found") from exc
@@ -1253,7 +1254,7 @@ async def property_ask(
 
 
 # -----------------------------------------------------------------------------
-# Phase 11 — raw inbox view for Compare page ("today: search the inbox")
+# Raw inbox view for the frontend Compare page (searching the inbox by hand)
 # -----------------------------------------------------------------------------
 
 
@@ -1318,8 +1319,9 @@ async def property_inbox(
     Returns the property's most-recent email events with a parsed
     ``subject`` / ``from`` / ``preview``. When ``q`` is supplied the
     LIKE filter highlights matches but the list still shows the
-    surrounding noise — that's the point of the comparison: the
-    operator scrolls through everything, Keystone returns one answer.
+    surrounding noise. The Compare page sets this manual workflow, where
+    the operator scrolls through everything, beside the single answer
+    the property file gives.
     """
     total = (
         await session.execute(

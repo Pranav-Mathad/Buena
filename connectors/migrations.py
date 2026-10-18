@@ -1,10 +1,10 @@
-"""Additive migrations for Phase 8+ tables.
+"""Additive migrations layered on top of the base schema.
 
-Phase 0's ``backend/db/schema.sql`` is the canonical schema for the
-demo data model (Part VI of KEYSTONE). Everything Phase 8 introduces
-is **additive** — new tables created with ``CREATE TABLE IF NOT
-EXISTS`` so re-running is idempotent and existing demo databases
-upgrade in place without a destructive reset.
+``backend/db/schema.sql`` is the canonical base schema for the data
+model. Every change after it is **additive**: new tables and columns
+are created with ``CREATE TABLE IF NOT EXISTS`` / ``ADD COLUMN IF NOT
+EXISTS`` so re-running is idempotent and existing databases upgrade in
+place without a destructive reset.
 
 Run :func:`apply_all` (sync) at CLI startup. Tests do the same against
 the dev Postgres on :5433.
@@ -20,7 +20,7 @@ from backend.config import get_settings
 log = structlog.get_logger(__name__)
 
 
-# Each migration is (name, sql). Names are descriptive only — the
+# Each migration is (name, sql). Names are descriptive only; the
 # CREATE TABLE / ALTER TABLE / CREATE INDEX IF NOT EXISTS shape is what
 # makes them safe to replay. New migrations must be append-only;
 # never edit a prior tuple in place.
@@ -88,8 +88,8 @@ _MIGRATIONS: list[tuple[str, str]] = [
         """
         -- Backfill dead-letter table. ``retry_count`` increments on each
         -- failed extraction attempt; once it hits the configured ceiling
-        -- (default 3) the event lands here for human triage via
-        -- /admin/failed in Step 9. ``last_error`` keeps the most recent
+        -- (default 3) the event stays here as a dead letter for human
+        -- triage. ``last_error`` keeps the most recent
         -- traceback excerpt so the operator can scan without joining.
         CREATE TABLE IF NOT EXISTS failed_events (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -107,11 +107,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0004_system_state",
         """
-        -- Generic per-process / per-feature key-value store. Phase 8 Step 7
-        -- uses ``system_state['buena_day_cursor']`` to persist the
-        -- incremental-feed cursor across server restarts; future features
-        -- (e.g. Phase 10 replay state) can reuse the same primitive without
-        -- a new migration.
+        -- Generic per-process / per-feature key-value store. The
+        -- incremental feed uses ``system_state['buena_day_cursor']`` to
+        -- persist its cursor across server restarts; other small pieces
+        -- of process state can reuse the same primitive without a new
+        -- migration.
         CREATE TABLE IF NOT EXISTS system_state (
           key TEXT PRIMARY KEY,
           value JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -122,7 +122,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0005_rejected_updates",
         """
-        -- Phase 9 Step 9.2 — constraint validator drop site.
+        -- Constraint validator drop site.
         -- Each row records a fact-update proposal that the validator
         -- rejected (or marked needs_review) so the admin /rejected
         -- inbox can surface it for human triage. ``constraint_name``
@@ -132,13 +132,13 @@ _MIGRATIONS: list[tuple[str, str]] = [
         -- expected (e.g. ``kaufvertrag``, ``lease_addendum``).
         --
         -- ``reviewed_status``:
-        --   pending      — default, not yet looked at
-        --   needs_review — constraint marked the proposal as soft-
-        --                  reject (Phase 9.1 will promote these to
-        --                  uncertainty_events when that step lands)
-        --   overridden   — operator explicitly approved + an
+        --   pending      : default, not yet looked at
+        --   needs_review : constraint marked the proposal as a soft
+        --                  reject (the worker routes these verdicts
+        --                  to uncertainty_events instead)
+        --   overridden   : operator explicitly approved + an
         --                  approval_log row was written
-        --   dismissed    — operator explicitly rejected
+        --   dismissed    : operator explicitly rejected
         CREATE TABLE IF NOT EXISTS rejected_updates (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -167,22 +167,22 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0006_uncertainty_events",
         """
-        -- Phase 9 Step 9.1 — uncertainty as first-class output.
+        -- Uncertainty as first-class output.
         -- The extractor and the validator both produce things the
         -- system "noticed but didn't want to commit to":
         --   * Gemini emits items in its uncertain[] schema field.
         --   * Confidence floor < 0.7 demotes a fact to uncertainty.
         --   * Validator needs_review verdicts (e.g. rent change with
-        --     a lease_addendum PDF) — soft-rejects that ask for
+        --     a lease_addendum PDF): soft-rejects that ask for
         --     human confirmation rather than blocking outright.
         -- All three land here. ``status`` tracks the review lifecycle.
         --
-        -- ``observation`` — what the system saw (the verbatim or
+        -- ``observation``: what the system saw (the verbatim or
         --     near-verbatim phrasing that triggered the uncertainty).
-        -- ``hypothesis``  — the candidate value if there is one
+        -- ``hypothesis``: the candidate value if there is one
         --     (NULL when the model just flagged something noticed).
-        -- ``reason_uncertain`` — operator-facing why-this-is-flagged.
-        -- ``source`` — where the uncertainty came from:
+        -- ``reason_uncertain``: operator-facing why-this-is-flagged.
+        -- ``source``: where the uncertainty came from:
         --     gemini | confidence_floor | validator_needs_review
         CREATE TABLE IF NOT EXISTS uncertainty_events (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -212,19 +212,19 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0007_replay_runs",
         """
-        -- Phase 10 Step 10.2 — sequential replay state.
+        -- Sequential replay state.
         -- One row per ``POST /admin/replay/start`` invocation. Tracks
         -- progress + control state so the SSE client can render the
         -- "n / total events streamed" UI without re-querying events,
         -- and so pause / resume / stop are durable across reconnects.
         --
         -- ``status`` lifecycle:
-        --   running   — actively streaming
-        --   paused    — stopped on a scheduled_pauses checkpoint or
+        --   running   : actively streaming
+        --   paused    : stopped on a scheduled_pauses checkpoint or
         --               an operator pause
-        --   completed — drained the configured event window
-        --   stopped   — operator-cancelled mid-flight
-        --   failed    — engine raised; ``last_error`` is populated
+        --   completed : drained the configured event window
+        --   stopped   : operator-cancelled mid-flight
+        --   failed    : engine raised; ``last_error`` is populated
         CREATE TABLE IF NOT EXISTS replay_runs (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
@@ -250,12 +250,12 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0008_approval_log_generic",
         """
-        -- Phase 10 Step 10.6 — extend approval_log so trust-layer
+        -- Extend approval_log so trust-layer
         -- actions (uncertainty resolve, rejection override) can write
         -- audit rows alongside the original signal-centric format.
         --
         -- The existing columns (signal_id, user_id, decision, edits)
-        -- stay untouched so Phase 5 signal approvals keep working.
+        -- stay untouched so signal approvals keep working.
         -- New columns are NULL-by-default so old INSERTs don't break.
         ALTER TABLE approval_log
           ADD COLUMN IF NOT EXISTS actor TEXT,
@@ -276,10 +276,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0009_facts_human_edited",
         """
-        -- Phase 11 — preserve human edits to facts. The brief calls
-        -- this out: "surgically updated without destroying human
-        -- edits." Re-extraction respects ``human_edited=TRUE`` and
-        -- skips writing a new value over the operator's correction.
+        -- Preserve human edits to facts. New events must update a
+        -- property file surgically without destroying corrections an
+        -- operator made by hand, so re-extraction respects
+        -- ``human_edited=TRUE`` and skips writing a new value over the
+        -- operator's correction.
         -- The override path (``POST /facts/{id}/edit?force=true``) can
         -- still flip the flag back when needed.
         ALTER TABLE facts
@@ -294,11 +295,11 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0010_property_markdown_overrides",
         """
-        -- Phase 11 — operator-edited property markdown. The renderer
+        -- Operator-edited property markdown. The renderer
         -- still composes the canonical view on every request, but if
         -- a row exists here for a property the API serves the
         -- override verbatim. Switching back to auto-generated is a
-        -- single DELETE on this table — no destructive ops.
+        -- single DELETE on this table; no destructive ops.
         CREATE TABLE IF NOT EXISTS property_markdown_overrides (
           property_id UUID PRIMARY KEY
             REFERENCES properties(id) ON DELETE CASCADE,
@@ -312,7 +313,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0011_materialized_files",
         """
-        -- Phase 12 — materialized markdown per scope.
+        -- Materialized markdown per scope.
         -- The renderer (backend/pipeline/renderer.py) is still the
         -- canonical source of the markdown shape; these tables cache
         -- the rendered output so reads avoid re-rendering on every
@@ -371,7 +372,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "0012_property_files_content_index",
         """
-        -- Phase 12+ — structured index emitted alongside content_md
+        -- Structured index emitted alongside content_md
         -- so programmatic consumers (LLM agents, the JSON ``/index``
         -- endpoint, future cross-property dashboards) can read the
         -- file's shape without reparsing markdown. Same data the
@@ -432,7 +433,7 @@ def apply_all(connection_url: str | None = None) -> int:
 
     Returns:
         The number of migrations actually executed (in our scheme that's
-        always ``len(_MIGRATIONS)`` — Postgres absorbs the no-ops via
+        always ``len(_MIGRATIONS)``; Postgres absorbs the no-ops via
         ``IF NOT EXISTS``).
     """
     url = connection_url or get_settings().database_url_sync

@@ -9,8 +9,8 @@ the same header:
 referenz_id, error_types``
 
 This connector emits :class:`ConnectorEvent` rows the structured
-extractor (Phase 8 Step 3) can convert directly into financial facts —
-no Gemini needed.
+extractor (:mod:`backend.pipeline.structured_extractors`) can convert
+directly into financial facts, so no LLM call is needed.
 """
 
 from __future__ import annotations

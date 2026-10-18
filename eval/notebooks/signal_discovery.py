@@ -1,6 +1,6 @@
-"""Step 8 — signal discovery on Buena real data.
+"""Signal discovery on the Buena sample dataset.
 
-Run after Step 6's email backfill lands so the SQL has data to chew
+Run after the email backfill has loaded so the SQL has data to chew
 on. Produces a markdown report (printed to stdout, redirect to
 ``docs/eval-runs/YYYY-MM-DD-signal-discovery.md``) covering:
 
@@ -14,8 +14,8 @@ on. Produces a markdown report (printed to stdout, redirect to
 8. Threads with no resolution after 14+ days.
 
 Each section emits a heading, a top-N table, and a one-line takeaway
-on what kind of signal rule the data suggests. Step 8's quality bar
-(``precision ≥ 80% on the eval set``) means each candidate must be
+on what kind of signal rule the data suggests. A signal rule must
+reach ``precision ≥ 80% on the eval set``, so each candidate must be
 validated end-to-end before promotion to ``signal_rule_definitions``;
 the discovery script just surfaces the candidates.
 
@@ -25,7 +25,7 @@ Usage::
     python -m eval.notebooks.signal_discovery \\
         --out docs/eval-runs/$(date +%Y-%m-%d)-signal-discovery.md
 
-The script is intentionally read-only — no fact writes, no event
+The script is intentionally read-only: no fact writes, no event
 mutations. Safe to run while the backfill / live worker are active.
 """
 
@@ -38,14 +38,14 @@ from typing import Any
 
 import structlog
 
-from backend.config import get_settings  # noqa: F401 — kept for downstream tweaks
+from backend.config import get_settings  # noqa: F401 (kept for downstream tweaks)
 from backend.logging import configure_logging
 
 log = structlog.get_logger("eval.signal_discovery")
 
 
 # -----------------------------------------------------------------------------
-# SQL queries — single source of truth so the report mirrors what runs.
+# SQL queries: single source of truth so the report mirrors what runs.
 # -----------------------------------------------------------------------------
 
 
@@ -331,7 +331,7 @@ SECTIONS: list[tuple[str, str, str]] = [
 
 async def _execute_all() -> str:
     """Run every section against the live DB and return Markdown."""
-    from sqlalchemy import text  # noqa: PLC0415 — local import, lazy DB binding
+    from sqlalchemy import text  # noqa: PLC0415 (local import, lazy DB binding)
 
     from backend.db.session import get_sessionmaker  # noqa: PLC0415
 
@@ -342,7 +342,7 @@ async def _execute_all() -> str:
             try:
                 rows = (await session.execute(text(sql))).mappings().all()
                 parts.append(_render_section(title, sql, takeaway, [dict(r) for r in rows]))
-            except Exception as exc:  # noqa: BLE001 — keep the report going
+            except Exception as exc:  # noqa: BLE001 (keep the report going)
                 log.exception("signal_discovery.section_error", title=title)
                 parts.append(f"## {title}\n\n_Section failed: {type(exc).__name__}: {exc}_\n")
     return "\n".join(parts)

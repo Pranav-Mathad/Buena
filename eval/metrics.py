@@ -3,20 +3,20 @@
 The runner builds one :class:`Row` per ground-truth example, and
 :class:`Report` aggregates them. All scores are computed honestly:
 
-- **Precision / Recall / F1 per category** — match key is
+- **Precision / Recall / F1 per category**: match key is
   ``(section, field)``. Value-equality is reported as a separate
   ``value_match_rate`` so we can see when the extractor finds the
   right slot but a different (still-defensible) phrasing.
-- **Routing accuracy** — fraction whose extracted scope matches
-  ``ground_truth.expected_scope`` (Phase 8.1: ``property | building |
-  liegenschaft | unrouted``).
-- **Calibration curve** — confidence-bucketed accuracy where
+- **Routing accuracy**: fraction whose extracted scope matches
+  ``ground_truth.expected_scope`` (one of ``property | building |
+  liegenschaft | unrouted``, the scopes the structured router emits).
+- **Calibration curve**: confidence-bucketed accuracy where
   "correct" means the extractor placed the fact in the right
   ``(section, field)`` slot. Value-equality lives in the per-section
   ``value_match_rate`` column so paraphrase doesn't pollute the
   calibration signal. The bucket midpoint should approximate accuracy
   if the extractor is honest about its uncertainty.
-- **Top-N failures** — rows where the extractor diverged most.
+- **Top-N failures**: rows where the extractor diverged most.
 
 No smoothing, no rounding-to-zero, no "but the model meant well".
 """
@@ -54,7 +54,7 @@ class Row:
     # extractor's facts_to_update[]
     extracted_facts: list[dict[str, Any]]
 
-    # Per-fact match details — len(matches) == len(expected_facts).
+    # Per-fact match details: len(matches) == len(expected_facts).
     # Each entry: {section, field, expected_value, extracted_value,
     # extracted_confidence, key_matched, value_matched}
     fact_matches: list[dict[str, Any]] = field(default_factory=list)
@@ -168,7 +168,7 @@ class Report:
         Iterates *every fact the extractor produced* (matched or
         spurious). A fact counts as ``correct`` when its
         ``(section, field)`` key matches a ground-truth fact for the
-        same row — i.e. the extractor put the observation in the right
+        same row, i.e. the extractor put the observation in the right
         slot. Value-equality is reported separately via
         :attr:`CategoryStats.value_match_rate`; conflating the two here
         punishes paraphrase even when the model nailed the slot.

@@ -1,13 +1,13 @@
-"""``GET /files/<path>`` — serve a document from the configured root.
+"""``GET /files/<path>``: serve a document from the configured root.
 
-Phase 10 Step 10.4. The renderer's ``[source: …]`` links resolve to
-this endpoint for invoice / letter PDFs, so the trust mechanism only
-holds if a click actually opens the original document.
+The renderer's ``[source: …]`` links resolve to this endpoint for
+invoice / letter PDFs, so the trust mechanism only holds if a click
+actually opens the original document.
 
 Path safety is the only thing this module exists to enforce. The
 configured root is resolved via :func:`os.path.realpath` once at startup;
 every requested path is also realpath-resolved and required to start
-with the root prefix. Anything else returns 403 — even legal-looking
+with the root prefix. Anything else returns 403, even legal-looking
 relative paths that resolve to a sibling directory.
 """
 
@@ -59,10 +59,10 @@ def _find_by_basename(basename: str) -> str | None:
 
     Defends against connector-side path-relativity drift (an early
     ingest stored ``original_path`` relative to the connector's working
-    directory, not to the configured files root). The basename
-    includes the content sha-prefixed Buena filename
-    (e.g. ``20260102_DL-012_INV-00196.pdf``) which is unique enough for
-    a single match. We stop at the first match — operators clicking
+    directory, not to the configured files root). Document basenames in
+    the sample dataset embed a date and document IDs
+    (e.g. ``20260102_DL-012_INV-00196.pdf``), which is unique enough for
+    a single match. We stop at the first match: operators clicking
     "Open PDF" want a document, not a list. Logs the resolution so the
     operator can audit afterward.
     """
@@ -93,7 +93,7 @@ def _safe_resolve(relative_path: str) -> str:
 
     Steps:
 
-    1. Reject absolute paths outright — only relative segments allowed.
+    1. Reject absolute paths outright; only relative segments are allowed.
     2. Reject any segment that contains a NUL byte (defense in depth).
     3. Join + realpath; require the result to live under ``_allowed_root``.
     4. Require the file to exist and be a regular file.

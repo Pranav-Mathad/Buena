@@ -119,7 +119,7 @@ CREATE TABLE outbox (
   sent_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Phase 8.1 — Liegenschaft (WEG) tier above buildings.
+-- Liegenschaft (WEG) tier above buildings.
 -- One liegenschaft can own multiple Häuser; events billed at WEG level
 -- (Hausgeld, Verwaltergebühr, shared contractor fees) attach here, not
 -- to a specific Haus. Routing precedence in route_structured():
@@ -150,9 +150,9 @@ CREATE INDEX IF NOT EXISTS idx_facts_building_current
 CREATE INDEX IF NOT EXISTS idx_facts_liegenschaft_current
   ON facts (liegenschaft_id, section, field) WHERE superseded_by IS NULL;
 
--- Phase 8 — durable LLM-spend ledger.
+-- Durable LLM-spend ledger.
 -- Persists across CLI invocations so a single budget cap (e.g. $20)
--- governs the entire Buena backfill, not just one run. Sub-labels
+-- governs an entire backfill of the sample dataset, not just one run. Sub-labels
 -- (e.g. 'pdf_doctype' at $2 sub-cap) share the same row family.
 CREATE TABLE IF NOT EXISTS cost_ledger (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

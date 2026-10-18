@@ -1,12 +1,14 @@
-"""Tests for Phase 10 Step 10.6 — trust-layer action endpoints.
+"""Tests for the trust-layer action endpoints.
 
 Two write surfaces:
 
-1. ``POST /admin/uncertainties/{id}/resolve`` — promote-to-fact /
+1. ``POST /admin/uncertainties/{id}/resolve``: promote-to-fact or
    dismiss, both audit-logged.
-2. ``POST /admin/rejected/{id}/override`` — already shipped in Phase
-   9.2; we re-verify here that the audit trail (approval_log) is
-   actually written, since the user explicitly asked us to verify.
+2. ``POST /admin/rejected/{id}/override``: the reviewer's decision on a
+   validator rejection. We check end to end that every decision also
+   writes an ``approval_log`` row, because a human override without an
+   audit trail would undermine the provenance the rest of the system
+   relies on.
 
 Both use httpx.AsyncClient + ASGITransport so the route's asyncpg
 session shares the test's event loop.
@@ -28,7 +30,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def _async_client() -> httpx.AsyncClient:
-    """ASGI-transport client — see test_source_links for rationale."""
+    """ASGI-transport client; see test_source_links for rationale."""
     from backend.main import app  # noqa: PLC0415
 
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
@@ -426,7 +428,7 @@ async def test_double_resolve_409s() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Existing rejected/override path — verify it audit-logs end-to-end
+# Rejected/override path: verify it audit-logs end-to-end
 # ---------------------------------------------------------------------------
 
 

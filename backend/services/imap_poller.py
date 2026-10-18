@@ -1,7 +1,7 @@
 """IMAP inbox poller.
 
-Polls the configured mailbox every tick (APScheduler, ~10s per KEYSTONE
-Phase 1). Each new message becomes an ``email`` event, idempotent on
+Polls the configured mailbox every tick (APScheduler, ~10s). Each new
+message becomes an ``email`` event, idempotent on
 ``Message-ID`` so replaying the inbox after a restart is safe.
 """
 

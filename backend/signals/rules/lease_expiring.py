@@ -1,8 +1,8 @@
-"""Rule 2 — ``lease_expiring``.
+"""Rule 2: ``lease_expiring``.
 
 Fires when a property's ``lease.end_date`` fact parses to a date within the
-next 60 days. The window is intentionally configurable so the demo can
-widen it when no real lease is imminent (``LEASE_WINDOW_DAYS``).
+next 60 days. The window is a module constant (``LEASE_WINDOW_DAYS``) so it
+can be widened when running against data in which no lease is imminent.
 """
 
 from __future__ import annotations

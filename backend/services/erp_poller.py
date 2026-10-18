@@ -1,7 +1,7 @@
 """Poll the mock ERP and ingest new payments as events.
 
-The poller runs on APScheduler every ~30s (Phase 2). State is kept entirely
-in Postgres — each poll asks the mock ERP for ``payments`` and inserts each
+The poller runs on APScheduler every ~30s. State is kept entirely
+in Postgres: each poll asks the mock ERP for ``payments`` and inserts each
 new row as an ``erp`` event keyed on its ``payment_id``. The ``(source,
 source_ref)`` unique constraint on the events table keeps the call idempotent.
 """

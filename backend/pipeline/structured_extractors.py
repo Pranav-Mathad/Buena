@@ -67,7 +67,7 @@ async def _write_or_supersede_fact(
     """Write a fact unless an identical scope+(section, field, value) is current.
 
     Exactly one of ``property_id`` / ``building_id`` / ``liegenschaft_id``
-    must be set — the scope is the natural key for the
+    must be set; the scope is the natural key for the
     ``superseded_by IS NULL`` lookup. Re-writes with identical values
     short-circuit; differing values stamp ``superseded_by`` on the
     predecessor.
@@ -140,7 +140,7 @@ async def _write_or_supersede_fact(
             {"new_id": new_id, "old_id": current.id},
         )
 
-    # Phase 12 — propagate to the materialized files. Bank/invoice are
+    # Propagate to the materialized files. Bank/invoice are
     # the only paths that write building- or liegenschaft-scoped facts,
     # so the cascade rule lives here too. Same session = same
     # transaction = atomic with the fact write.
@@ -166,7 +166,7 @@ async def extract_bank_facts(
 ) -> int:
     """Write deterministic facts for one bank event. Returns count written.
 
-    Phase 8.1: scope is whichever of ``property_id`` / ``building_id`` /
+    Scope is whichever of ``property_id`` / ``building_id`` /
     ``liegenschaft_id`` is set. No-op when all three are None
     (the event is genuinely unrouted).
 
@@ -305,7 +305,7 @@ async def extract_invoice_facts(
 ) -> int:
     """Write deterministic facts for one invoice event.
 
-    Phase 8.1: an invoice routes at one of three tiers; the section name
+    An invoice routes at one of three tiers; the section name
     follows the scope.
     """
     dl_id = metadata.get("dl_id") or _dl_id_from_filename(metadata.get("filename"))
@@ -346,7 +346,7 @@ def _dl_id_from_filename(filename: str | None) -> str | None:
     """Pull a ``DL-NNN`` token out of a Buena invoice filename."""
     if not filename:
         return None
-    import re  # noqa: PLC0415 — local import keeps regex hot path cheap
+    import re  # noqa: PLC0415 (local import keeps regex hot path cheap)
 
     match = re.search(r"\b(DL-\d{3,})\b", filename)
     return match.group(1) if match else None

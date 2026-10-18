@@ -1,4 +1,9 @@
-"""Redaction tests — non-negotiable per Phase 8 ground rules."""
+"""Redaction tests.
+
+PII is redacted at ingestion, before anything reaches the database, so
+these helpers are the only barrier between raw IBANs, phone numbers and
+email addresses and persisted rows. A regression here leaks PII.
+"""
 
 from __future__ import annotations
 
@@ -77,7 +82,7 @@ class TestScrubText:
         assert redact.scrub_text(text) == text
 
     def test_no_german_iban_survives_after_scrub(self) -> None:
-        """Hard product invariant from the Phase 8 ground rules."""
+        """No raw German IBAN may survive scrubbing, whatever text surrounds it."""
         body = (
             "Sehr geehrter Herr,\n"
             f"Bitte überweisen Sie an {IBAN_9832}\n"

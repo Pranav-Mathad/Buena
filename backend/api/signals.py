@@ -88,7 +88,7 @@ class EvaluateResponse(BaseModel):
 
 
 class ProposeRequest(BaseModel):
-    """Payload for ``POST /signals/propose`` — MCP / external-AI entry point."""
+    """Payload for ``POST /signals/propose``: MCP / external-AI entry point."""
 
     property_id: UUID | None = None
     type: str = Field(..., min_length=1)
@@ -178,7 +178,7 @@ async def propose_signal(
 ) -> ProposeResponse:
     """Insert a pending signal authored by an external AI (Claude via MCP).
 
-    The human always approves before any outbox side effect — this endpoint
+    The human always approves before any outbox side effect; this endpoint
     deliberately does not dispatch.
     """
     severity = (
@@ -229,7 +229,11 @@ async def propose_signal(
 async def evaluate_now(
     session: AsyncSession = Depends(get_session),
 ) -> EvaluateResponse:
-    """Manually fire the rule evaluator. Useful for demo determinism."""
+    """Run the rule evaluator now instead of waiting for the next scheduled run.
+
+    Lets an operator (or a test) see the signals for freshly ingested
+    data immediately and at a known point in time.
+    """
     created = await evaluate_all(session)
     await session.commit()
     log.info("signals.evaluate", created=created)

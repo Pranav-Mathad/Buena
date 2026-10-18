@@ -1,6 +1,6 @@
-"""``/events/<id>/...`` — resolve a fact's source link to the original document.
+"""``/events/<id>/...``: resolve a fact's source link to the original document.
 
-Phase 10 Step 10.4. The renderer emits ``[source: <id>](/events/<id>/source)``
+The renderer emits ``[source: <id>](/events/<id>/source)``
 for every fact and uncertainty line. This router dispatches based on
 the event's ``source`` field:
 
@@ -85,7 +85,7 @@ async def event_source(
                 original_path=original_path,
             )
             return RedirectResponse(url=f"/files/{original_path}", status_code=307)
-        # No path captured — fall through to raw so the operator sees
+        # No path captured: fall through to raw so the operator sees
         # something rather than a dead link.
 
     if source == "bank":
@@ -114,7 +114,7 @@ async def event_raw(
     """Return the event's ``raw_content`` as ``text/plain``.
 
     Used for emails and as a fallback for unknown source types. PDFs
-    redirect through ``/source`` to ``/files`` — calling ``/raw``
+    redirect through ``/source`` to ``/files``; calling ``/raw``
     directly on a PDF event returns the redacted body text the
     extractor saw, which is occasionally useful for triage.
     """

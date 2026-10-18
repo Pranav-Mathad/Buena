@@ -4,8 +4,8 @@ Both the REST ``POST /debug/trigger_event`` endpoint and the IMAP poller need
 the same two primitives: insert an event idempotently, and notify anything
 listening on the property's SSE stream when a new fact lands.
 
-The notification layer is a plain in-process ``asyncio.Queue`` fan-out — no
-Redis, no Kafka (Part III: Postgres is the queue).
+The notification layer is a plain in-process ``asyncio.Queue`` fan-out with
+no Redis and no Kafka: Postgres is the queue, so there is no separate broker.
 """
 
 from __future__ import annotations
@@ -110,6 +110,6 @@ async def insert_event(
 
 def _json_or_none(value: dict[str, Any] | None) -> str | None:
     """Tiny helper to keep SQL bind params JSON-ready."""
-    import json  # noqa: PLC0415 — local import, hot path is rare
+    import json  # noqa: PLC0415 (local import, hot path is rare)
 
     return None if value is None else json.dumps(value)

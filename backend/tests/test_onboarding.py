@@ -1,8 +1,8 @@
-"""Tests for Phase 10 Step 10.3 — onboarding view.
+"""Tests for the onboarding view.
 
-The onboarding view has one Gemini call (the 12-month briefing) and
-four deterministic sections. We monkeypatch the Gemini choke-point so
-tests are offline + deterministic; the deterministic sections are
+The onboarding view has one LLM call (the 12-month briefing) and
+four deterministic sections. We monkeypatch the provider lookup
+(``onboarding.get_provider``) so tests are offline + deterministic; the deterministic sections are
 exercised end-to-end against a real DB row, so cleanup matters.
 """
 
@@ -131,7 +131,7 @@ async def test_cache_key_handles_none_inputs() -> None:
 
 
 # ----------------------------------------------------------------------------
-# DB integration — empty property renders gracefully
+# DB integration: empty property renders gracefully
 # ----------------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
 
 
 # ----------------------------------------------------------------------------
-# DB integration — open issues surface
+# DB integration: open issues surface
 # ----------------------------------------------------------------------------
 
 
@@ -323,7 +323,7 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
             await onboarding.render_onboarding(session, pid)
         assert call_count["n"] == 1
 
-        # Insert a fact — moves last_fact and flips the cache key.
+        # Insert a fact: moves last_fact and flips the cache key.
         async with factory() as session:
             ref = f"cache-{uuid4().hex[:8]}"
             ev = (
@@ -362,7 +362,7 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ----------------------------------------------------------------------------
-# DB integration — recurring patterns surface in "Watch out for"
+# DB integration: recurring patterns surface in "Watch out for"
 # ----------------------------------------------------------------------------
 
 

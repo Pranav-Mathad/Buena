@@ -1,4 +1,4 @@
-"""Hand-crafted seed data for the Keystone demo.
+"""Hand-crafted seed data: a small synthetic portfolio of four properties.
 
 Data is keyed by stable string identifiers (``owner_key``, ``building_key``,
 ``event_key``, …) so :mod:`seed.seed` can resolve cross-references in a single
@@ -6,8 +6,9 @@ pass without relying on generated UUIDs. Every event carries a source and a
 timestamp; every fact references an event by key so that :func:`render_markdown`
 can emit the required ``[source: <event_id>]`` links.
 
-Dates are anchored on ``DEMO_NOW`` (2026-04-24) so the seeded history always
-spans the trailing six months relative to the demo.
+Dates are anchored on a fixed ``DEMO_NOW`` (2026-04-24) rather than the wall
+clock, so the seeded history always spans the same six months and relative
+dates in the rendered files are reproducible.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ def days_ago(days: int, hour: int = 9, minute: int = 0) -> datetime:
 
 @dataclass(frozen=True)
 class OwnerSeed:
-    """Owner record — matched on ``email`` for idempotent upserts."""
+    """Owner record, matched on ``email`` for idempotent upserts."""
 
     key: str
     name: str
@@ -39,7 +40,7 @@ class OwnerSeed:
 
 @dataclass(frozen=True)
 class BuildingSeed:
-    """Building record — matched on ``address`` for idempotent upserts."""
+    """Building record, matched on ``address`` for idempotent upserts."""
 
     key: str
     address: str
@@ -49,7 +50,7 @@ class BuildingSeed:
 
 @dataclass(frozen=True)
 class ContractorSeed:
-    """Contractor record — matched on ``name`` for idempotent upserts."""
+    """Contractor record, matched on ``name`` for idempotent upserts."""
 
     key: str
     name: str
@@ -60,7 +61,7 @@ class ContractorSeed:
 
 @dataclass(frozen=True)
 class TenantSeed:
-    """Tenant record — matched on ``(property, email)`` for idempotency."""
+    """Tenant record, matched on ``(property, email)`` for idempotency."""
 
     name: str
     email: str
@@ -93,7 +94,7 @@ class FactSeed:
 
 @dataclass(frozen=True)
 class PropertySeed:
-    """Full demo fixture for a single property."""
+    """Full seed fixture for a single property."""
 
     key: str
     name: str
@@ -188,7 +189,8 @@ CONTRACTORS: list[ContractorSeed] = [
 
 
 # -----------------------------------------------------------------------------
-# Property 1 — Berliner Strasse 12, Apt 4B (demo hero)
+# Property 1: Berliner Strasse 12, Apt 4B (richest history: recurring
+# heating and boiler faults that escalate over the winter)
 # -----------------------------------------------------------------------------
 
 _BERLIN_4B_EVENTS: list[EventSeed] = [
@@ -401,7 +403,8 @@ BERLIN_4B = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 2 — Berliner Strasse 12, Apt 2A (pair for cross-property signal)
+# Property 2: Berliner Strasse 12, Apt 2A (shares a boiler with Apt 4B, so
+# the two properties together trigger a cross-property signal)
 # -----------------------------------------------------------------------------
 
 _BERLIN_2A_EVENTS: list[EventSeed] = [
@@ -571,7 +574,7 @@ BERLIN_2A = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 3 — Hamburg, Elbchaussee 88
+# Property 3: Hamburg, Elbchaussee 88
 # -----------------------------------------------------------------------------
 
 _HAMBURG_EVENTS: list[EventSeed] = [
@@ -739,7 +742,7 @@ HAMBURG = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 4 — Munich, Leopoldstrasse 45
+# Property 4: Munich, Leopoldstrasse 45
 # -----------------------------------------------------------------------------
 
 _MUNICH_EVENTS: list[EventSeed] = [

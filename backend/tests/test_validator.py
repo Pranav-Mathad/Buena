@@ -1,4 +1,4 @@
-"""Tests for Phase 9 Step 9.2 — constraint validator.
+"""Tests for the rule-based constraint validator.
 
 Pure-function tests on each constraint (no DB) plus an end-to-end
 ``validate()`` test on a representative DiffPlan. Persistence to the
@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
-from backend.pipeline import constraints  # noqa: F401 — registers everything
+from backend.pipeline import constraints  # noqa: F401 (registers everything)
 from backend.pipeline.differ import DiffPlan, FactDecision
 from backend.pipeline.validator import (
     constraints_for,
@@ -213,7 +213,7 @@ class TestPropertySquareMeters:
 
 class TestComplianceWildcard:
     def test_email_rejected_any_field(self) -> None:
-        # Wildcard — should fire on any field under 'compliance'.
+        # Wildcard: should fire on any field under 'compliance'.
         cs = constraints_for("compliance", "brandschutznachweis")
         assert cs, "compliance wildcard not loaded"
         c = cs[0]
@@ -302,7 +302,7 @@ def test_validate_first_match_wins() -> None:
 
 
 # ----------------------------------------------------------------------------
-# persist_rejections — DB roundtrip
+# persist_rejections: DB roundtrip
 # ----------------------------------------------------------------------------
 
 pytestmark_db = pytest.mark.asyncio

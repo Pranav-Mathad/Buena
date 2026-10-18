@@ -3,21 +3,22 @@
 Each event:
 
 - ``source`` = ``"invoice"``.
-- ``source_ref`` = ``sha256(file_bytes)[:16]`` — content-addressable so
+- ``source_ref`` = ``sha256(file_bytes)[:16]``, content-addressable so
   re-uploads of the same bytes collapse.
 - ``metadata.document_type`` is set via
   :func:`connectors.document_type.classify` (filename heuristics first;
   Gemini Flash fallback when heuristics fail and the cost ledger has
   budget).
-- ``metadata.original_path`` retains the relative path for Phase 10
-  document-linking.
+- ``metadata.original_path`` retains the relative path so the source-link
+  endpoint (:mod:`backend.api.source_links`) can redirect to the original
+  PDF under ``/files/``.
 - ``raw_content`` is the extracted text (PII scrubbed) when
   ``read_text=True``; otherwise a short header line. Reading text on
   every backfill row is expensive, so the default is metadata-only;
   callers can opt-in.
 
 When the dataset ships a sibling ``rechnungen_index.csv`` (Buena's
-incremental folders do), :func:`walk_index_csv` is the cheap path —
+incremental folders do), :func:`walk_index_csv` is the cheap path:
 it yields events without opening the PDFs at all.
 """
 
@@ -74,7 +75,7 @@ def parse_one(
     if read_text:
         try:
             body = extract_text(raw_bytes)
-        except Exception as exc:  # noqa: BLE001 — corrupt PDFs shouldn't kill the walk
+        except Exception as exc:  # noqa: BLE001 (corrupt PDFs shouldn't kill the walk)
             log.warning("invoice.extract_failed", path=str(path), error=str(exc))
             body = ""
         head_text = body[:PDF_HEAD_CHARS]

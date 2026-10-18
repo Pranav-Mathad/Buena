@@ -1,4 +1,4 @@
-"""Buena composite — the only place that knows Buena's directory shape.
+"""Buena composite: the only place that knows Buena's directory shape.
 
 Wires :mod:`csv_stammdaten`, :mod:`eml_archive`, :mod:`camt_bank`,
 :mod:`pdf_invoice_archive`, and :mod:`pdf_letter_archive` against the
@@ -11,9 +11,9 @@ Layout (verified against the dataset shipped 2026-04-25):
     Extracted/
     ├── stammdaten/
     │   ├── eigentuemer.csv     (35 rows)
-    │   ├── einheiten.csv       (52 rows — units inside buildings)
-    │   ├── mieter.csv          (26 rows — active + closed leases)
-    │   ├── dienstleister.csv   (16 rows — contractors)
+    │   ├── einheiten.csv       (52 rows: units inside buildings)
+    │   ├── mieter.csv          (26 rows: active + closed leases)
+    │   ├── dienstleister.csv   (16 rows: contractors)
     │   └── stammdaten.json     (canonical: liegenschaft + gebaeude
     │                            + einheiten + eigentuemer + mieter
     │                            + dienstleister)
@@ -78,7 +78,7 @@ def require_root(env_value: str | None = None) -> Path:
 
 
 # -----------------------------------------------------------------------------
-# Stammdaten — adapt Buena rows onto Phase 0's seed dataclasses
+# Stammdaten: adapt Buena rows onto the seed dataclasses
 # -----------------------------------------------------------------------------
 
 
@@ -87,7 +87,7 @@ class BuenaStammdaten:
     """Concrete Stammdaten payload after redaction + adaptation.
 
     ``liegenschaften`` is the WEG tier (`Wohnungseigentümergemeinschaft`,
-    owners' association) — one Liegenschaft owns N Häuser; per-WEG
+    owners' association): one Liegenschaft owns N Häuser; per-WEG
     events (Hausgeld, Verwaltergebühr, shared contractor fees) attach
     here, not to a single Haus.
     """
@@ -176,7 +176,7 @@ TENANT_COLUMN_MAP = ColumnMap(
 
 
 def _short_address(strasse: str, hausnr: str) -> str:
-    """e.g. ``"Musterstr. 26 · WE 01"``-style — passes through unchanged."""
+    """e.g. ``"Musterstr. 26 · WE 01"``-style; passes through unchanged."""
     if not strasse:
         return hausnr
     if hausnr and hausnr not in strasse:
@@ -424,7 +424,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
 
 
 # -----------------------------------------------------------------------------
-# Event composers — these are what the CLI actually calls
+# Event composers: these are what the CLI actually calls
 # -----------------------------------------------------------------------------
 
 

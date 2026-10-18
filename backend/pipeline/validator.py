@@ -1,9 +1,9 @@
-"""Phase 9 Step 9.2 — constraint validator.
+"""Rule-based constraint validator.
 
 Sits between :mod:`backend.pipeline.differ` and :mod:`backend.pipeline.applier`.
 The differ already filtered proposals on source-precedence /
 confidence / recency; the validator adds *semantic* gates that are
-hard to express as numbers — "the building's floor count is
+hard to express as numbers: "the building's floor count is
 immutable", "a rent change requires a lease addendum PDF", "a
 compliance fact must come from an authoritative source".
 
@@ -165,7 +165,7 @@ def constraints_for(section: str, field: str) -> list[Constraint]:
 
 
 def clear_registry() -> None:
-    """Test helper — empty the registry between tests."""
+    """Test helper: empty the registry between tests."""
     REGISTRY.clear()
 
 
@@ -185,7 +185,7 @@ def validate(
     Args:
         plan: The :class:`DiffPlan` from the differ.
         event: Event-level context. Must include ``source`` (str) and
-            ``metadata`` (dict) — constraints read
+            ``metadata`` (dict); constraints read
             ``metadata.document_type``.
         current_facts: Map of ``(section, field) → current fact dict``,
             shaped like the output of
@@ -337,7 +337,7 @@ def event_stammdaten(event: dict[str, Any], scope: str) -> dict[str, Any]:
     attaches them to the event dict before calling :func:`validate` so
     constraints can compare proposed values against the master record
     without each one re-running its own SQL. Returns ``{}`` when nothing
-    was loaded — constraints must treat that as "no ground truth, fall
+    was loaded; constraints must treat that as "no ground truth, fall
     through to default behaviour".
     """
     snap = event.get("stammdaten") or {}
@@ -363,7 +363,7 @@ def values_differ(proposed: object, stammdaten_value: object) -> bool:
 
     Used by every immutable-field constraint when checking strict mode
     (``current is None``). Comparisons normalise whitespace, casing, and
-    trivial numeric formatting differences — anything else counts as a
+    trivial numeric formatting differences; anything else counts as a
     real contradiction worth rejecting.
     """
     if stammdaten_value in (None, ""):

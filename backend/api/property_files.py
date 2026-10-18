@@ -1,16 +1,16 @@
 """Materialized property file API.
 
-Phase 12 — exposes the cached, propagation-aware ``property_files``
-table as a first-class resource (separate from ``/properties/{id}``
-which is the master-record + structured-card surface).
+Exposes the cached, propagation-aware ``property_files`` table as a
+first-class resource (separate from ``/properties/{id}``, which is the
+master-record + structured-card surface).
 
 Two endpoints:
 
-- ``GET /property_files/{property_id}`` — full row shape for a single
+- ``GET /property_files/{property_id}``: full row shape for a single
   property's materialized markdown.
-- ``GET /property_files/changes?since=<ISO>&limit=50`` — recent
-  regenerations across the portfolio. The frontend (Phase 13) can
-  poll this to drive a "live update" feed without subscribing to
+- ``GET /property_files/changes?since=<ISO>&limit=50``: recent
+  regenerations across the portfolio. A frontend or external consumer
+  can poll this to drive a "live update" feed without subscribing to
   the in-process event bus. Ordering is ``last_rendered_at DESC``;
   ``trigger_*`` columns let consumers attribute each row to the
   fact write that triggered it.
@@ -84,8 +84,8 @@ async def list_changes(
 ) -> list[PropertyFileChangeRow]:
     """Return recent property-file regenerations.
 
-    Phase 13 will use this as the polling target for a "what changed"
-    feed; Phase 12 ships only the data layer.
+    Intended as the polling target for a "what changed" feed. No
+    first-party client consumes it yet; it is the data layer only.
     """
     if since is None:
         rows = (
@@ -186,7 +186,7 @@ async def get_property_file(
 class PropertyFileIndex(BaseModel):
     """Structured index emitted alongside the markdown.
 
-    Same data the frontmatter summarizes — exposed here as typed JSON
+    Same data the frontmatter summarizes, exposed here as typed JSON
     so an AI agent or a cross-property dashboard can read the file's
     shape (section counts, conflicts, coverage, low-confidence count)
     without parsing the markdown body.
@@ -205,7 +205,7 @@ async def get_property_file_index(
 ) -> PropertyFileIndex:
     """Return the structured ``content_index`` for one property.
 
-    Phase 12+ — the typed shape an LLM agent ingests in one tool call
+    The typed shape an LLM agent ingests in one tool call
     instead of re-parsing the markdown body. Cache-headered the same
     way ``/property_files/{id}`` is.
     """

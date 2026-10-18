@@ -2,33 +2,34 @@
 
 Why this script exists
 ======================
-``Extracted/`` is gitignored (real Buena partner data, names + IBANs in the
+``Extracted/`` is gitignored (real Buena customer data, names + IBANs in the
 clear). Cloud Run deploys and fresh clones therefore have no stammdaten and
 ``GET /properties`` returns only the 4 hand-crafted seed rows. This script
 produces an equivalent ``Extracted_demo/stammdaten/stammdaten.json`` that is
 safe to commit:
 
 * All IDs preserved verbatim (``EH-NNN``, ``EIG-NNN``, ``MIE-NNN``, ``DL-NNN``,
-  ``HAUS-12/14/16``, ``LIE-001``) — these are routing primary keys the rest
+  ``HAUS-12/14/16``, ``LIE-001``); these are routing primary keys the rest
   of the system depends on.
 * All foreign-key columns preserved (``einheit_id``, ``eigentuemer_id``,
   ``einheit_ids``, ``haus_id``).
-* ``einheiten`` rows copied verbatim — no PII, just unit shape.
-* Building shape (``etagen``, ``baujahr``, ``fahrstuhl``) preserved — used
+* ``einheiten`` rows copied verbatim: no PII, just unit shape.
+* Building shape (``etagen``, ``baujahr``, ``fahrstuhl``) preserved; used
   by the Building Context renderer.
 * Operational numbers (``kaltmiete``, ``kaution``, ``wohnflaeche_qm``,
-  ``miteigentumsanteil``) preserved — needed for realistic demo math.
+  ``miteigentumsanteil``) preserved; rent totals, deposits and ownership
+  shares computed from the file must stay realistic.
 * Liegenschaft street and postcode REPLACED with a fixed fictional
   address (``DEMO_STREET`` / ``DEMO_PLZ`` below). Unit and building names
   are derived from it, so routing aliases stay internally consistent.
 * Person/company names, emails, phones, IBANs, street addresses, tax IDs
   REPLACED with deterministic synthetic German values. The verwalter
-  (Buena's real partner property manager) is also replaced.
+  (the real property manager named in the Buena dataset) is also replaced.
 
 Determinism
 -----------
 Each replacement is derived from ``hashlib.sha256(row_id)`` so the output
-is reproducible across runs. A future run regenerates the same demo file.
+is reproducible across runs. A future run regenerates the same output file.
 
 Usage
 -----
@@ -128,9 +129,9 @@ GERMAN_LAST_NAMES = [
     "Schmid",
 ]
 
-# Per-contractor demo company names — same order/length as the source
-# (16 rows). Mirrors the original branche so the demo still demonstrates
-# the same vendor mix without using real corporate identities.
+# Per-contractor synthetic company names, same order/length as the source
+# (16 rows). Mirrors the original branche so the synthetic data keeps the
+# same vendor mix without using real corporate identities.
 CONTRACTOR_FIRMA_BY_INDEX = [
     "Hausmeister Demo GmbH",
     "Aufzug Demo & Co. KG",
@@ -185,7 +186,7 @@ def _phone(row_id: str) -> str:
 def _iban(row_id: str) -> str:
     """Return a 22-char synthetic German IBAN with deterministic last-4.
 
-    All digits zero except the trailing 4 — preserves length + ``DE`` prefix
+    All digits zero except the trailing 4; preserves length + ``DE`` prefix
     so any IBAN regex still matches and ``redact.iban_last4`` produces a
     distinct value per row.
     """

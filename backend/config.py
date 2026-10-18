@@ -1,6 +1,6 @@
 """Typed application configuration loaded from the environment.
 
-All settings are read via `pydantic-settings`. No module-level side effects —
+All settings are read via `pydantic-settings`. No module-level side effects:
 callers must instantiate :func:`get_settings` (cached) to obtain a `Settings`
 object. This keeps configuration testable and free of global state.
 """
@@ -17,9 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings backed by environment variables / ``.env``.
 
-    Only keys that are already used in Phase 0 carry real defaults; keys for
-    later phases are declared here with placeholder defaults so that the
-    application still boots when they are absent.
+    Keys needed to run locally (database, app, CORS) carry working
+    defaults. Credentials and integration endpoints default to empty
+    placeholders so the application still boots when they are absent;
+    each feature that needs one disables itself or falls back.
     """
 
     model_config = SettingsConfigDict(
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     pioneer_api_key: str = Field(default="")
     pioneer_model: str = Field(default="claude-sonnet-4-6")
 
-    # --- IMAP / Slack / Mock ERP (used by later phases) ---
+    # --- IMAP / Slack / Mock ERP connectors ---
     imap_host: str = Field(default="imap.gmail.com")
     imap_port: int = Field(default=993)
     imap_user: str = Field(default="")
@@ -75,12 +76,13 @@ class Settings(BaseSettings):
     # Replay speed for the featured-property replay (1 = real time).
     replay_speed_multiplier: int = Field(default=10, ge=1)
 
-    # --- Phase 10 Step 10.4 — document linking ---
+    # --- Document linking ---
     # Filesystem root that ``GET /files/<path>`` is allowed to serve. Any
     # path that, after ``realpath`` resolution, escapes this root is
-    # refused with 403. Default points at the gitignored Buena dump so
-    # the dev environment "just works"; production deployments must
-    # set an absolute path explicitly.
+    # refused with 403. The default is the gitignored sample-dataset
+    # directory, relative to the working directory, so a local checkout
+    # works without configuration; production deployments must set an
+    # absolute path explicitly.
     keystone_files_root: str = Field(default="Extracted")
 
     # --- Browser access (CORS) ---

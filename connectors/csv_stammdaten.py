@@ -2,13 +2,13 @@
 
 Parameterised by entity type (``owner | building | property | tenant
 | contractor``) and a column mapping. The loader reads the CSV, applies
-PII redaction, and adapts each row into one of Phase 0's seed
-dataclasses (``OwnerSeed``, ``BuildingSeed``, …) so we can reuse the
+PII redaction, and adapts each row into one of the seed
+dataclasses from :mod:`seed.realistic_data` (``OwnerSeed``, ``BuildingSeed``, …) so we can reuse the
 existing ``seed.seed._upsert_*`` helpers.
 
 The Buena composer (:mod:`connectors.buena_archive`) wires four CSV
-readers — `eigentuemer`, `gebaeude/liegenschaft`, `mieter`,
-`dienstleister` — plus the unit/property hybrid that comes from
+readers (`eigentuemer`, `gebaeude/liegenschaft`, `mieter`,
+`dienstleister`) plus the unit/property hybrid that comes from
 `einheiten.csv` joined with `liegenschaft` rows in `stammdaten.json`.
 """
 
@@ -37,7 +37,7 @@ class ColumnMap:
 
     The keys are Keystone field names; the values are the customer's
     column header in the source CSV. ``metadata_columns`` is the
-    pass-through bucket — every header listed here ends up under
+    pass-through bucket: every header listed here ends up under
     ``metadata`` after PII redaction.
     """
 
@@ -81,7 +81,7 @@ def _redact_value(column: str, value: str, pii_columns: Iterable[str]) -> Any:
     if "email" in lower or "mail" in lower:
         return redact.email_redact(value)
     if "bic" in lower:
-        # BIC is bank identifier — not strictly PII but Buena treats it as
+        # BIC is a bank identifier: not strictly PII, but Buena treats it as
         # bank-internal. Keep as-is; downstream can scrub if needed.
         return value
     return redact.scrub_text(value)
@@ -137,7 +137,7 @@ def read_rows(
 
 
 def parse_iso_date(value: Any) -> date | None:
-    """Public helper — exposed so composers can keep date logic consistent."""
+    """Public helper, exposed so composers can keep date logic consistent."""
     if value in (None, "", b""):
         return None
     if isinstance(value, date):

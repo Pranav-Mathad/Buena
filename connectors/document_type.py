@@ -3,11 +3,12 @@
 Pure function over ``(filename, head_text)``. Filename heuristics run
 first (cheap, deterministic). When heuristics return ``None`` the
 classifier falls back to Gemini Flash on the first 800 chars of
-extracted text — and only when the Phase 8 cost ledger has remaining
-budget under the ``pdf_doctype`` sub-label (default sub-cap ``$2``).
+extracted text, and only when the cost ledger
+(:mod:`connectors.cost_ledger`) has remaining budget under the
+``pdf_doctype`` sub-label (default sub-cap ``$2``).
 
-Phase 9 :mod:`backend.pipeline.validator` reads the resulting label
-out of ``event.metadata.document_type`` to enforce constraints like
+:mod:`backend.pipeline.validator` reads the resulting label out of
+``event.metadata.document_type`` to enforce constraints like
 *"rent changes require a lease_addendum"*.
 """
 
@@ -37,7 +38,7 @@ DocumentType = Literal[
     "other",
 ]
 
-#: All valid labels at runtime — used by the Gemini fallback to validate
+#: All valid labels at runtime, used by the Gemini fallback to validate
 #: the model output. ``get_args`` gives us the literal members.
 DOCUMENT_TYPES: Final[tuple[str, ...]] = get_args(DocumentType)
 
@@ -90,10 +91,11 @@ def _classify_with_gemini(filename: str, head_text: str, *, sub_cap_usd: Decimal
 
     Returns ``"other"`` when Gemini is unavailable, the cost cap is
     exhausted, the model returns an unknown label, or any error
-    surfaces. Callers should treat ``"other"`` as "unknown" and Phase 9
-    constraints will reject it where a specific subtype is required.
+    surfaces. Callers should treat ``"other"`` as "unknown"; the
+    source-type constraints in :mod:`backend.pipeline.constraints` reject
+    it where a specific subtype is required.
     """
-    # 1. Pre-flight ledger charge — short-circuit before issuing any
+    # 1. Pre-flight ledger charge: short-circuit before issuing any
     # request when the sub-cap is exhausted.
     cost_ledger.ensure_label(DOCTYPE_LEDGER_LABEL, sub_cap_usd)
     try:
@@ -137,7 +139,7 @@ def _classify_with_gemini(filename: str, head_text: str, *, sub_cap_usd: Decimal
         )
         text = (response.text or "").strip()
         data = json.loads(text) if text else {}
-    except Exception as exc:  # noqa: BLE001 — collapse all model errors
+    except Exception as exc:  # noqa: BLE001 (collapse all model errors)
         log.warning("doctype.gemini_error", filename=filename, error=str(exc))
         return "other"
 
@@ -167,7 +169,7 @@ def classify(
 
     Returns:
         One of :data:`DOCUMENT_TYPES`. ``"other"`` whenever the
-        classifier is uncertain — never guesses.
+        classifier is uncertain; it never guesses.
     """
     via_filename = _filename_heuristic(filename)
     if via_filename is not None:

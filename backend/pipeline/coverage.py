@@ -1,12 +1,13 @@
 """Schema-completeness scorecard for a property file.
 
-Phase 12+ — judges look at our markdown and ask "what's missing?". Today
-the file shows what we know (facts + uncertainties); the *absence* of
-data is invisible. This module declares per-section expected-fact
-coordinates so the renderer can emit a compact ``## Coverage`` block
-naming what's present (✓) and what's absent (⨯).
+A reader of a property file needs to know what's missing as well as
+what's known. The file itself shows what we know (facts +
+uncertainties); the *absence* of data is invisible. This module
+declares per-section expected-fact coordinates so the renderer can
+emit a compact ``## Coverage`` block naming what's present (✓) and
+what's absent (⨯).
 
-The expected-field lists are intentionally short and demo-focused — we
+The expected-field lists are intentionally short: we
 favour "the operator would notice if this were missing" over a complete
 catalog. Add fields here as new fact-discovery rules ship; the absence
 report grows naturally.

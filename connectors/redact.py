@@ -10,7 +10,7 @@ phone number survives a round-trip through any connector. See
 ``connectors/tests/test_redact.py``.
 
 .. todo::
-    Confirm Buena anonymisation status before the public demo. Until
+    Confirm whether the Buena dataset is already anonymised. Until
     confirmed, treat **all** Buena PII as real and redact aggressively.
 """
 
@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-# Strict patterns — used by :func:`scrub_text` to scrub free-form
+# Strict patterns, used by :func:`scrub_text` to scrub free-form
 # strings (email body, verwendungszweck, PDF text) before persistence.
 _GERMAN_IBAN_RE: Final = re.compile(r"\bDE\d{20}\b")
 _OTHER_IBAN_RE: Final = re.compile(
@@ -86,8 +86,9 @@ def email_redact(
     Args:
         email: Raw email address.
         keep_local_part: When True (default), keep the part before the
-            ``@`` so the demo can still show "max.mustermann" without
-            leaking the real provider. When False, the whole address
+            ``@`` so the UI can still show "max.mustermann" (enough to
+            tell correspondents apart) without leaking the real
+            provider. When False, the whole address
             collapses to ``redacted@example.com``.
         replace_domain: Domain to substitute. Must include the leading
             ``@``.
@@ -111,7 +112,7 @@ def scrub_text(text: str) -> str:
     - Email                               → local-part + ``@example.com``
     - E.164-ish phone                     → ``*** *** **<last4>``
 
-    Returns the scrubbed string. Idempotent — running scrub_text on
+    Returns the scrubbed string. Idempotent: running scrub_text on
     already-scrubbed output is a no-op.
     """
 
@@ -130,7 +131,7 @@ def scrub_text(text: str) -> str:
         digits = "".join(ch for ch in candidate if ch.isdigit())
         if len(digits) < 8:
             # Below 8 digits is likely a year, postal code, or IBAN
-            # tail (already redacted) — leave it alone.
+            # tail (already redacted); leave it alone.
             return candidate
         return phone_last4(candidate, keep_country_code=True) or "****"
 

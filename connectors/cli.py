@@ -1,4 +1,4 @@
-"""Connector CLI — single entry point for every customer ingest path.
+"""Connector CLI: the single entry point for every customer ingest path.
 
 Usage::
 
@@ -230,7 +230,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
         return 2
 
     if args.reset_cost_ledger:
-        # Friction gate — ledger reset is intentional. The y/N prompt
+        # Friction gate: ledger reset is intentional. The y/N prompt
         # makes it impossible to wipe spend by reflex.
         prompt = (
             f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' (deletes durable spend record)? [y/N] "
@@ -245,7 +245,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
         cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL)
         print(f"cost ledger row '{EMAIL_LEDGER_LABEL}' reset")
 
-    from decimal import Decimal as _Decimal  # noqa: PLC0415 — local import
+    from decimal import Decimal as _Decimal  # noqa: PLC0415 (local import)
 
     try:
         summary = run_backfill_emails(
@@ -275,9 +275,10 @@ def _cmd_materialize_all(args: argparse.Namespace) -> int:
 
     Calls the renderer for every property/building/liegenschaft and
     upserts the rendered markdown into the matching ``*_files`` table.
-    Idempotent — re-running just refreshes ``last_rendered_at`` and the
-    ``content_md`` snapshot. Used as the Phase 12 bootstrap path so the
-    cache exists before the applier hook starts propagating updates.
+    Idempotent: re-running just refreshes ``last_rendered_at`` and the
+    ``content_md`` snapshot. Run it once to bootstrap the cache on an
+    existing database, so every file exists before the applier hook starts
+    propagating incremental updates into it.
     """
     counts = run_materialize_all()
     if args.json:

@@ -3,7 +3,7 @@
 ```
 python -m eval.runner --set emails_v1
 python -m eval.runner --set emails_v1 --json
-python -m eval.runner --set emails_v1 --out docs/eval-runs/2026-04-25-step4.md
+python -m eval.runner --set emails_v1 --out docs/eval-runs/2026-04-25-emails_v1.md
 ```
 
 The runner is intentionally honest about its inputs:
@@ -131,7 +131,7 @@ async def _scope_for_event(
             if structured.liegenschaft_id is not None:
                 return "liegenschaft"
             return "unrouted"
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully, log once
+    except Exception as exc:  # noqa: BLE001 (degrade gracefully, log once)
         log.warning("eval.routing.unavailable", error=str(exc))
         if metadata.get("eh_id") or "EH-" in raw_content or "WE " in raw_content:
             return "property"
@@ -234,7 +234,7 @@ async def run(set_name: str) -> tuple[Report, list[dict[str, Any]]]:
     """Run the eval set end-to-end. Returns (report, raw payloads)."""
     rows = _load_ground_truth(set_name)
     # Ensure the cost-ledger row exists with a fresh cap. We deliberately
-    # don't auto-reset spend across runs — operators do that with
+    # don't auto-reset spend across runs; operators do that with
     # `python -m connectors.cli re-route ... --reset-cost-ledger`. The
     # eval-runner cap is generous because a 30-row pass at Pro pricing
     # is on the order of a few cents.
@@ -290,7 +290,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point — returns a POSIX exit code."""
+    """CLI entry point; returns a POSIX exit code."""
     configure_logging()
     args = _build_parser().parse_args(argv)
     global ACTIVE_BACKEND, ACTIVE_LEDGER_LABEL

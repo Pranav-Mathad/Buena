@@ -1,4 +1,4 @@
-"""Tests for Phase 10 Step 10.4 — ``GET /files/<path>``.
+"""Tests for ``GET /files/<path>``.
 
 Path safety is the only thing this endpoint exists to enforce, so the
 tests focus on traversal attempts (`..`, absolute paths, NUL bytes,
@@ -97,7 +97,7 @@ def test_endpoint_serves_file_via_test_client(isolated_root: Path) -> None:
     target = isolated_root / "letter.pdf"
     target.write_bytes(b"%PDF-1.7 a real-looking doc")
 
-    from backend.main import app  # noqa: PLC0415 — heavy import
+    from backend.main import app  # noqa: PLC0415 (heavy import)
 
     client = TestClient(app)
     resp = client.get("/files/letter.pdf")
