@@ -81,8 +81,8 @@ const DraftReply = () => {
         elapsed_ms: result.elapsedMs,
       });
     } catch (e) {
-      // No mock fallback — surface the failure honestly so a flaky
-      // backend doesn't masquerade as a real Pioneer reply.
+      // No canned fallback: a failed request is shown as a failure, never
+      // replaced by a reply the model did not write.
       setDrafted(null);
       setDraftError(
         e instanceof Error

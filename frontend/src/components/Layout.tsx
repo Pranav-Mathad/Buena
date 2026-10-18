@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { Moon, Sun } from "lucide-react";
 import { useFeaturedProperty } from "@/hooks/queries";
+import { API_BASE_URL } from "@/lib/config";
 import { useTheme } from "@/hooks/use-theme";
 import { NotificationsBell } from "./NotificationsBell";
 
@@ -42,10 +43,6 @@ export const Layout = () => {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 text-[13px] text-muted-foreground mr-1">
-              <span className="dot bg-success animate-pulse-soft" />
-              <span className="font-mono">live · Buena</span>
-            </div>
             <NotificationsBell />
             <button
               onClick={toggle}
@@ -62,7 +59,13 @@ export const Layout = () => {
       </main>
       <footer className="border-t border-border mt-20">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-6 text-[13px] text-muted-foreground">
-          Built for the Buena hackathon track · Keystone · 2026
+          Keystone ·{" "}
+          <a
+            href={`${API_BASE_URL}/docs`}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            API docs
+          </a>
         </div>
       </footer>
     </div>

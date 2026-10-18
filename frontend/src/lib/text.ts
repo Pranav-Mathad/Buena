@@ -1,6 +1,6 @@
 // Cleans LLM-generated text for display in plain UI components.
 //
-// Pioneer/Claude sometimes emits markdown (`**bold**`, `[link](url)`,
+// LLMs sometimes emit markdown (`**bold**`, `[link](url)`,
 // inline backticks, `## headings`) inside responses even when the
 // prompt asks for plain text. This module is the single chokepoint
 // that converts those artefacts into readable prose so callers don't

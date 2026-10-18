@@ -154,7 +154,7 @@ const Compare = () => {
           </div>
         </div>
 
-        {/* Now: real Pioneer-backed AskPanel */}
+        {/* With Keystone: the same question asked of the property file */}
         <div className="lg:pl-8 mt-12 lg:mt-0">
           <div className="text-[12px] uppercase tracking-wider text-muted-foreground font-medium">
             with Keystone

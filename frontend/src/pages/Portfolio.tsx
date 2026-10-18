@@ -115,10 +115,8 @@ const Portfolio = () => {
         )}
         {!activityError && activityRows.length === 0 && (
           <p className="text-[13px] text-muted-foreground mt-3 font-mono">
-            no recent activity — try{" "}
-            <code className="bg-muted px-1.5 py-0.5 rounded">
-              POST /admin/buena/advance_day
-            </code>
+            no recent activity yet. Send an event with{" "}
+            <code className="bg-muted px-1.5 py-0.5 rounded">POST /debug/trigger_event</code>
           </p>
         )}
         <div className="mt-8 border-l border-border ml-2">
