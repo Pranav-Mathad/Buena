@@ -6,7 +6,7 @@ import { AskPanel } from "@/components/AskPanel";
 import { Search } from "lucide-react";
 
 // Extract the most distinctive German keyword from a free-text question.
-// We bias toward the actual nouns/topics rather than question words —
+// We bias toward the actual nouns/topics rather than question words, so
 // "Was passiert mit dem Wasserschaden?" → "wasserschaden".
 function extractKeyword(question: string): string {
   const lower = question.toLowerCase();
@@ -59,7 +59,7 @@ const Compare = () => {
   const footerText = inboxQuery.isLoading
     ? "loading inbox…"
     : inboxQuery.isError
-      ? "Backend unreachable — showing empty inbox"
+      ? "Backend unreachable; showing an empty inbox"
       : inboxRows.length === 0
         ? `no inbox events match this property`
         : relevantCount > 0
@@ -122,7 +122,7 @@ const Compare = () => {
             ) : inboxRows.length === 0 ? (
               <div className="px-3 py-16 text-center text-[13px] text-muted-foreground font-mono">
                 {inboxQuery.isError
-                  ? "Backend unreachable — inbox view unavailable."
+                  ? "Backend unreachable; inbox view unavailable."
                   : "No email events for this property."}
               </div>
             ) : (
@@ -140,7 +140,7 @@ const Compare = () => {
                     <span className="col-span-3 truncate">{e.sender}</span>
                     <span className="col-span-7 truncate">
                       <span className={e.relevant ? "text-foreground" : ""}>{e.subject}</span>
-                      <span className="ml-1 opacity-60">— {e.preview}</span>
+                      <span className="ml-1 opacity-60">· {e.preview}</span>
                     </span>
                   </li>
                 ))}
@@ -164,7 +164,7 @@ const Compare = () => {
         </div>
       </div>
 
-      {/* What changed — derived from real numbers */}
+      {/* What changed, derived from real numbers */}
       <Card className="mt-16 p-8">
         <h3 className="text-[16px] font-semibold">What changed</h3>
         <ul className="mt-5 space-y-3 text-[15px]">
@@ -173,7 +173,7 @@ const Compare = () => {
             <span>
               {totalInbox > 0 ? (
                 <>
-                  Scrolling {totalInbox} emails for "{keyword}" — Keystone's answer cites the{" "}
+                  Scrolling {totalInbox} emails for "{keyword}"; Keystone's answer cites the{" "}
                   {relevantCount > 0 ? relevantCount : "relevant"} events directly, in seconds.
                 </>
               ) : (
@@ -184,14 +184,14 @@ const Compare = () => {
           <li className="flex items-baseline gap-3">
             <span className="font-mono text-[13px] text-muted-foreground w-8">→</span>
             <span>
-              When the context doesn't have an answer, Keystone says "I don't know" — the inbox just
-              keeps scrolling.
+              When the context doesn't have an answer, Keystone says "I don't know", while the inbox
+              just keeps scrolling.
             </span>
           </li>
           <li className="flex items-baseline gap-3">
             <span className="font-mono text-[13px] text-muted-foreground w-8">→</span>
             <span>
-              Sources stay clickable on both sides — but only Keystone tells you <em>which</em>{" "}
+              Sources stay clickable on both sides, but only Keystone tells you <em>which</em>{" "}
               emails matter.
             </span>
           </li>

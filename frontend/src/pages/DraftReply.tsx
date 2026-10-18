@@ -86,7 +86,7 @@ const DraftReply = () => {
       setDrafted(null);
       setDraftError(
         e instanceof Error
-          ? `Drafting service unreachable — ${e.message}`
+          ? `Drafting service unreachable: ${e.message}`
           : "Drafting service unreachable.",
       );
     } finally {
@@ -224,10 +224,10 @@ const DraftReply = () => {
                 What changes when the system has context?
               </h3>
               <div className="relative grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12">
-                {/* LEFT — Without Keystone */}
+                {/* Left: without Keystone */}
                 <div>
                   <div className="text-[12px] uppercase tracking-wider text-muted-foreground font-medium">
-                    Without Keystone — generic reply
+                    Without Keystone: generic reply
                   </div>
                   <div className="mt-5 space-y-4 font-sans text-foreground/80">
                     <div>
@@ -246,10 +246,10 @@ const DraftReply = () => {
                   </div>
                 </div>
 
-                {/* RIGHT — With Keystone */}
+                {/* Right: with Keystone */}
                 <div>
                   <div className="text-[12px] uppercase tracking-wider text-muted-foreground font-medium">
-                    With Keystone — context-aware reply
+                    With Keystone: context-aware reply
                   </div>
                   <div className="mt-5">
                     <SingleDraftedContent
@@ -296,7 +296,7 @@ const SingleDraftedContent = ({
           <p className="text-[15px] font-medium">
             {drafted.knows_about_incident
               ? "Keystone already knows about this incident"
-              : "First report — drafting a holding reply"}
+              : "First report: drafting a holding reply"}
           </p>
           {drafted.knows_about_incident && drafted.context.length > 0 && (
             <p className="text-[13px] text-muted-foreground mt-0.5">

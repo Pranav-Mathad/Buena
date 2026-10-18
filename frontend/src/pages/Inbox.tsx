@@ -131,7 +131,7 @@ const EmptyState = ({ children }: { children: React.ReactNode }) => (
 
 const ErrorState = () => (
   <Card className="p-10 text-center">
-    <p className="text-warning text-[14px]">Backend unreachable — try again in a moment.</p>
+    <p className="text-warning text-[14px]">Backend unreachable. Try again in a moment.</p>
   </Card>
 );
 
@@ -173,7 +173,7 @@ const SignalsList = ({
   if (loading) return <LoadingState />;
   if (error) return <ErrorState />;
   if (!rows || rows.length === 0)
-    return <EmptyState>No pending signals — your inbox is empty.</EmptyState>;
+    return <EmptyState>No pending signals. Your inbox is empty.</EmptyState>;
   return (
     <div className="space-y-3">
       {rows.map((s) => (

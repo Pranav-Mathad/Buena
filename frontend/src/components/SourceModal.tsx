@@ -45,7 +45,7 @@ export const SourceModal = ({
               <>
                 <p className="text-[15px] leading-relaxed whitespace-pre-line">{source.snippet}</p>
                 <p className="text-[12px] italic text-warning">
-                  Could not load original event — showing extracted snippet.
+                  Could not load the original event; showing the extracted snippet.
                 </p>
               </>
             )}

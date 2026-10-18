@@ -6,7 +6,7 @@
 
 @layer base {
   :root {
-    /* Light mode — warm cream */
+    /* Light mode: warm cream */
     --background: 42 27% 94%; /* #F5F2EC */
     --foreground: 0 0% 4%; /* #0A0A0A */
 

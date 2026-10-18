@@ -105,7 +105,7 @@ const Portfolio = () => {
         </h2>
         {activityError && (
           <p className="text-[13px] text-warning mt-3 font-mono">
-            activity feed unreachable — backend down or empty.
+            activity feed unreachable: backend down or empty.
           </p>
         )}
         {!activityError && activityRows.length === 0 && (

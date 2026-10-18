@@ -67,7 +67,7 @@ export const AskPanel = ({
     }
   }, [presetQuestion]);
 
-  // Fetch on submit. No mock fallback — if the backend errors we
+  // Fetch on submit. No mock fallback: if the backend errors we
   // surface the failure honestly so the user knows the answer they
   // see is real or not at all.
   useEffect(() => {

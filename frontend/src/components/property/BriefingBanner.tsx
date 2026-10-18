@@ -18,7 +18,7 @@ export const BriefingBanner = ({
             60-second briefing for a new property manager
           </h2>
           <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">
-            Reads the property file, surfaces what's urgent, what's stable, and what's missing — in
+            Reads the property file, surfaces what's urgent, what's stable, and what's missing, in
             the manager's language.
           </p>
         </div>

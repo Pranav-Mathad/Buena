@@ -144,7 +144,7 @@ const EmptyState = () => (
     </div>
     <p className="mt-3 text-[13px] text-foreground">No notifications yet</p>
     <p className="mt-1 text-[12px] text-muted-foreground max-w-[280px] leading-relaxed">
-      Anything the pipeline ingests will pop here — emails, invoices, bank events, simulator
+      Anything the pipeline ingests will pop here: emails, invoices, bank events, simulator
       advances.
     </p>
   </div>

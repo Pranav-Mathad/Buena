@@ -6,7 +6,7 @@
 // that converts those artefacts into readable prose so callers don't
 // have to remember to call it themselves.
 //
-// `stripInlineMarkdown` is intentionally conservative — it removes
+// `stripInlineMarkdown` is intentionally conservative: it removes
 // formatting markers but preserves the underlying text.
 
 const PATTERNS: Array<[RegExp, string]> = [
@@ -46,7 +46,7 @@ export type BriefingItem =
 
 // Parse the onboarding markdown into structured items the modal can
 // render without ever putting markdown markers on screen. Drops empty
-// lines and `[source: ...]` deep-links — the renderer keeps source
+// lines and `[source: ...]` deep-links; the renderer keeps source
 // links in the property file, but the briefing prose reads cleaner
 // without them.
 export function parseBriefingMarkdown(markdown: string): BriefingItem[] {

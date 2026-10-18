@@ -32,7 +32,7 @@ export const PropertyHeader = ({
             liveStatus === "live"
               ? "Subscribed to live updates"
               : liveStatus === "offline"
-                ? "SSE connection lost — retrying"
+                ? "SSE connection lost, retrying"
                 : "Connecting…"
           }
         >

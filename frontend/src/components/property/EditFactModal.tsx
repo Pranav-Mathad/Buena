@@ -65,7 +65,7 @@ export const EditFactModal = ({
         </div>
         <p className="mt-4 text-[12.5px] text-muted-foreground leading-relaxed">
           Saving marks this fact as <span className="font-mono">human-edited</span>. Future
-          extractor proposals against the same field will be skipped — the operator becomes the
+          extractor proposals against the same field will be skipped; the operator becomes the
           source of truth until you change it again.
         </p>
         <textarea

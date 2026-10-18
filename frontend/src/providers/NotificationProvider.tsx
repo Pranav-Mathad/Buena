@@ -58,7 +58,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           payload.summary?.trim() ||
           (written > 0
             ? `${written} new fact${written === 1 ? "" : "s"} captured.`
-            : "Event ingested — no fact change.");
+            : "Event ingested, no fact change.");
         const category = payload.category ?? "event";
 
         const notification: Notification = {
@@ -100,7 +100,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolioSummary });
         queryClient.invalidateQueries({ queryKey: queryKeys.portfolioActivity });
       } catch {
-        // Malformed payload — ignore. EventSource auto-reconnects.
+        // Malformed payload: ignore it. EventSource reconnects on its own.
       }
     });
 
@@ -118,7 +118,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Toast card — kept here so the provider owns both surfaces.
+// Toast card, kept here so the provider owns both surfaces.
 
 const EventToastCard = ({
   propertyName,

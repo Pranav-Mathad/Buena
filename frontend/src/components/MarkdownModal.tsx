@@ -76,7 +76,7 @@ export const MarkdownModal = ({ propertyId, propertyName, open, onClose }: Markd
           {isError && (
             <div className="text-warning text-[14px]">
               Could not load markdown:{" "}
-              {error instanceof Error ? error.message : "backend unreachable"} —{" "}
+              {error instanceof Error ? error.message : "backend unreachable"}.{" "}
               <button onClick={() => refetch()} className="underline">
                 retry
               </button>
@@ -188,7 +188,7 @@ function renderHeading(
 }
 
 // Walk a single line and emit React nodes for each meaningful token.
-// Order matters — links before bold, bold before italic, italic before
+// Order matters: links before bold, bold before italic, italic before
 // code, so nested patterns peel off cleanly.
 function renderInline(source: string, onOpenSource: (s: SourceModalSource) => void): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -248,7 +248,7 @@ function renderInline(source: string, onOpenSource: (s: SourceModalSource) => vo
 // Apply **bold**, *italic*, `code` styling within a non-link span.
 function renderEmphasis(text: string, baseKey: number): ReactNode[] {
   const out = text;
-  // Strip and convert in passes — we wrap in marker tokens then split.
+  // Strip and convert in passes: we wrap in marker tokens then split.
   // Simpler approach: regex replace with HTML-like markers, then split.
   // Cheap & correct enough for the renderer's actual output shape.
   const tokens: ReactNode[] = [];
