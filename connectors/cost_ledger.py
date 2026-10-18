@@ -104,6 +104,8 @@ def ensure_label(
         )
         row = cur.fetchone()
         conn.commit()
+    if row is None:  # unreachable: INSERT ... ON CONFLICT ... RETURNING always yields a row
+        raise RuntimeError(f"cost_ledger upsert returned no row for label={label}")
     return LedgerState(
         source_label=row[0],
         cumulative_usd=Decimal(row[1]),

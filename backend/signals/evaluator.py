@@ -19,7 +19,7 @@ it on demand.
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 import structlog
@@ -52,7 +52,7 @@ _RULES = [
 ]
 
 
-def natural_key(property_id: UUID | None, signal_type: str, action_hint: dict) -> str:
+def natural_key(property_id: UUID | None, signal_type: str, action_hint: dict[str, Any]) -> str:
     """Return the key that identifies one finding across evaluator ticks.
 
     ``type|<property id or 'portfolio'>|<subtype or topic>``. The subtype

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
+from typing import Any
 
 import structlog
 
@@ -51,7 +52,7 @@ def verify_signature(
     return hmac.compare_digest(expected, signature)
 
 
-def format_slack_event(payload: dict) -> tuple[str, str]:
+def format_slack_event(payload: dict[str, Any]) -> tuple[str, str]:
     """Turn a Slack ``event_callback`` payload into ``(source_ref, raw_content)``.
 
     Uses ``{team_id}:{channel}:{ts}`` as the idempotency key and renders a

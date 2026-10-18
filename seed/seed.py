@@ -45,6 +45,14 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "backend" / "db" / "schem
 Cursor = psycopg2.extensions.cursor
 
 
+def _returned_id(cur: Cursor) -> str:
+    """The ``id`` from an ``INSERT ... RETURNING id`` just executed on ``cur``."""
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("INSERT ... RETURNING id returned no row")
+    return str(row[0])
+
+
 def _schema_applied(cur: Cursor) -> bool:
     """Return True if the canonical ``properties`` table already exists."""
     cur.execute("SELECT to_regclass('public.properties') IS NOT NULL AS exists;")
@@ -88,7 +96,7 @@ def _upsert_liegenschaft(
         """,
         (name, buena_liegenschaft_id, json.dumps(metadata or {})),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _set_building_liegenschaft(cur: Cursor, building_id: str, liegenschaft_id: str) -> None:
@@ -118,7 +126,7 @@ def _upsert_owner(cur: Cursor, owner: OwnerSeed) -> str:
         """,
         (owner.name, owner.email, owner.phone, json.dumps(owner.preferences)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_building(cur: Cursor, building: BuildingSeed) -> str:
@@ -135,7 +143,7 @@ def _upsert_building(cur: Cursor, building: BuildingSeed) -> str:
         """,
         (building.address, building.year_built, json.dumps(building.metadata)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_contractor(cur: Cursor, contractor: ContractorSeed) -> str:
@@ -152,7 +160,7 @@ def _upsert_contractor(cur: Cursor, contractor: ContractorSeed) -> str:
         """,
         (contractor.name, contractor.specialty, contractor.rating, json.dumps(contractor.contact)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_property(
@@ -191,7 +199,7 @@ def _upsert_property(
             json.dumps(metadata),
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
@@ -223,7 +231,7 @@ def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
             json.dumps(tenant.metadata or {}),
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_relationship(
@@ -291,7 +299,7 @@ def _upsert_event(
             event.received_at,
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_fact(

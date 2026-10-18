@@ -21,6 +21,7 @@ async def resolve_featured_property_id(session: AsyncSession) -> UUID | None:
     ref = get_settings().featured_property.strip()
     if not ref:
         return None
+    params: dict[str, object]
     try:
         query, params = "SELECT id FROM properties WHERE id = :ref", {"ref": UUID(ref)}
     except ValueError:

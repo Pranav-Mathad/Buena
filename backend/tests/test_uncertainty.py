@@ -233,7 +233,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                     "INSERT INTO buildings (address) VALUES ('Test Uncertainty Bldg') RETURNING id"
                 )
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -245,7 +245,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"test-uncertainty-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -258,7 +258,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     items = [
@@ -290,7 +290,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert row is not None
         assert row.relevant_section == "financials"
         assert row.relevant_field == "rent_amount"
@@ -322,7 +322,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
             await session.execute(
                 text("INSERT INTO buildings (address) VALUES ('Test 9.1 Regression') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -334,7 +334,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         # Pre-existing floor_count fact so the constraint sees a current value.
         ref0 = f"seed-{uuid4().hex[:8]}"
         e0 = (
@@ -348,7 +348,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"ref": ref0, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.execute(
             text(
                 """
@@ -376,7 +376,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     plan = DiffPlan(
@@ -428,7 +428,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert rej is not None
         assert rej.proposed_field == "floor_count"
         assert rej.constraint_name == "building_floor_count_immutable"

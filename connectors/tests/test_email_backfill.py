@@ -28,7 +28,7 @@ from sqlalchemy import text
 
 from backend.db.session import get_sessionmaker
 from backend.services.llm import ExtractionResult
-from connectors import buena_email_loader
+from connectors import buena_email_loader, eml_archive
 from connectors import cost_ledger as cost_ledger_module
 from connectors.base import ConnectorEvent
 
@@ -169,7 +169,7 @@ async def test_cost_cap_aborts_loop_cleanly(
     # Iterate exactly N events from a fabricated list; bypass the .eml walker.
     events = [_connector_event(i) for i in range(5)]
     monkeypatch.setattr(
-        buena_email_loader.eml_archive,
+        eml_archive,
         "walk_directory",
         lambda _root: iter(events),
         raising=True,
@@ -212,7 +212,7 @@ async def test_dead_letter_after_threshold(
 
     events = [_connector_event(0)]  # single event re-tried across runs
     monkeypatch.setattr(
-        buena_email_loader.eml_archive,
+        eml_archive,
         "walk_directory",
         lambda _root: iter(events),
         raising=True,

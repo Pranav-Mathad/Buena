@@ -8,13 +8,15 @@ and the cardinalities the survey reported.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from connectors import buena_archive, camt_bank, eml_archive, redact
 from connectors.base import DataMissingError
 
 
-def _root_or_skip():
+def _root_or_skip() -> Path:
     try:
         return buena_archive.require_root()
     except DataMissingError as exc:
@@ -28,7 +30,7 @@ def test_get_extracted_root_falls_back_to_default() -> None:
     assert root.name == "Extracted"
 
 
-def test_require_root_raises_for_missing_path(tmp_path) -> None:
+def test_require_root_raises_for_missing_path(tmp_path: Path) -> None:
     with pytest.raises(DataMissingError):
         buena_archive.require_root(str(tmp_path / "does_not_exist"))
 

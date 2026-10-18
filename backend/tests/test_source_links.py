@@ -46,7 +46,7 @@ async def _seed_event(
                     "meta": json.dumps(metadata or {}),
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
     return UUID(str(row.id))
 

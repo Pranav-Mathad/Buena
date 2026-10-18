@@ -230,32 +230,32 @@ def load_stammdaten(
 
             # ---- Owners ----
             for raw in payload.owners:
-                seed = _owner_seed(raw)
-                before = _count(cur, "owners", "email", seed.email)
-                uid = _upsert_owner(cur, seed)
+                owner_seed = _owner_seed(raw)
+                before = _count(cur, "owners", "email", owner_seed.email)
+                uid = _upsert_owner(cur, owner_seed)
                 if before == 0:
                     summary.owners_inserted_now += 1
-                owner_uuid_by_key[seed.key] = uid
+                owner_uuid_by_key[owner_seed.key] = uid
 
             # ---- Buildings + Haus → WEG link ----
             for raw in payload.buildings:
-                seed = _building_seed(raw)
-                before = _count(cur, "buildings", "address", seed.address)
-                uid = _upsert_building(cur, seed)
+                building_seed = _building_seed(raw)
+                before = _count(cur, "buildings", "address", building_seed.address)
+                uid = _upsert_building(cur, building_seed)
                 if before == 0:
                     summary.buildings_inserted_now += 1
-                building_uuid_by_key[seed.key] = uid
+                building_uuid_by_key[building_seed.key] = uid
 
                 lie_key = str(raw.get("buena_liegenschaft_id") or "")
-                lie_uuid = liegenschaft_uuid_by_key.get(lie_key)
-                if lie_uuid is not None:
-                    _set_building_liegenschaft(cur, uid, lie_uuid)
+                weg_uuid = liegenschaft_uuid_by_key.get(lie_key)
+                if weg_uuid is not None:
+                    _set_building_liegenschaft(cur, uid, weg_uuid)
 
             # ---- Contractors ----
             for raw in payload.contractors:
-                seed = _contractor_seed(raw)
-                before = _count(cur, "contractors", "name", seed.name)
-                _upsert_contractor(cur, seed)
+                contractor_seed = _contractor_seed(raw)
+                before = _count(cur, "contractors", "name", contractor_seed.name)
+                _upsert_contractor(cur, contractor_seed)
                 if before == 0:
                     summary.contractors_inserted_now += 1
 
@@ -274,12 +274,12 @@ def load_stammdaten(
                         building_key=building_key,
                     )
                     continue
-                seed = _property_seed(raw, owner_key, building_key)
-                before = _count(cur, "properties", "name", seed.name)
-                uid = _upsert_property(cur, seed, owner_uuid, building_uuid)
+                prop_seed = _property_seed(raw, owner_key, building_key)
+                before = _count(cur, "properties", "name", prop_seed.name)
+                uid = _upsert_property(cur, prop_seed, owner_uuid, building_uuid)
                 if before == 0:
                     summary.properties_inserted_now += 1
-                property_uuid_by_eh[seed.key] = uid
+                property_uuid_by_eh[prop_seed.key] = uid
 
                 # Edges that are always true once the property exists.
                 _add_edge(
@@ -314,14 +314,14 @@ def load_stammdaten(
                 if metadata.get("active") is False:
                     summary.tenants_skipped_inactive += 1
                     continue
-                seed = _tenant_seed(raw)
-                if not seed.email:
+                tenant_seed = _tenant_seed(raw)
+                if not tenant_seed.email:
                     # _upsert_tenant uses email as natural key; skip rows
                     # without one rather than collapse them all together.
                     summary.tenants_skipped_inactive += 1
                     continue
-                before = _count_tenant(cur, property_uuid, seed.email)
-                uid = _upsert_tenant(cur, property_uuid, seed)
+                before = _count_tenant(cur, property_uuid, tenant_seed.email)
+                uid = _upsert_tenant(cur, property_uuid, tenant_seed)
                 if before == 0:
                     summary.tenants_inserted_now += 1
                 _add_edge(
@@ -346,7 +346,8 @@ def _count(cur: psycopg2.extensions.cursor, table: str, column: str, value: Any)
         f"SELECT COUNT(*) FROM {table} WHERE {column} = %s",
         (value,),
     )
-    return int(cur.fetchone()[0] or 0)
+    row = cur.fetchone()
+    return int(row[0] or 0) if row else 0
 
 
 def _count_tenant(cur: psycopg2.extensions.cursor, property_id: str, email: str) -> int:
@@ -355,7 +356,8 @@ def _count_tenant(cur: psycopg2.extensions.cursor, property_id: str, email: str)
         "SELECT COUNT(*) FROM tenants WHERE property_id = %s AND email = %s",
         (property_id, email),
     )
-    return int(cur.fetchone()[0] or 0)
+    row = cur.fetchone()
+    return int(row[0] or 0) if row else 0
 
 
 def _add_edge(

@@ -45,7 +45,7 @@ async def _seed_property(
             await session.execute(
                 text("INSERT INTO buildings (address) VALUES ('Onboarding Test Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -61,7 +61,7 @@ async def _seed_property(
                     "meta": _json(metadata or {}),
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
     return b.id, p.id
 
@@ -199,7 +199,7 @@ async def test_render_onboarding_surfaces_open_issues(
                     ),
                     {"ref": ref, "pid": pid},
                 )
-            ).first()
+            ).one()
             await session.execute(
                 text(
                     """
@@ -337,7 +337,7 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
                     ),
                     {"ref": ref, "pid": pid},
                 )
-            ).first()
+            ).one()
             await session.execute(
                 text(
                     """
@@ -394,7 +394,7 @@ async def test_watch_out_surfaces_recurring_constraint(
                         ),
                         {"ref": ref, "pid": pid},
                     )
-                ).first()
+                ).one()
                 await session.execute(
                     text(
                         """

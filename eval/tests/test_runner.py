@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from connectors import cost_ledger
 from eval import runner
 from eval.metrics import score_row
 
@@ -138,13 +139,17 @@ def test_score_row_flags_missing_fact() -> None:
     assert row.fact_matches[0]["value_matched"] is False
 
 
-def test_load_ground_truth_raises_on_missing(tmp_path: Path) -> None:
-    runner.GROUND_TRUTH_DIR = tmp_path  # type: ignore[assignment]
+def test_load_ground_truth_raises_on_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runner, "GROUND_TRUTH_DIR", tmp_path)
     with pytest.raises(FileNotFoundError):
         runner._load_ground_truth("does_not_exist")
 
 
-async def test_runner_end_to_end_on_fixture(tmp_path, monkeypatch) -> None:
+async def test_runner_end_to_end_on_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Full end-to-end against a tmpdir fixture: extractor + scorer + report."""
     fx = _write_fixture(tmp_path)
     # Point the runner at our tmp ground-truth file
@@ -152,9 +157,9 @@ async def test_runner_end_to_end_on_fixture(tmp_path, monkeypatch) -> None:
     fx.rename(tmp_path / "fixture.jsonl")
     # Scoring is under test, not spend tracking: keep the runner away from the
     # shared cost_ledger table so the test neither needs nor modifies the DB.
-    monkeypatch.setattr(runner.cost_ledger, "ensure_label", lambda *a, **k: None)
-    monkeypatch.setattr(runner.cost_ledger, "get_state", lambda *a, **k: None)
-    monkeypatch.setattr(runner.cost_ledger, "charge", lambda *a, **k: None)
+    monkeypatch.setattr(cost_ledger, "ensure_label", lambda *a, **k: None)
+    monkeypatch.setattr(cost_ledger, "get_state", lambda *a, **k: None)
+    monkeypatch.setattr(cost_ledger, "charge", lambda *a, **k: None)
 
     report, raw = await runner.run("fixture")
     assert report.n_rows == 2

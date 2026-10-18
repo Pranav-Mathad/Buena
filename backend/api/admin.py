@@ -1224,7 +1224,7 @@ async def resolve_uncertainty(
                     "eid": row.event_id,
                 },
             )
-        ).first()
+        ).one()
         fact_id = UUID(str(fact_row.id))
 
         await session.execute(

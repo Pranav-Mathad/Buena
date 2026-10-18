@@ -54,7 +54,7 @@ def configure_client() -> Any:
         raise LLMNotConfiguredError("GEMINI_API_KEY is not set")
     import google.generativeai as genai  # noqa: PLC0415 - optional at import time
 
-    genai.configure(api_key=get_settings().gemini_api_key)
+    genai.configure(api_key=get_settings().gemini_api_key)  # type: ignore[attr-defined]
     return genai
 
 

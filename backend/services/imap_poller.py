@@ -43,7 +43,9 @@ def _flatten_body(msg: Message) -> str:
         parts: list[str] = []
         for part in msg.walk():
             if part.get_content_type() == "text/plain" and not part.is_multipart():
-                payload = part.get_payload(decode=True) or b""
+                payload = part.get_payload(decode=True)
+                if not isinstance(payload, bytes):
+                    continue
                 try:
                     parts.append(payload.decode(part.get_content_charset() or "utf-8", "replace"))
                 except LookupError:

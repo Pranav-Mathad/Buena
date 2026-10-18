@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "mcp>=1.2,<2",
+    "types-psycopg2",
 ]
 
 [build-system]
@@ -65,8 +66,9 @@ extend-immutable-calls = [
 
 [tool.mypy]
 strict = true
+files = ["backend", "connectors", "eval", "mcp_server", "seed", "scripts", "tools"]
 python_version = "3.11"
-plugins = []
+plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -80,9 +80,14 @@ class Constraint(Protocol):
     guards. ``field=None`` means *every field in this section*.
     """
 
-    name: str
-    section: str
-    field: str | None
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def section(self) -> str: ...
+
+    @property
+    def field(self) -> str | None: ...
 
     def check(
         self,

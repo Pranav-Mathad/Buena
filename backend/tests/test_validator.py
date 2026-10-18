@@ -321,7 +321,7 @@ async def test_persist_rejections_roundtrip() -> None:
             await session.execute(
                 text("INSERT INTO buildings (address) VALUES ('Test Validator Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -333,7 +333,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"test-validator-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -346,7 +346,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     # Use the validate() output shape directly.
@@ -388,7 +388,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert row is not None
         assert row.proposed_section == "financials"
         assert row.proposed_field == "rent_amount"

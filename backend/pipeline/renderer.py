@@ -549,10 +549,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         # Newest in the year, by occurred_at, drives the link target.
         latest = max(
             rows,
-            key=lambda f: (
-                f.occurred_at  # type: ignore[arg-type,return-value]
-                or datetime.min.replace(tzinfo=UTC)
-            ),
+            key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
         )
         link = (
             f"[open detail](/events/{latest.source_event_id}/source)"

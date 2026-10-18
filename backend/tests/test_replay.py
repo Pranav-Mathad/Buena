@@ -29,7 +29,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
             await session.execute(
                 text("INSERT INTO buildings (address) VALUES ('Test Replay Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -41,7 +41,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         event_ids: list[UUID] = []
         for i in range(n_events):
             ref = f"replay-{uuid4().hex[:8]}"
@@ -63,7 +63,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
                         "pid": p.id,
                     },
                 )
-            ).first()
+            ).one()
             event_ids.append(e.id)
         await session.commit()
     return p.id, event_ids
@@ -250,7 +250,7 @@ async def test_reset_property_wipes_facts_only(
 
 async def test_normalise_pauses_validates_and_sorts() -> None:
     """``_normalise_pauses`` drops bad rows and sorts by ``at_seconds``."""
-    raw = [
+    raw: list[Any] = [
         {"at_seconds": 30.0, "message": "second"},
         {"at_seconds": 10.0, "message": "first"},
         {"at_seconds": "not_a_number", "message": "drop me"},

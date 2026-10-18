@@ -19,7 +19,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import structlog
 
@@ -129,7 +129,7 @@ def read_rows(
                 natural_key=natural_key,
             )
             yield StammdatenRow(
-                entity_type=cast(EntityType, entity_type),
+                entity_type=entity_type,
                 natural_key=natural_key,
                 fields=mapped,
                 metadata=metadata,

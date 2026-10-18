@@ -8,6 +8,7 @@ escape via realpath) and on the happy path serving a real file.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ from backend.config import get_settings
 
 
 @pytest.fixture()
-def isolated_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def isolated_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
     """Point the files router at a tmp dir + reset its lru_cache."""
     monkeypatch.setattr(get_settings(), "keystone_files_root", str(tmp_path), raising=True)
     files_api._allowed_root.cache_clear()

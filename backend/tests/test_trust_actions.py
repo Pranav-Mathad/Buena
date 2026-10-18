@@ -47,7 +47,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
             await session.execute(
                 text("INSERT INTO buildings (address) VALUES ('Trust Action Test') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -59,7 +59,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"trust-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -72,7 +72,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
     return b.id, p.id, e.id
 
@@ -114,7 +114,7 @@ async def _seed_uncertainty(
                     "field": field,
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
     return UUID(str(row.id))
 
@@ -144,7 +144,7 @@ async def _seed_rejection(
                 ),
                 {"eid": event_id, "pid": property_id},
             )
-        ).first()
+        ).one()
         await session.commit()
     return UUID(str(row.id))
 
@@ -221,7 +221,7 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
                     ),
                     {"fid": body["fact_id"]},
                 )
-            ).first()
+            ).one()
             assert fact is not None
             assert fact.section == "financials"
             assert fact.field == "rent_amount"
@@ -239,7 +239,7 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
                     ),
                     {"uid": uid},
                 )
-            ).first()
+            ).one()
             assert unc.status == "resolved"
             assert unc.resolved_to_fact_id == UUID(body["fact_id"])
             assert unc.resolved_at is not None
@@ -294,7 +294,7 @@ async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
                     text("SELECT value FROM facts WHERE id = :fid"),
                     {"fid": fact_id},
                 )
-            ).first()
+            ).one()
         assert fact.value == "1250 EUR"
     finally:
         await _cleanup(bid, pid)

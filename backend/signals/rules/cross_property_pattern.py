@@ -17,6 +17,8 @@ render it in the portfolio view instead of under a single property.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,7 +136,7 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
         {"window": str(WINDOW_DAYS), "pattern": HEAT_PATTERN},
     )
 
-    buckets: dict[str, dict[str, list]] = {}
+    buckets: dict[str, dict[str, Any]] = {}
     for row in result.all():
         bucket = _year_bucket(row.year_built)
         if bucket is None:

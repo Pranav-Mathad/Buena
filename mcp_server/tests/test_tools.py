@@ -40,7 +40,7 @@ def requests(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
     def client_factory(**kwargs: Any) -> httpx.AsyncClient:
         return real_client(transport=httpx.MockTransport(handler), **kwargs)
 
-    monkeypatch.setattr(tools.httpx, "AsyncClient", client_factory)
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
     return seen
 
 

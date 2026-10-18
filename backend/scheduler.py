@@ -26,7 +26,7 @@ from backend.signals.evaluator import evaluate_all as evaluate_signals
 log = structlog.get_logger(__name__)
 
 
-def _now():
+def _now() -> datetime:
     """Return current UTC time for immediate scheduling."""
     return datetime.now(UTC)
 

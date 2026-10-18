@@ -139,7 +139,7 @@ async def start_run(
                     "total": total,
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
 
     run_id: UUID = row.id
