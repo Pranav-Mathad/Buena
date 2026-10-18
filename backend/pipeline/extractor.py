@@ -53,7 +53,7 @@ _FROM_RE = re.compile(r"^from:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 def _apply_confidence_floor(result: ExtractionResult) -> ExtractionResult:
     """Demote sub-floor facts to ``uncertain[]`` so they don't reach the applier.
 
-    The extractor (Gemini *or* rule fallback) sometimes emits facts at
+    The extractor (LLM provider or rule fallback) sometimes emits facts at
     confidence 0.6: high enough to be worth surfacing, low enough to
     not warrant overwriting a canonical fact. Those land in
     ``uncertainty_events`` instead of ``facts``.
@@ -128,7 +128,7 @@ _TOPIC_DISPATCH: dict[str, tuple[str, str, str, str]] = {
 
 
 def _rule_based(*, source: str, raw_content: str, lang: str) -> ExtractionResult:
-    """Deterministic fallback when Gemini is unavailable or errors out.
+    """Deterministic fallback when no LLM provider is configured or it fails.
 
     Uses :mod:`backend.pipeline.lexicon` for the keyword set so the
     German + English vocabularies coexist. Only emits a fact when one

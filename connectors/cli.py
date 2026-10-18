@@ -385,8 +385,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="When set, events older than 30 days are stamped "
         "processed_at=now() rather than processed_at=received_at. "
-        "Phase 9 migration flips this on once the validator/uncertainty "
-        "layers ship; default keeps backfill quiet for the live worker.",
+        "By default historical events keep processed_at=received_at so "
+        "the live worker does not re-process them.",
     )
     emails.add_argument(
         "--limit",
@@ -432,9 +432,9 @@ def build_parser() -> argparse.ArgumentParser:
     materialize = sub.add_parser(
         "materialize-all",
         help=(
-            "Phase 12 bootstrap: render every property / building / "
-            "liegenschaft and store the markdown in the matching "
-            "*_files cache table. Idempotent."
+            "Render every property / building / liegenschaft and store "
+            "the markdown in the matching *_files cache table. Run once "
+            "after a bulk load that bypassed the applier. Idempotent."
         ),
     )
     materialize.add_argument("--json", action="store_true")

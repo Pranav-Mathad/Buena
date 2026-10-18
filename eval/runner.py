@@ -275,7 +275,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--out",
         default=None,
-        help="Optional markdown destination (e.g. docs/eval-runs/2026-04-25-step4.md).",
+        help="Optional markdown destination (e.g. docs/eval-runs/<date>-<name>.md).",
     )
     p.add_argument(
         "--via",

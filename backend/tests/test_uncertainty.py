@@ -313,7 +313,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("db")
-async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
+async def test_floor_count_email_still_hard_rejects_with_uncertainty_routing() -> None:
     """A free-text floor-count change is still a hard reject, not an uncertainty."""
     ensure_migrations()
 
@@ -321,7 +321,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
     async with factory() as session:
         b = (
             await session.execute(
-                text("INSERT INTO buildings (address) VALUES ('Test 9.1 Regression') RETURNING id")
+                text("INSERT INTO buildings (address) VALUES ('Test Floor Bldg') RETURNING id")
             )
         ).one()
         p = (
@@ -329,7 +329,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 text(
                     """
                     INSERT INTO properties (name, address, building_id, aliases)
-                    VALUES ('Test 9.1 Prop', 'addr', :bid, ARRAY['x'])
+                    VALUES ('Test Floor Prop', 'addr', :bid, ARRAY['x'])
                     RETURNING id
                     """
                 ),

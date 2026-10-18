@@ -194,7 +194,7 @@ LIMIT 20;
 
 SQL_UNROUTED_VERWENDUNGSZWECK = """
 -- Most common verwendungszweck strings on unrouted bank rows. Top
--- entries are the keyword-discovery candidates Step 8 wants to surface
+-- entries are the keyword-discovery candidates this script surfaces
 -- for promotion into the WEG-keyword list or the alias seed.
 SELECT (metadata->>'verwendungszweck') AS verwendungszweck,
        COUNT(*)                        AS occurrences

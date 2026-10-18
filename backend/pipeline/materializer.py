@@ -272,7 +272,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     rows = (await session.execute(text("SELECT id FROM buildings"))).all()
@@ -281,7 +281,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     rows = (await session.execute(text("SELECT id FROM liegenschaften"))).all()
@@ -290,7 +290,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     log.info(
