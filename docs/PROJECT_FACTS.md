@@ -22,7 +22,7 @@ comments.
 | Generated shadcn components kept | 314 lines | `git ls-files 'frontend/src/components/ui/*' \| xargs wc -l \| tail -1` |
 | Frontend dependencies | 14 runtime, 20 dev (at `4917074`) | `node -e 'const p=require("./frontend/package.json"); console.log(Object.keys(p.dependencies).length, Object.keys(p.devDependencies).length)'` |
 | HTTP routes | 52 | `git grep -h -c -E '@(router\|portfolio_router)\.(get\|post\|patch\|put\|delete)\(' -- backend/api \| paste -sd+ - \| bc` |
-| Additive migrations | 14 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
+| Additive migrations | 15 | entries in `_MIGRATIONS`, `connectors/migrations.py` |
 | Rule constraints | 8 | modules in `backend/pipeline/constraints/` |
 | Signal rules | 3 | `_RULES` in `backend/signals/evaluator.py` |
 | MCP tools | 5 | `grep -c '@mcp.tool' mcp_server/main.py` |

@@ -48,7 +48,7 @@ queue and holds the LLM spend ledger.
 ## Data model
 
 The base schema is `backend/db/schema.sql`; later additions are additive
-migrations in `connectors/migrations.py` (`0001` to `0014`), applied in order
+migrations in `connectors/migrations.py` (`0001` to `0015`), applied in order
 and safe to re-run. Everything runs on plain PostgreSQL 16; no extensions are
 required.
 
@@ -132,7 +132,8 @@ calls, so re-rendering costs no spend.
 `signals` holds proposed actions: `type` (the rule that fired), `severity`,
 `message`, `evidence` (the events and facts behind it), `proposed_action` (a
 drafted message and recipient) and `status` (`pending`, `resolved` after
-approval, `rejected`). `natural_key`
+approval, `rejected`, or `superseded` for pending duplicates closed by
+migration `0015`). `natural_key`
 (`type|property id or 'portfolio'|subtype`) identifies "the same finding"
 across evaluator runs; see [Signals](#signals).
 
@@ -274,7 +275,10 @@ The evaluator (`backend/signals/evaluator.py`) runs every
 30 seconds and on `POST /signals/evaluate`. For each candidate it computes the
 natural key and skips it while a signal with that key is pending or was
 resolved within `SIGNAL_RESOLUTION_COOLDOWN_DAYS` (default 7), so an operator's
-decision is not undone on the next run. New signals get a drafted message from
+decision is not undone on the next run. The check and the insert are not
+atomic, so a unique index over pending rows (`uq_signals_pending_natural_key`)
+backs them up: when two evaluators race, the second insert is a no-op
+(`ON CONFLICT DO NOTHING`). New signals get a drafted message from
 `backend/signals/drafter.py` (LLM, or a template that always states the
 observation, the risk, a concrete next step and a deadline).
 
@@ -441,10 +445,14 @@ names the property the UI opens first; `GET /properties` marks it with
   nothing sets one.
 - **Nothing is sent.** Approved signals write to `outbox`; no email or Slack
   message leaves the system.
-- **Scheduler jobs are not multi-instance safe.** The worker is safe to run in
-  several processes (`SKIP LOCKED`), but the scheduled jobs run in every API
-  instance. The evaluator's dedupe is check-then-insert, so two instances can
-  create duplicate signals for the same finding.
+- **Scheduled jobs run in every API instance.** The worker is safe to run in
+  several processes (`SKIP LOCKED`), and a unique index stops two instances
+  from creating the same pending signal, but with N instances the evaluator
+  and pollers still run N times per interval. The extra runs are wasted work:
+  pollers re-fetch what idempotent inserts then drop, and an evaluator that
+  loses the race has already drafted a message (an LLM call when a key is
+  set) that it discards. A leader lock, or running the scheduler in one
+  dedicated process, would remove the duplication.
 - **Redaction keeps email local parts.** `jane.doe@provider.com` becomes
   `jane.doe@example.com`, so a name embedded in an address survives.
 - **Source precedence is incomplete.** The differ ranks `pdf`, `erp`, `email`,

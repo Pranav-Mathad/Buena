@@ -8,20 +8,24 @@ the ones operators trigger.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
+import psycopg2
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.signals import drafter, evaluator
 from backend.signals.evaluator import natural_key
 from backend.signals.types import ProposedAction, SignalCandidate
+from connectors.migrations import _MIGRATIONS
 
 
 @dataclass(frozen=True)
@@ -191,3 +195,58 @@ async def test_finding_is_raised_again_after_cooldown(finding: Finding) -> None:
     assert await evaluator.evaluate_all() == 1
 
     assert [s.status for s in await _signals(finding)] == ["resolved", "pending"]
+
+
+async def test_concurrent_evaluators_raise_one_signal(
+    finding: Finding, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two evaluators that both pass the pending check still insert one row.
+
+    This is the multi-instance race: each API instance runs the evaluator,
+    and both can see "nothing pending" before either commits.
+    """
+
+    async def nothing_raised(session: AsyncSession, key: str, cooldown_days: int) -> bool:
+        return False
+
+    monkeypatch.setattr(evaluator, "_already_raised", nothing_raised)
+
+    results = await asyncio.gather(evaluator.evaluate_all(), evaluator.evaluate_all())
+
+    assert sorted(results) == [0, 1]
+    assert [s.status for s in await _signals(finding)] == ["pending"]
+
+
+async def test_migration_keeps_the_oldest_pending_duplicate(finding: Finding) -> None:
+    """Duplicates from before the unique index are superseded, not deleted.
+
+    Runs inside one transaction that is rolled back, so the dropped index
+    and the inserted rows never reach the shared database.
+    """
+    migration = dict(_MIGRATIONS)["0015_signal_pending_unique"]
+    conn = psycopg2.connect(get_settings().database_url_sync)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DROP INDEX uq_signals_pending_natural_key")
+            for days_old in (3, 2, 1):
+                cur.execute(
+                    "INSERT INTO signals "
+                    "(property_id, type, severity, message, status, created_at, natural_key) "
+                    "VALUES (%s, 'recurring_maintenance', 'urgent', 'duplicate', 'pending', "
+                    "now() - make_interval(days => %s), %s)",
+                    (str(finding.property_id), days_old, finding.key),
+                )
+            cur.execute(migration)
+            cur.execute(
+                "SELECT status FROM signals WHERE property_id = %s ORDER BY created_at",
+                (str(finding.property_id),),
+            )
+            statuses = [row[0] for row in cur.fetchall()]
+            cur.execute("SELECT to_regclass('uq_signals_pending_natural_key') IS NOT NULL")
+            index_row = cur.fetchone()
+    finally:
+        conn.rollback()
+        conn.close()
+
+    assert statuses == ["pending", "superseded", "superseded"]
+    assert index_row == (True,)

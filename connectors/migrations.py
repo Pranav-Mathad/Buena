@@ -425,6 +425,33 @@ _MIGRATIONS: list[tuple[str, str]] = [
         ALTER TABLE facts DROP COLUMN IF EXISTS embedding;
         """,
     ),
+    (
+        "0015_signal_pending_unique",
+        """
+        -- At most one pending signal per natural key. The evaluator's
+        -- check-then-insert dedupe is not atomic, so two API instances
+        -- running the evaluator at the same moment could both insert the
+        -- same finding; this index makes the second insert a no-op
+        -- (ON CONFLICT DO NOTHING). Pending duplicates created before the
+        -- index existed are closed first: the oldest stays pending and the
+        -- rest become 'superseded'. They are kept, not deleted, because
+        -- approval_log and outbox reference signals.
+        UPDATE signals
+           SET status = 'superseded', resolved_at = now()
+         WHERE id IN (
+           SELECT id FROM (
+             SELECT id, row_number() OVER (
+                      PARTITION BY natural_key
+                      ORDER BY created_at NULLS FIRST, id) AS rn
+               FROM signals
+              WHERE status = 'pending' AND natural_key IS NOT NULL
+           ) ranked
+           WHERE rn > 1
+         );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_signals_pending_natural_key
+          ON signals (natural_key) WHERE status = 'pending';
+        """,
+    ),
 ]
 
 

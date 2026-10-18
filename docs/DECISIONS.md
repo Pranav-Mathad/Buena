@@ -13,6 +13,33 @@ the code looks the way it does.
 Format: **Context**, **Decision**, **Reason**, **Revisit if**, and optionally
 **Status**.
 
+## 2026-10-18: at most one pending signal per natural key, enforced by the database
+
+**Context.** The evaluator skips a candidate when a signal with the same
+`natural_key` is pending (see the 2026-10-17 cooldown entry). That is a
+check followed by an insert, in separate statements. Every API instance runs
+the evaluator on its own scheduler, so two instances could both pass the check
+and both insert the same finding.
+
+**Decision.** Migration `0015_signal_pending_unique` adds a unique partial
+index, `signals (natural_key) WHERE status = 'pending'`, and the evaluator's
+insert uses `ON CONFLICT (natural_key) WHERE status = 'pending' DO NOTHING`;
+the losing evaluator logs `signal.concurrent_duplicate_skipped` and counts
+nothing. Before building the index, the migration closes pending duplicates
+that already exist: the oldest stays pending and the rest get status
+`superseded`. Signals proposed through the API keep a NULL key and are not
+constrained.
+
+**Reason.** The database is the only place that sees both instances, so it is
+the only place that can make the dedupe atomic. Duplicates are superseded
+rather than deleted because `approval_log` and `outbox` reference signals, and
+a status change keeps the history readable. The cheaper alternative, a leader
+lock for the scheduler, would also stop the duplicate work but leaves the
+invariant unenforced for any other writer.
+
+**Revisit if.** A rule needs two pending signals with the same key (then the
+key is missing a component), or the scheduler moves to a single process.
+
 ## 2026-10-18: reprocessing an event does not duplicate its activity entry
 
 **Context.** Event processing is meant to be idempotent: processing the same

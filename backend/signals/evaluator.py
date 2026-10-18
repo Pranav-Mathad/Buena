@@ -10,7 +10,11 @@ It calls each rule's ``evaluate(session)`` and, for every candidate:
    and keep matching the same facts, so without the cooldown a decision
    made by a human would be undone on the next tick.
 3. Otherwise asks :mod:`backend.signals.drafter` for a
-   :class:`ProposedAction` and inserts a ``pending`` row.
+   :class:`ProposedAction` and inserts a ``pending`` row. The check in
+   step 2 is not atomic, so the insert also relies on the unique index
+   ``uq_signals_pending_natural_key``: when another evaluator (e.g. a
+   second API instance) inserted the same key in between, the insert is a
+   no-op.
 
 The scheduler runs this every 30 seconds; ``POST /signals/evaluate`` runs
 it on demand.
@@ -88,8 +92,13 @@ async def _persist(
     session: AsyncSession,
     candidate: SignalCandidate,
     key: str,
-) -> UUID:
-    """Draft + insert a candidate. Returns the new ``signals.id``."""
+) -> UUID | None:
+    """Draft + insert a candidate. Returns the new ``signals.id``.
+
+    Returns ``None`` when a pending signal with ``key`` already exists,
+    which happens only when a concurrent evaluator inserted it after
+    :func:`_already_raised` ran.
+    """
     action = await drafter.draft(session, candidate)
     result = await session.execute(
         text(
@@ -100,6 +109,7 @@ async def _persist(
             VALUES
                 (:pid, :type, :sev, :msg, CAST(:evd AS JSONB),
                  CAST(:act AS JSONB), 'pending', now(), :key)
+            ON CONFLICT (natural_key) WHERE status = 'pending' DO NOTHING
             RETURNING id
             """
         ),
@@ -113,7 +123,10 @@ async def _persist(
             "key": key,
         },
     )
-    signal_id: UUID = result.scalar_one()
+    signal_id: UUID | None = result.scalar_one_or_none()
+    if signal_id is None:
+        log.info("signal.concurrent_duplicate_skipped", natural_key=key)
+        return None
     log.info(
         "signal.created",
         signal_id=str(signal_id),
@@ -149,8 +162,8 @@ async def _run(session: AsyncSession) -> int:
             key = natural_key(candidate.property_id, candidate.type, candidate.action_hint)
             if await _already_raised(session, key, cooldown_days):
                 continue
-            await _persist(session, candidate, key)
-            created += 1
+            if await _persist(session, candidate, key) is not None:
+                created += 1
     if created:
         log.info("signal.batch", created=created)
     return created
