@@ -11,8 +11,6 @@ from connectors import cost_ledger
 from eval import runner
 from eval.metrics import score_row
 
-pytestmark = pytest.mark.asyncio
-
 
 def _write_fixture(tmp_path: Path) -> Path:
     """Two-row JSONL fixture covering a positive + a negative case."""
