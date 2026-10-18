@@ -622,6 +622,7 @@ const PropertyDetail = () => {
                 return (
                   <section
                     key={s.title}
+                    data-section-kind={isUncertain ? "uncertain" : isContext ? "context" : "facts"}
                     className={isUncertain ? "bg-subdued rounded-2xl p-6 border border-border" : ""}
                   >
                     {isContext && <hr className="border-border mb-6" />}

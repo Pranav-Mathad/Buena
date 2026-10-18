@@ -18,7 +18,8 @@ shadcn/ui), Vitest and Testing Library.
 | `npm run dev` | Dev server on <http://localhost:8080> |
 | `npm run build` | Production build into `dist/` |
 | `npm run preview` | Serve the production build |
-| `npm run lint` | ESLint |
+| `npm run lint` | ESLint, failing on any warning |
+| `npm run typecheck` | `tsc --noEmit` for the app and the Vite config |
 | `npm test` | Vitest, single run |
 | `npm run test:watch` | Vitest in watch mode |
 
@@ -51,14 +52,24 @@ src/
 ├── lib/
 │   ├── api.ts              API client and DTO mapping
 │   ├── text.ts             markdown and briefing text helpers
-│   ├── data.ts             shared types and remaining static fixtures
+│   ├── types.ts            shared domain types
+│   ├── constants.ts        static UI copy (suggested questions, sample messages)
+│   ├── config.ts           VITE_API_BASE_URL, required at startup
+│   ├── ask.ts              adapts Ask API results for the panel
 │   └── utils.ts            className helper
-├── hooks/                  toast hook
+├── hooks/                  query hooks (queries/), theme and notification contexts
 └── test/setup.ts           Testing Library and jsdom setup
 ```
 
 ## Testing
 
-`npm test` runs Vitest in jsdom with Testing Library (`src/test/setup.ts`).
-Tests live next to the code as `*.test.ts(x)`. There are no component tests
-yet; `passWithNoTests` keeps the command green until they land.
+`npm test` runs Vitest in jsdom with Testing Library. Tests sit next to the
+code (`src/lib/*.test.ts`, `src/**/__tests__/*.test.tsx`) and cover the API
+client's DTO mapping and error types, the markdown helpers, the Ask panel's
+three answer states, the property page's section rendering, live
+notifications from the server-sent event stream, and approving a signal from
+the inbox. `src/test/utils.tsx` provides `renderWithProviders` and a
+`mockFetch` that routes requests by method and path; `src/test/setup.ts`
+replaces `EventSource` with a controllable mock. There are no snapshot tests.
+
+Before pushing: `npm run lint && npm run typecheck && npm test && npm run build`.
