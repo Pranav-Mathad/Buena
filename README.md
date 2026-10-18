@@ -67,36 +67,30 @@ this way, including the mistakes: [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quickstart
 
-Requires Docker, Python 3.11 and Node 18 or later.
+Requires Docker.
 
 ```bash
-cp .env.example .env
-docker compose up -d postgres                      # Postgres on localhost:5433
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-python -m seed.seed                                # schema + 4 sample properties
-python -c "from connectors.migrations import apply_all; apply_all()"
-EXTRACTED_ROOT=Extracted_demo python -m connectors.cli load-stammdaten --source buena   # 52 synthetic units
-uvicorn backend.main:app --reload                  # http://localhost:8000/docs
-
-cd frontend && cp .env.example .env.local && npm ci && npm run dev   # http://localhost:8080
+cp .env.example .env && docker compose up
 ```
 
-- API and interactive docs: <http://localhost:8000/docs>
 - Frontend: <http://localhost:8080>
+- API and interactive docs: <http://localhost:8000/docs>
 
-No API key is needed: extraction falls back to the rule-based extractor and
-signal drafts to templates. Ask, reply drafting and the LLM contradiction check
-need a provider key: `GEMINI_API_KEY` by default, or `LLM_PROVIDER=pioneer`
-with `PIONEER_API_KEY`. Try the pipeline with:
+The first start builds both images, applies the schema and loads synthetic
+sample data (56 properties). No API key is needed: extraction falls back to
+the rule-based extractor and signal drafts to templates. Ask, reply drafting
+and the LLM contradiction check need a provider key in `.env`:
+`GEMINI_API_KEY` by default, or `LLM_PROVIDER=pioneer` with `PIONEER_API_KEY`.
+Push an event through the pipeline:
 
 ```bash
 curl -X POST localhost:8000/debug/trigger_event -H 'content-type: application/json' \
   -d '{"raw_content": "From: tenant@example.com\nSubject: Heizung\n\nDie Heizung in WE 29 ist ausgefallen."}'
 ```
 
-Tests: `pytest backend/tests connectors/tests eval/tests mcp_server/tests` (needs the
-Postgres above; nothing else).
+Development without containers: `docker compose up -d postgres`, then
+`pip install -e ".[dev]"` and `./scripts/dev.sh` (API with reload plus the Vite
+dev server). Tests: `pytest` against that Postgres; no keys or other services.
 
 ## Evaluation
 

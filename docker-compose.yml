@@ -1,14 +1,19 @@
+# `docker compose up` starts Postgres, the API (with schema, migrations and the
+# synthetic sample data) and the frontend:
+#   frontend  http://localhost:8080
+#   API       http://localhost:8000/docs
+# API keys and other settings are read from .env if present (see .env.example).
+
 services:
   postgres:
     image: postgres:16
-    container_name: keystone-postgres
     environment:
       POSTGRES_DB: keystone
       POSTGRES_USER: keystone
       POSTGRES_PASSWORD: keystone
     ports:
-      # Host port 5433 → container 5432 to avoid clashing with a local Postgres
-      # that is often bound to 5432 (e.g. Homebrew). Update .env if you change it.
+      # Host port 5433 avoids clashing with a local Postgres on 5432. Tooling
+      # run from the host (tests, scripts) uses the DSNs in .env.example.
       - "5433:5432"
     volumes:
       # Named for the major version: a data directory initialised by one
@@ -19,6 +24,41 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  backend:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Inside the compose network Postgres is reachable as "postgres";
+      # these override the host-oriented DSNs in .env.
+      DATABASE_URL: postgresql+asyncpg://keystone:keystone@postgres:5432/keystone
+      DATABASE_URL_SYNC: postgresql://keystone:keystone@postgres:5432/keystone
+      RUN_MIGRATIONS: "true"
+      LOAD_SAMPLE_DATA: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   keystone_pg16:
