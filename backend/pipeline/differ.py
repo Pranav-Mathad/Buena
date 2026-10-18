@@ -104,10 +104,8 @@ def _should_replace(
     if new_rank == old_rank and new_confidence < existing["confidence"]:
         return False, "lower_confidence"
 
-    return (
-        True,
-        f"replace ({new_source}@{new_confidence:.2f} > {existing['source']}@{existing['confidence']:.2f})",
-    )
+    old = f"{existing['source']}@{existing['confidence']:.2f}"
+    return True, f"replace ({new_source}@{new_confidence:.2f} > {old})"
 
 
 async def diff(

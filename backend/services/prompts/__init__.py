@@ -1,1 +1,1 @@
-"""Extraction prompt templates and field vocabulary, loaded by :mod:`backend.services.llm.extraction`."""
+"""Extraction prompts and field vocabulary, read by ``backend.services.llm.extraction``."""

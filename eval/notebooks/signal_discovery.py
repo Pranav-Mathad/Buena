@@ -22,7 +22,8 @@ the discovery script just surfaces the candidates.
 Usage::
 
     python -m eval.notebooks.signal_discovery
-    python -m eval.notebooks.signal_discovery --out docs/eval-runs/$(date +%Y-%m-%d)-signal-discovery.md
+    python -m eval.notebooks.signal_discovery \\
+        --out docs/eval-runs/$(date +%Y-%m-%d)-signal-discovery.md
 
 The script is intentionally read-only — no fact writes, no event
 mutations. Safe to run while the backfill / live worker are active.
@@ -97,13 +98,16 @@ WITH thread_events AS (
   WHERE source = 'email'
     AND metadata->>'thread_id' IS NOT NULL
 )
-SELECT percentile_disc(0.5)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p50_hours,
-       percentile_disc(0.9)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p90_hours,
-       percentile_disc(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p99_hours,
-       MAX(EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0)              AS max_hours,
-       COUNT(*)                                                                        AS lag_samples
-FROM thread_events
-WHERE prev_received_at IS NOT NULL;
+SELECT percentile_disc(0.5)  WITHIN GROUP (ORDER BY lag_hours) AS p50_hours,
+       percentile_disc(0.9)  WITHIN GROUP (ORDER BY lag_hours) AS p90_hours,
+       percentile_disc(0.99) WITHIN GROUP (ORDER BY lag_hours) AS p99_hours,
+       MAX(lag_hours)                                           AS max_hours,
+       COUNT(*)                                                 AS lag_samples
+FROM (
+  SELECT EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0 AS lag_hours
+  FROM thread_events
+  WHERE prev_received_at IS NOT NULL
+) lags;
 """
 
 

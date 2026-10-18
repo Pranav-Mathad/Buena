@@ -107,7 +107,8 @@ JSON SCHEMA
     {{
       "claim": "<short quote or paraphrase from the event>",
       "conflict_with": "<short quote or paraphrase from the file>",
-      "section": "<best-fit section, e.g. building_overview, tenants, lease, financials, maintenance>",
+      "section": "<best-fit section, e.g. building_overview, tenants, lease,
+                  financials, maintenance>",
       "field": "<best-fit field, e.g. floor_count, tenant_name, kaltmiete, address>",
       "severity": "hard" | "soft",
       "reason": "<one sentence explaining the contradiction in plain language>"

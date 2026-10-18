@@ -14,7 +14,8 @@ def _write_bank_csv(path: Path) -> None:
     path.write_text(
         "id,datum,typ,betrag,kategorie,gegen_name,verwendungszweck,referenz_id,error_types\n"
         "TX-00001,2024-01-01,CREDIT,1256.00,miete,Chantal Tasche,Miete 01/2024 EH-045,MIE-006,\n"
-        f"TX-00002,2024-01-15,DEBIT,650.00,dienstleister,Hausmeister Demo GmbH,Wartung INV-00012 {IBAN_9832},INV-00012,\n",
+        "TX-00002,2024-01-15,DEBIT,650.00,dienstleister,Hausmeister Demo GmbH,"
+        f"Wartung INV-00012 {IBAN_9832},INV-00012,\n",
         encoding="utf-8",
     )
 

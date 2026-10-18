@@ -307,7 +307,7 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.usefixtures("db")
 async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inserting a new fact bumps last-fact timestamp → cache key flips, so the LLM is called again."""
+    """A new fact changes the cache key, so the next render calls the LLM again."""
     bid, pid = await _seed_property()
     try:
         call_count = {"n": 0}

@@ -3,9 +3,10 @@
 Reads ``approval_log``, computes how often operators approve, edit or reject
 each signal type, and maps that to a priority weight in ``[0.5, 1.5]``
 (with fewer than five proposals, the weight is pulled toward 1.0 in
-proportion to the sample size). ``GET /settings/learning`` serves the result. This is descriptive statistics over observed decisions,
-not a trained model; a learned ranker could replace :func:`compute_learning`
-without changing the endpoint.
+proportion to the sample size). ``GET /settings/learning`` serves the result.
+This is descriptive statistics over observed decisions, not a trained model;
+a learned ranker could replace :func:`compute_learning` without changing the
+endpoint.
 """
 
 from __future__ import annotations
