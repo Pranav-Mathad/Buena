@@ -17,8 +17,8 @@ Built solo in a hackathon window, then cleaned up and hardened.
 | **Approval inbox** | **Ask** |
 | ![Approval inbox](docs/img/approval-inbox.png) | ![Ask](docs/img/ask-panel.png) |
 
-The `docker compose` stack with no API key, after five synthetic tenant emails
-were sent to WE 29 through `POST /debug/trigger_event` (see Quickstart).
+A fresh `docker compose up` with no API key: the synthetic sample data as it
+loads on first start, nothing added by hand.
 
 ## How it works
 
