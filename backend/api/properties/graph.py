@@ -99,7 +99,7 @@ async def property_graph(
             GraphNode(
                 id=str(prop_row.building_id),
                 type="building",
-                label=f"Building — {prop_row.building_address}",
+                label=f"Building: {prop_row.building_address}",
                 metadata={
                     "address": prop_row.building_address or "",
                     "year_built": prop_row.building_year,

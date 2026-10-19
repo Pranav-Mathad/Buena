@@ -7,11 +7,11 @@ prevent.
 
 The LLM picks one of three statuses:
 
-- ``answered`` — context contains the answer; ``cited_event_ids``
+- ``answered``: context contains the answer; ``cited_event_ids``
   identifies the supporting events.
-- ``insufficient_context`` — related context exists but doesn't answer
+- ``insufficient_context``: related context exists but doesn't answer
   the question; ``partial_context_event_ids`` lists what we do know.
-- ``out_of_scope`` — the question is about data Keystone doesn't
+- ``out_of_scope``: the question is about data Keystone doesn't
   track (ERP-side: exact rent payment dates, IBAN, tax IDs, …).
 
 The API layer maps the cited IDs back to full source records so the
@@ -40,11 +40,11 @@ class _EventRef:
 
 SYSTEM_HINT = (
     "You answer questions about a German Hausverwaltung property using "
-    "only the facts and events provided. Honesty over completeness — "
+    "only the facts and events provided. Honesty over completeness: "
     "if the context doesn't support a confident answer, say so. "
     "Respond with a single JSON object that strictly matches the schema. "
-    "No prose, no markdown fences — only the JSON object. "
-    "Inside text fields (answer, reasoning), use plain prose only — no "
+    "No prose, no markdown fences: only the JSON object. "
+    "Inside text fields (answer, reasoning), use plain prose only, no "
     "markdown formatting (**, *, _, `, #), no headings, no bullet "
     "points, no markdown links. Text will be displayed as plain text in "
     "the UI; markdown markers leak through and look broken to the user."
@@ -59,14 +59,14 @@ QUESTION
 \"\"\"
 
 PROPERTY FILE (the canonical, condensed markdown record for this
-property — Stammdaten at top, then sectioned facts with confidence and
+property: Stammdaten at top, then sectioned facts with confidence and
 source links, then Building / WEG context. This is your primary
 source: everything Keystone knows about this property is here.)
 \"\"\"
 {property_file}
 \"\"\"
 
-RECENT EVENTS (last 90 days, newest first — raw snippets to support
+RECENT EVENTS (last 90 days, newest first; raw snippets to support
 direct quotation. The event ids match the [source: ...] links in the
 PROPERTY FILE above. Cite these ids in cited_event_ids.)
 {events_block}
@@ -82,11 +82,11 @@ DECIDE ON A STATUS
   did find. Set ``reasoning`` to one sentence explaining why the
   context falls short.
 - "out_of_scope": the question is about data Keystone doesn't track
-  in this layer — exact rent payment dates, IBAN, bank balances, tax
+  in this layer: exact rent payment dates, IBAN, bank balances, tax
   IDs, full lease termination logic. ``answer`` MUST be null.
   ``reasoning`` names what would be needed (e.g. "lives in the ERP").
 
-LANGUAGE — STRICT MATCH
+LANGUAGE: STRICT MATCH
 Detect the language of the QUESTION above. Then write BOTH ``answer``
 and ``reasoning`` in that exact language.
 - If the question is in German, both fields are in German. Quote
@@ -171,7 +171,7 @@ async def answer_question(
 
     status = str(data.get("status") or "").strip()
     if status not in {"answered", "insufficient_context", "out_of_scope"}:
-        # Treat unknown statuses as insufficient_context — safer than
+        # Treat unknown statuses as insufficient_context; safer than
         # surfacing a possibly hallucinated answer.
         status = "insufficient_context"
 

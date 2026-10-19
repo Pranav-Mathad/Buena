@@ -147,7 +147,7 @@ async def test_cost_cap_aborts_loop_cleanly(
 
     # Patch the extractor to return a deterministic result that costs ~$0.0125
     # per call (10k prompt + 1k completion on Pro pricing). The cap is set
-    # to $0.02 below — so the second call hits the post-charge cap.
+    # to $0.02 below, so the second call hits the post-charge cap.
     fake_result = ExtractionResult(
         category="other",
         priority="low",
@@ -218,7 +218,7 @@ async def test_dead_letter_after_threshold(
         raising=True,
     )
 
-    # Three sequential runs — each should re-attempt while retry_count<3.
+    # Three sequential runs: each should re-attempt while retry_count<3.
     for _ in range(3):
         await buena_email_loader.backfill_emails(
             root=Path("/tmp/unused"),

@@ -91,7 +91,7 @@ def _load_ground_truth(set_name: str) -> list[dict[str, Any]]:
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_no} is not valid JSON — {exc}") from exc
+                raise ValueError(f"{path}:{line_no} is not valid JSON: {exc}") from exc
     log.info("eval.ground_truth.loaded", set_name=set_name, rows=len(rows))
     return rows
 
@@ -175,7 +175,7 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
 
     result = await run_extractor(
         property_name=property_name,
-        current_context_excerpt="(none — eval run)",
+        current_context_excerpt="(none, eval run)",
         source=str(row.get("source") or "email"),
         raw_content=raw_content,
     )

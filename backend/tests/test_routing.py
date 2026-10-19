@@ -32,7 +32,7 @@ def _ensure_buena_stammdaten() -> None:
     try:
         buena_loader.load_from_disk()
     except DataMissingError as exc:
-        pytest.skip(f"Buena dataset not available — {exc}")
+        pytest.skip(f"Buena dataset not available: {exc}")
 
 
 async def _setup_or_skip() -> None:

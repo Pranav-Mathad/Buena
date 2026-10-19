@@ -339,7 +339,7 @@ async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
                 f"/admin/uncertainties/{uid}/resolve",
                 json={
                     "action": "dismiss",
-                    "reason": "off-topic — not actually about this property",
+                    "reason": "off-topic: not actually about this property",
                     "reviewed_by": "ops@keystone.test",
                 },
             )

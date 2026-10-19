@@ -84,7 +84,7 @@ async def _resolve_property(
 
     Returns ``(resolved_id, display_name)``. ``resolved_id`` may be
     ``None`` when the caller supplied only a name that doesn't match
-    any seeded property — in that case we still return the supplied
+    any seeded property; in that case we still return the supplied
     name so the LLM can draft a generic holding reply.
     """
     if property_id is not None:

@@ -221,7 +221,7 @@ async def property_file(
         for u in uncertainty_rows:
             value = u.observation
             if u.hypothesis:
-                value = f"{u.observation} — {u.hypothesis}"
+                value = f"{u.observation} (hypothesis: {u.hypothesis})"
             review_facts.append(
                 PropertyFileFact(
                     value=value,

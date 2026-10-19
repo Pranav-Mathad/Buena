@@ -39,7 +39,7 @@ class UnroutedEvent(BaseModel):
     suggested_alias: str | None = Field(
         default=None,
         description=(
-            "Best guess alias to look up — surfaces metadata.eh_id / mie_id / "
+            "Best guess alias to look up; surfaces metadata.eh_id / mie_id / "
             "invoice_ref so the operator knows what reference was tried."
         ),
     )

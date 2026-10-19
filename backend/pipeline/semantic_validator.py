@@ -40,7 +40,7 @@ log = structlog.get_logger(__name__)
 
 SYSTEM_HINT = (
     "You audit a new property-management event against the property's "
-    "canonical record. You only surface CONTRADICTIONS — facts in the "
+    "canonical record. You only surface CONTRADICTIONS: facts in the "
     "event that disagree with what's already on file. Novel information "
     "(new maintenance issues, new payments, new requests) is fine and "
     "must NOT be flagged. Respond with a single JSON object that "
@@ -52,7 +52,7 @@ PROMPT_TEMPLATE = """You audit one new event against the existing canonical
 record for a property. Your output decides whether each claim in the
 event is consistent with what's already on file.
 
-PROPERTY FILE (canonical, condensed record — Stammdaten at top, then
+PROPERTY FILE (canonical, condensed record: Stammdaten at top, then
 sectioned facts with confidence and source links):
 \"\"\"
 {property_file}
@@ -82,10 +82,10 @@ DEFINITIONS
 - "Novel" information (new maintenance issue, new bank payment, new
   email request) is NOT a contradiction. Do not flag novel claims.
 - "Stammdaten" entries (master record at top of the file) are
-  authoritative — only an authoritative document can revise them.
+  authoritative: only an authoritative document can revise them.
   Free-text events that contradict stammdaten are HARD rejections.
 - A current fact with confidence ≥ 0.9 is also strong; contradictions
-  there are HARD rejections. Lower-confidence facts are SOFT — flag
+  there are HARD rejections. Lower-confidence facts are SOFT: flag
   them as needs_review.
 
 SEVERITY
@@ -96,7 +96,7 @@ SEVERITY
   document_type that *could* legitimately revise the record (e.g.
   structural_permit for floor count). These need a human review.
 
-Always be conservative. If a claim is ambiguous, don't flag it —
+Always be conservative. If a claim is ambiguous, don't flag it;
 returning "all_consistent" is the default.
 
 JSON SCHEMA
@@ -134,7 +134,7 @@ class SemanticVerdict:
 def _format_proposed_block(facts: list[dict[str, Any]]) -> str:
     """Bullet-list extracted proposals so the LLM can also rule on them."""
     if not facts:
-        return "  (no proposed facts — the extractor only saw novel/maintenance content)"
+        return "  (no proposed facts: the extractor only saw novel/maintenance content)"
     lines: list[str] = []
     for f in facts[:20]:
         lines.append(
@@ -155,7 +155,7 @@ def _to_rejection(item: dict[str, Any]) -> Rejection | None:
     severity = str(item.get("severity") or "soft").strip().lower()
 
     if not claim or not reason:
-        # Be defensive — skip malformed rows the model emitted.
+        # Be defensive: skip malformed rows the model emitted.
         return None
 
     rendered_value = claim if not conflict else f"{claim} (file says: {conflict})"
@@ -163,7 +163,7 @@ def _to_rejection(item: dict[str, Any]) -> Rejection | None:
         section=section,
         field=field,
         proposed_value=rendered_value[:1000],
-        proposed_confidence=0.0,  # synthetic — surfaced by the auditor, not the extractor
+        proposed_confidence=0.0,  # synthetic, surfaced by the auditor, not the extractor
         constraint_name="semantic_consistency",
         reason=reason[:500],
         required_source_type=None,
@@ -216,7 +216,7 @@ async def semantic_validate(
     model = completion.model
     verdict_raw = str(data.get("verdict") or "").strip()
     if verdict_raw not in {"all_consistent", "has_contradictions"}:
-        # Tolerate model mistakes — treat as consistent rather than
+        # Tolerate model mistakes: treat as consistent rather than
         # auto-rejecting everything.
         verdict_raw = "all_consistent"
 

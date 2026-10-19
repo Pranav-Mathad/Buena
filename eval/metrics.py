@@ -231,7 +231,7 @@ class Report:
     def render_markdown(self) -> str:
         """Pretty markdown summary suitable for committing to ``docs/eval-runs/``."""
         lines: list[str] = [
-            f"# Eval report — {self.set_name}",
+            f"# Eval report: {self.set_name}",
             "",
             f"- rows scored: **{self.n_rows}**",
             f"- category accuracy: **{self.category_accuracy:.1%}**",
@@ -272,7 +272,7 @@ class Report:
             ]
             for r in failures:
                 summary = r.failure_summary or _row_diff(r)
-                lines.append(f"- `{r.event_id}` — {textwrap.shorten(summary, width=160)}")
+                lines.append(f"- `{r.event_id}`: {textwrap.shorten(summary, width=160)}")
 
         return "\n".join(lines).rstrip() + "\n"
 

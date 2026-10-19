@@ -65,7 +65,7 @@ def _trend_line(stats: list[SignalTypeStats]) -> str:
     top = max(stats, key=lambda s: s.priority_weight)
     if top.priority_weight <= 1.0 + 1e-6:
         return (
-            "Keystone has not yet re-prioritized — approval rates are still "
+            "Keystone has not yet re-prioritized; approval rates are still "
             "near baseline across signal types."
         )
     pretty = top.type.replace("_", " ")

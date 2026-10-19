@@ -98,7 +98,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "rooms": "Rooms",
         "no_active_tenant": "No active tenant on file",
         "older_label": "Older entries",
-        "older_subtitle": "Compact pointers — click any item to open the original",
+        "older_subtitle": "Compact pointers: click any item to open the original",
     },
     "de": {
         "building_context": "Hauskontext",
@@ -123,7 +123,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "rooms": "Zimmer",
         "no_active_tenant": "Kein aktiver Mieter erfasst",
         "older_label": "Ältere Einträge",
-        "older_subtitle": "Kompakte Verweise — anklicken öffnet das Original",
+        "older_subtitle": "Kompakte Verweise: anklicken öffnet das Original",
     },
 }
 
@@ -520,7 +520,7 @@ def _format_fact_line_compact(fact: FactRow) -> str:
         else "_(no source on file)_"
     )
     preview = _truncate(fact.value)
-    return f"- *{date_str}* — **{_format_field(fact.field)}:** {preview} {detail_link}"
+    return f"- *{date_str}* · **{_format_field(fact.field)}:** {preview} {detail_link}"
 
 
 def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
@@ -560,7 +560,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         entries_label = "Einträge" if lang == "de" else "entries"
         latest_summary = _truncate(latest.value, limit=60)
         out.append(
-            f"- **{year}** — {len(rows)} {entries_label} ({last_label}: {latest_summary}) {link}"
+            f"- **{year}**: {len(rows)} {entries_label} ({last_label}: {latest_summary}) {link}"
         )
     return out
 
@@ -674,7 +674,7 @@ def _context_body(event: dict[str, str | int]) -> str:
 
     if source in {"invoice", "letter"} and head_chars == 0 and filename:
         label = "Invoice" if source == "invoice" else "Letter"
-        return f"{label} {filename} — awaiting extraction"
+        return f"{label} {filename} (awaiting extraction)"
 
     snippet = str(event.get("snippet") or "")
     return snippet[:90] or "(no body)"
@@ -684,7 +684,7 @@ def _format_context_event(event: dict[str, str | int]) -> str:
     """Render one per-tier context event as a markdown bullet with source link."""
     when = str(event.get("received_at") or "")[:10] if event.get("received_at") else "?"
     return (
-        f"- *{when}* · `{event['source']}`/{event['kategorie']} — "
+        f"- *{when}* · `{event['source']}`/{event['kategorie']}: "
         f"{_context_body(event)} "
         f"[source: {event['id']}](/events/{event['id']}/source)"
     )
@@ -782,7 +782,7 @@ def _format_uncertainty_line(item: UncertaintyRow) -> str:
     if len(snippet) > 160:
         snippet = snippet[:157].rstrip() + "…"
     return (
-        f"- _Unclear: {snippet} — {item.reason_uncertain}_ "
+        f"- _Unclear: {snippet} ({item.reason_uncertain})_ "
         f"[source: event {item.event_id}](/events/{item.event_id}/source)"
     )
 
@@ -857,7 +857,7 @@ def _format_conflict_line(rej: RejectionRow, *, lang: str) -> str:
     review = "Überprüfen" if lang == "de" else "Review"
     preview = _truncate(rej.proposed_value, limit=80)
     return (
-        f"  - ⚠ **{label}:** {preview}{when} — flagged by "
+        f"  - ⚠ **{label}:** {preview}{when}, flagged by "
         f"`{rej.constraint_name}`. "
         f"[{review} →](/admin/rejected/{rej.id})"
     )
@@ -889,7 +889,7 @@ def _format_open_conflicts_block(unmatched: list[RejectionRow], *, lang: str) ->
         field_label = _format_field(rej.field) if rej.field else ""
         coord = f"{section_label} · {field_label}" if field_label else section_label
         out.append(
-            f"- ⚠ **{coord}:** {preview}{when} — flagged by "
+            f"- ⚠ **{coord}:** {preview}{when}, flagged by "
             f"`{rej.constraint_name}`. "
             f"[{review} →](/admin/rejected/{rej.id})"
         )
@@ -928,9 +928,9 @@ def _emit_sections(
     needs_review_label = labels["needs_review"]
     archive_label = "Archiv" if lang == "de" else "Archive"
     archive_subtitle = (
-        "Ältere Einträge gruppiert nach Jahr — anklicken öffnet das Original"
+        "Ältere Einträge gruppiert nach Jahr: anklicken öffnet das Original"
         if lang == "de"
-        else "Older entries grouped by year — click any line to open the original"
+        else "Older entries grouped by year: click any line to open the original"
     )
     now = datetime.now(UTC)
 
@@ -1184,9 +1184,7 @@ async def render_property_full(session: AsyncSession, property_id: UUID) -> Rend
         if events:
             body_lines.append(f"## {labels['building_context']}")
             body_lines.append("")
-            body_lines.append(
-                f"_{labels['building_subtitle']} — {building_address or building_id}_"
-            )
+            body_lines.append(f"_{labels['building_subtitle']}: {building_address or building_id}_")
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
             body_lines.append(f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n")
@@ -1199,9 +1197,7 @@ async def render_property_full(session: AsyncSession, property_id: UUID) -> Rend
         if events:
             body_lines.append(f"## {labels['weg_context']}")
             body_lines.append("")
-            body_lines.append(
-                f"_{labels['weg_subtitle']} — {liegenschaft_name or liegenschaft_id}_"
-            )
+            body_lines.append(f"_{labels['weg_subtitle']}: {liegenschaft_name or liegenschaft_id}_")
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
             body_lines.append(
@@ -1312,7 +1308,7 @@ async def render_building_markdown(session: AsyncSession, building_id: UUID) -> 
         if events:
             lines.append("## WEG Context")
             lines.append("")
-            lines.append(f"_Recent activity at the WEG — {row.lname or row.liegenschaft_id}_")
+            lines.append(f"_Recent activity at the WEG: {row.lname or row.liegenschaft_id}_")
             lines.append("")
             lines.extend(_format_context_event(ev) for ev in events)
             lines.append(f"\n[Open WEG view](/liegenschaften/{row.liegenschaft_id}/markdown)\n")
@@ -1332,7 +1328,7 @@ async def render_liegenschaft_markdown(session: AsyncSession, liegenschaft_id: U
 
     facts = await _fetch_facts_by_scope(session, scope="liegenschaft", scope_id=liegenschaft_id)
     lines: list[str] = [
-        f"# WEG — {row.name}",
+        f"# WEG: {row.name}",
         "",
         f"_Liegenschaft UUID {liegenschaft_id}_",
         "",

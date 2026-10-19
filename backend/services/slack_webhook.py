@@ -32,7 +32,7 @@ def verify_signature(
 ) -> bool:
     """Return True iff the request is a legitimate Slack delivery.
 
-    The function is safe to call with missing secrets / headers — it simply
+    The function is safe to call with missing secrets / headers; it simply
     returns ``False``. Callers should respond with HTTP 401 in that case.
     """
     if not signing_secret or not timestamp or not signature:

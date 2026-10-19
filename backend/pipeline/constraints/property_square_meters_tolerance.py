@@ -2,7 +2,7 @@
 
 A unit's ``wohnflaeche_qm`` lives in stammdaten and is occasionally
 re-measured. Routine corrections of < 5 % (e.g. "we re-measured the
-balcony") pass; a swing > 5 % is suspicious — either a typo, a
+balcony") pass; a swing > 5 % is suspicious: either a typo, a
 miscount of a different unit, or a real conversion that needs a
 ``vermessungsprotokoll`` to substantiate.
 """
@@ -61,7 +61,7 @@ class PropertySquareMetersTolerance:
         prior_qm = _parse_qm(str(current.get("value", "")))
         new_qm = _parse_qm(proposed.value)
         if prior_qm is None or new_qm is None or prior_qm == 0:
-            # Couldn't parse — let the differ-skipped path handle it.
+            # Couldn't parse: let the differ-skipped path handle it.
             return ValidationResult.passed("could not parse qm; deferring")
 
         delta_pct = abs(new_qm - prior_qm) / prior_qm * 100.0

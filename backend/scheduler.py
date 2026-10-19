@@ -1,4 +1,4 @@
-"""APScheduler setup — worker ticks + IMAP poll.
+"""APScheduler setup: worker ticks + IMAP poll.
 
 Called from the FastAPI lifespan. The scheduler runs:
 

@@ -46,9 +46,9 @@ SYSTEM_HINT = (
     "You are drafting a reply on behalf of a German property manager "
     "(Hausverwaltung). Respond with a single JSON object that strictly "
     "matches the schema described in the user message. No prose, no "
-    "markdown fences — only the JSON object. Match the language of the "
+    "markdown fences: only the JSON object. Match the language of the "
     "inbound message in the reply body. Inside text fields (subject, "
-    "body, why_relevant, snippet), use plain prose only — no markdown "
+    "body, why_relevant, snippet), use plain prose only, no markdown "
     "formatting (**, *, _, `, #), no markdown links, no bullet markers. "
     "The reply body will be sent verbatim to a tenant or owner via "
     "email/Slack; markdown markers look broken to the recipient."
@@ -67,7 +67,7 @@ Body:
 
 DESIRED TONE: {tone}
 
-PROPERTY CONTEXT — {property_name}
+PROPERTY CONTEXT: {property_name}
 
 Current facts (most recent first):
 {facts_block}
@@ -80,7 +80,7 @@ TASK
    inbound message. Set ``knows_about_incident`` accordingly.
 2. If yes, list the relevant items in ``context`` with a one-sentence
    ``why_relevant`` and use them to inform the reply body. Reference
-   them concretely (dates, amounts, parties) — no vague gestures.
+   them concretely (dates, amounts, parties): no vague gestures.
 3. If no, draft a short holding reply ("we will look into this and
    come back within X working days") with an empty ``context`` array.
 4. Write the reply body in the same language as the inbound message

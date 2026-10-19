@@ -2,7 +2,7 @@
 
 A single engine is created lazily on first use. FastAPI routes should obtain
 sessions via the :func:`get_session` dependency rather than touching the
-factory directly — this keeps transactional lifecycles tied to request scope.
+factory directly; this keeps transactional lifecycles tied to request scope.
 """
 
 from __future__ import annotations

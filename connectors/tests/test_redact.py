@@ -78,7 +78,7 @@ class TestScrubText:
         assert "+49 30 1234 5678" not in out
 
     def test_idempotent(self) -> None:
-        text = "Pay to ****1349 — call shipped@example.com"
+        text = "Pay to ****1349: call shipped@example.com"
         assert redact.scrub_text(text) == text
 
     def test_no_german_iban_survives_after_scrub(self) -> None:

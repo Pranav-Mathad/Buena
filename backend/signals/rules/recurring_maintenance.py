@@ -77,7 +77,7 @@ async def evaluate(session: AsyncSession) -> list[SignalCandidate]:
                     property_id=row.property_id,
                     message=(
                         f"{occurrences} {topic} incidents on {row.property_name} "
-                        f"in the last {WINDOW_DAYS} days — sustained failure pattern."
+                        f"in the last {WINDOW_DAYS} days: sustained failure pattern."
                     ),
                     evidence=evidence,
                     context_excerpt=context_excerpt,

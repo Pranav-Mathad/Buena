@@ -14,7 +14,7 @@ For each message:
 
 PII redaction is applied to both the header values and the body via
 :mod:`connectors.redact`. Threading metadata is captured but not
-resolved here — the composite at the property level decides how to
+resolved here: the composite at the property level decides how to
 chain related events.
 """
 
@@ -40,9 +40,9 @@ log = structlog.get_logger(__name__)
 
 _FILENAME_TS_RE = re.compile(r"(\d{8})_(\d{6})_")
 
-# Subject-line forwarding markers — case-insensitive. ``Fwd:`` is the
+# Subject-line forwarding markers, case-insensitive. ``Fwd:`` is the
 # Anglo convention; ``WG:`` is the German "weitergeleitet" prefix. We
-# don't aggregate ``Aw:``/``Re:`` here — replies preserve the original
+# don't aggregate ``Aw:``/``Re:`` here; replies preserve the original
 # sender, so the outer ``From:`` is already the correct routing key.
 _FWD_PREFIX_RE = re.compile(r"^\s*(?:Fwd?|WG)\s*:\s*", re.IGNORECASE)
 
@@ -61,7 +61,7 @@ def _detect_forward(subject: str, body: str) -> str | None:
     """Return the inner sender when ``subject`` looks like a forward.
 
     Forwards complicate routing because the visible ``From:`` is the
-    forwarding mailbox (usually the property manager themselves) — so
+    forwarding mailbox (usually the property manager themselves), so
     the actual subject of the message is one quote-level deep. When
     the subject prefix is ``Fwd:`` / ``WG:`` and the body contains a
     ``From:`` / ``Von:`` line, we return that line so the worker can
@@ -227,5 +227,5 @@ def walk_directory(root: Path) -> Iterator[ConnectorEvent]:
     for path in paths:
         try:
             yield parse_one(path, root=root)
-        except Exception:  # noqa: BLE001 — keep the walk going
+        except Exception:  # noqa: BLE001 (keep the walk going)
             log.exception("eml.archive.parse_error", path=str(path))

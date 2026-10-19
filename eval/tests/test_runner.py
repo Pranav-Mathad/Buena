@@ -52,7 +52,7 @@ def _write_fixture(tmp_path: Path) -> Path:
                     "facts_to_update": [],
                     "expected_property_alias": "",
                     "expected_scope": "unrouted",
-                    "notes": "fixture: chitchat — should produce no facts",
+                    "notes": "fixture: chitchat, should produce no facts",
                 },
             },
         ]
@@ -162,7 +162,7 @@ async def test_runner_end_to_end_on_fixture(
     report, raw = await runner.run("fixture")
     assert report.n_rows == 2
     md = report.render_markdown()
-    assert "Eval report — fixture" in md
+    assert "Eval report: fixture" in md
     assert "Per-section P / R / F1" in md
     assert "Calibration curve" in md
     # Both rows scored, no exceptions

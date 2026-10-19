@@ -334,7 +334,7 @@ async def extract_invoice_facts(
             **scope_kwargs,
             section=section,
             field="last_contractor_invoice",
-            value=(f"{doctype} from contractor {dl_id or '(unknown)'} — {filename}"),
+            value=(f"{doctype} from contractor {dl_id or '(unknown)'} ({filename})"),
             confidence=0.9,
             source_event_id=event_id,
         )

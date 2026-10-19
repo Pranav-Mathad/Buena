@@ -2,7 +2,7 @@
 
 The user explicitly asked us to verify live IMAP polling before
 moving on. We can't reach a real IMAP server from a unit test, but
-:func:`backend.services.imap_poller._ingest` is the choke-point —
+:func:`backend.services.imap_poller._ingest` is the choke-point:
 once an IMAP fetch succeeds it hands raw bytes + a Message-ID to that
 function. If ``_ingest`` parses real Buena German .eml files cleanly
 and the downstream worker extracts a fact, the live path works end
@@ -174,7 +174,7 @@ async def test_ingest_is_idempotent_on_message_id() -> None:
 async def test_poll_once_is_safe_noop_when_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Without IMAP creds, ``poll_once`` returns 0 cleanly — the scheduler
+    """Without IMAP creds, ``poll_once`` returns 0 cleanly; the scheduler
     relies on this so a missing IMAP env doesn't crash the worker loop."""
     from backend.services import imap_poller  # noqa: PLC0415
 

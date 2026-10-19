@@ -333,7 +333,7 @@ async def resolve_uncertainty(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "cannot promote — uncertainty is missing relevant_section or relevant_field"
+                    "cannot promote: uncertainty is missing relevant_section or relevant_field"
                 ),
             )
         # Pick the value: explicit override wins, hypothesis second.
@@ -342,7 +342,7 @@ async def resolve_uncertainty(
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "cannot promote — no value supplied and uncertainty has "
+                    "cannot promote: no value supplied and uncertainty has "
                     "no hypothesis to fall back on"
                 ),
             )
@@ -362,7 +362,7 @@ async def resolve_uncertainty(
         if scope_value is None:
             raise HTTPException(
                 status_code=422,
-                detail=("cannot promote — uncertainty has no property/building/liegenschaft scope"),
+                detail=("cannot promote: uncertainty has no property/building/liegenschaft scope"),
             )
 
         fact_row = (

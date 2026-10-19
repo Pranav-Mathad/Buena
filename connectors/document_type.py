@@ -79,7 +79,7 @@ First {head_chars} characters of extracted text:
 {head_text}
 ---
 
-Choose ONE label from this exact list — answer with JSON only:
+Choose ONE label from this exact list and answer with JSON only:
 {labels_json}
 
 Output schema: {{"document_type": "<label>"}}

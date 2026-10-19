@@ -20,12 +20,12 @@ def _root_or_skip() -> Path:
     try:
         return buena_archive.require_root()
     except DataMissingError as exc:
-        pytest.skip(f"Buena dataset not present locally — {exc}")
+        pytest.skip(f"Buena dataset not present locally: {exc}")
 
 
 def test_get_extracted_root_falls_back_to_default() -> None:
     # With no env var explicitly set to anything, we get the default path
-    # (which may or may not exist — that's fine for this assertion).
+    # (which may or may not exist; that's fine for this assertion).
     root = buena_archive.get_extracted_root("")
     assert root.name == "Extracted"
 

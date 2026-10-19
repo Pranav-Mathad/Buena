@@ -16,13 +16,13 @@ class SignalCandidate:
     """A rule's proposal before drafting + persistence.
 
     Attributes:
-        type: Rule name — this doubles as the ``signals.type`` column so the
+        type: Rule name; this doubles as the ``signals.type`` column so the
             dedupe key ``(property_id, type, status='pending')`` works.
         property_id: Property the signal applies to. ``None`` for
             portfolio-level signals (cross_property_pattern fires one of these).
         severity: ``low | medium | high | urgent``.
         message: Human-readable one-liner used in the inbox listing.
-        evidence: ``[{"event_id": ..., "fact_id": ...}]`` — the provenance the
+        evidence: ``[{"event_id": ..., "fact_id": ...}]``, the provenance the
             UI renders under the signal.
         context_excerpt: A short summary the drafter can use in its prompt.
         action_hint: Rule-provided scaffolding the drafter can expand

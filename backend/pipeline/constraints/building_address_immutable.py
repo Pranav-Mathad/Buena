@@ -35,7 +35,7 @@ class BuildingAddressImmutable:
     Strict mode: when no prior fact exists, fall back to
     ``buildings.address`` (loaded as ``stammdaten.building.address``).
     A claim that contradicts the stammdaten value is rejected even on
-    the first write — buildings don't relocate because someone typed a
+    the first write; buildings don't relocate because someone typed a
     different street into an email.
     """
 
@@ -67,7 +67,7 @@ class BuildingAddressImmutable:
                 return ValidationResult.rejected(
                     "building address contradicts stammdaten "
                     f"({stammdaten_value!r} on file, event claims "
-                    f"{proposed.value!r}) — only an authoritative document "
+                    f"{proposed.value!r}): only an authoritative document "
                     f"({_REQUIRED_DOC_LIST}) can revise a building's address",
                     required_source_type=_REQUIRED_DOC_LIST,
                 )
@@ -81,7 +81,7 @@ class BuildingAddressImmutable:
             )
 
         return ValidationResult.rejected(
-            "building address is immutable from free-text events — "
+            "building address is immutable from free-text events; "
             "an authoritative document (structural_permit, "
             "vermessungsprotokoll, or kaufvertrag) is required",
             required_source_type=_REQUIRED_DOC_LIST,

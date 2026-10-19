@@ -81,7 +81,7 @@ def _subject(candidate: SignalCandidate) -> str:
         if sub == "shared_boiler":
             return "[Urgent] Shared-boiler failure risk across building"
         if sub == "year_cohort":
-            return "[Portfolio] Heating pattern in building cohort — inspection proposal"
+            return "[Portfolio] Heating pattern in building cohort: inspection proposal"
         return "[Portfolio] Cross-property pattern detected"
     return f"[Keystone] {candidate.type} signal"
 
@@ -93,7 +93,7 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
         return (
             f"{owner_name}, Keystone has logged {hint.get('occurrences', 'multiple')} "
             f"{hint.get('topic', 'maintenance')} incidents at "
-            f"{hint.get('property_name', 'the property')} over the last four months — "
+            f"{hint.get('property_name', 'the property')} over the last four months; "
             "the cluster points to an underlying system failure rather than one-off "
             "complaints. We recommend dispatching the building's primary contractor "
             "for a full inspection within 48 hours and briefing the tenants in "
@@ -103,7 +103,7 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
     if candidate.type == "lease_expiring":
         return (
             f"{owner_name}, the lease at {hint.get('property_name', 'the property')} "
-            f"expires {hint.get('end_date', 'soon')} — "
+            f"expires {hint.get('end_date', 'soon')}, "
             f"{hint.get('days_left', '?')} days out. We recommend proposing a "
             "renewal this week at the current Mietspiegel-bounded rent and asking "
             "the tenant for a decision inside ten business days so we can plan for "
@@ -113,7 +113,7 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
         if hint.get("subtype") == "shared_boiler":
             return (
                 f"Two or more units at {hint.get('building_address', 'the building')} "
-                f"have logged heating incidents this winter — the pattern points at "
+                f"have logged heating incidents this winter; the pattern points at "
                 "the shared central boiler rather than any single unit. Recommend "
                 "scheduling a building-wide boiler inspection within 48 hours and "
                 "briefing every occupant so tenants aren't blindsided. Approve to "
@@ -121,7 +121,7 @@ def _template_fallback(candidate: SignalCandidate, owner_name: str) -> str:
             )
         return (
             f"{hint.get('cohort', 'Multiple')} properties had heating issues this "
-            "winter — the correlation suggests shared equipment age rather than "
+            "winter; the correlation suggests shared equipment age rather than "
             "unit-level failures. Recommend a portfolio-wide boiler inspection "
             "within two weeks and budgeting for any units at end-of-life. Approve "
             "to line up contractors across the cohort."

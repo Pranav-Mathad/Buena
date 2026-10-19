@@ -33,7 +33,7 @@ class PortfolioSummary(BaseModel):
     """Dashboard counts used in the portfolio header.
 
     Time-bucketed counts (``events_last_hour`` / ``facts_today``) drive
-    the ActivityTicker pulse on the home page — pollable, cheap, and
+    the ActivityTicker pulse on the home page. They are pollable, cheap and
     purely numeric so the frontend can animate count-ups without
     needing the underlying rows.
     """
@@ -85,7 +85,7 @@ async def portfolio_banner(
 async def portfolio_summary(
     session: AsyncSession = Depends(get_session),
 ) -> PortfolioSummary:
-    """Return quick dashboard counts — properties, signals, portfolio signals."""
+    """Return quick dashboard counts: properties, signals, portfolio signals."""
     props = (await session.execute(text("SELECT COUNT(*) FROM properties"))).scalar_one()
     pending = (
         await session.execute(text("SELECT COUNT(*) FROM signals WHERE status = 'pending'"))
@@ -174,7 +174,7 @@ async def portfolio_activity(
     or the bare source label as a last resort.
 
     By default the result is filtered to events that **changed system
-    state** — wrote a fact or surfaced a signal. Routine events that
+    state**: wrote a fact or surfaced a signal. Routine events that
     just transit through the pipeline (bank settlements, auto-replies)
     are hidden so the activity feed reads as a signal feed rather than
     a tail of the events table.

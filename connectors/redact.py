@@ -153,5 +153,5 @@ def assert_no_raw_iban(value: str) -> None:
     """
     if _GERMAN_IBAN_RE.search(value):
         raise AssertionError(
-            "raw German IBAN found in scrubbed output — connector redaction missed something"
+            "raw German IBAN found in scrubbed output; connector redaction missed something"
         )

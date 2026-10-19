@@ -213,7 +213,7 @@ LIMIT 30;
 SQL_THREADS_NO_RESOLUTION = """
 -- Threads where the latest message is > 14 days old AND no fact
 -- was written that came from a downstream message in that thread.
--- This is a "stale conversation" candidate — high precision when
+-- This is a "stale conversation" candidate: high precision when
 -- we filter to threads that started with maintenance / complaint
 -- categories.
 WITH thread_last AS (

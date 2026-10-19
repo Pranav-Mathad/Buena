@@ -1,7 +1,7 @@
 """Compliance facts require an authoritative source (web or PDF).
 
-Compliance state — Brandschutznachweis, Mietpreisbremse status, Bauamt
-deadlines, fire-safety certificates — must come from the authority
+Compliance state (Brandschutznachweis, Mietpreisbremse status, Bauamt
+deadlines, fire-safety certificates) must come from the authority
 itself or its public web record. An email forwarding rumour-of-fact
 is not sufficient evidence to mutate a compliance fact, even when
 the email is internally consistent and confidently extracted.
@@ -35,7 +35,7 @@ class ComplianceFactsRequireAuthoritativeSource:
     Web-sourced and PDF-with-recognised-document-type
     proposals pass without review since the source itself carries
     weight. PDFs whose document_type is ``other`` or unset land in
-    needs_review — we know there's a document, we don't know if it's
+    needs_review: we know there's a document, we don't know if it's
     the right one.
     """
 
@@ -67,18 +67,18 @@ class ComplianceFactsRequireAuthoritativeSource:
                     "document_type; classify the PDF before applying",
                     required_source_type="structural_permit | vermessungsprotokoll | kaufvertrag",
                 )
-            # Doctype like 'invoice' / 'mahnung' / 'lease' — wrong kind.
+            # Doctype like 'invoice' / 'mahnung' / 'lease': wrong kind.
             return ValidationResult.rejected(
                 f"compliance proposal from a PDF whose document_type is "
-                f"{doctype!r} — that is not an authoritative source for "
+                f"{doctype!r}: that is not an authoritative source for "
                 f"compliance facts",
                 required_source_type="structural_permit | vermessungsprotokoll | kaufvertrag",
             )
 
-        # email, slack, debug, or unknown — reject.
+        # email, slack, debug, or unknown: reject.
         return ValidationResult.rejected(
             f"compliance facts require an authoritative source "
-            f"(web lookup or an authority PDF) — a {source or 'unknown'}-"
+            f"(web lookup or an authority PDF): a {source or 'unknown'}-"
             f"sourced event is not sufficient",
             required_source_type="web | structural_permit | vermessungsprotokoll | kaufvertrag",
         )

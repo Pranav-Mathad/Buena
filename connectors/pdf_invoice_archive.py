@@ -103,7 +103,7 @@ def parse_one(
     raw_content = (
         f"[{EVENT_SOURCE.upper()}: {path.name}]\n\n{redact.scrub_text(body)}"
         if body
-        else f"Invoice {path.name} — awaiting extraction"
+        else f"Invoice {path.name} (awaiting extraction)"
     )
 
     return ConnectorEvent(
@@ -174,7 +174,7 @@ def walk_index_csv(
             yield ConnectorEvent(
                 source=EVENT_SOURCE,
                 source_ref=f"{filename}:{content_sha256[:16]}",
-                raw_content=(f"Invoice {filename} — awaiting extraction"),
+                raw_content=(f"Invoice {filename} (awaiting extraction)"),
                 metadata=metadata,
                 received_at=received_at,
                 document_type=doctype,

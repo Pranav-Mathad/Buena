@@ -140,7 +140,7 @@ async def _persist(
 async def evaluate_all(session: AsyncSession | None = None) -> int:
     """Run every rule and persist new candidates. Returns how many fired.
 
-    ``session`` is optional — if omitted (the usual scheduler path) a fresh
+    ``session`` is optional; if omitted (the usual scheduler path) a fresh
     session is opened from the global sessionmaker.
     """
     if session is not None:

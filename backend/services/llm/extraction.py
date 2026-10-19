@@ -138,26 +138,26 @@ def _vocabulary_block() -> str:
     Result example::
 
         - **maintenance** (4 fields)
-          - `open_water_damage` — e.g. "Wasserschaden + Schimmel WE 32 …"
-          - `key_lost` — e.g. "Mieter WE 02 hat Wohnungsschlüssel verloren …"
-          - `defective_window` — e.g. "Küchenfenster WE 50 schließt nicht mehr …"
+          - `open_water_damage`: e.g. "Wasserschaden + Schimmel WE 32 …"
+          - `key_lost`: e.g. "Mieter WE 02 hat Wohnungsschlüssel verloren …"
+          - `defective_window`: e.g. "Küchenfenster WE 50 schließt nicht mehr …"
         - **financials** (3 fields)
           - …
     """
     if not _VOCABULARY_PATH.is_file():
-        return "_(no vocabulary file present — emit conservative field names)_"
+        return "_(no vocabulary file present: emit conservative field names)_"
     payload = json.loads(_VOCABULARY_PATH.read_text(encoding="utf-8"))
     lines: list[str] = []
     for section, body in payload.get("sections", {}).items():
         fields = body.get("fields", [])
         if not fields:
-            lines.append(f"- **{section}** (0 fields — section reserved)")
+            lines.append(f"- **{section}** (0 fields: section reserved)")
             continue
         lines.append(f"- **{section}** ({len(fields)} fields)")
         for f in fields:
             example = ""
             if f.get("examples"):
-                example = f' — e.g. "{f["examples"][0]}"'
+                example = f': e.g. "{f["examples"][0]}"'
             lines.append(f"  - `{f['name']}`{example}")
     return "\n".join(lines)
 

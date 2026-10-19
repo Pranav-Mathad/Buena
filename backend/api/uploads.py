@@ -1,4 +1,4 @@
-"""PDF upload endpoint — drop a PDF, get a pipeline event."""
+"""PDF upload endpoint: drop a PDF, get a pipeline event."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ async def upload_pdf(
 
     try:
         body = extract_text(data)
-    except Exception as exc:  # noqa: BLE001 — surface extractor errors as 400s
+    except Exception as exc:  # noqa: BLE001 (surface extractor errors as 400s)
         log.exception("pdf.extract.failed", filename=file.filename)
         raise HTTPException(status_code=400, detail=f"could not parse PDF: {exc}") from exc
 

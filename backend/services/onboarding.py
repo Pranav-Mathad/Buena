@@ -1,23 +1,23 @@
-"""Onboarding view — the "first-time read" surface for a property.
+"""Onboarding view: the "first-time read" surface for a property.
 
 A property manager who's never seen this property before should be able
 to read this document in 60 seconds and know:
 
 1. Stammdaten + how much we already know (deterministic).
-2. What's open right now — uncertainties, pending rejections, active
+2. What's open right now: uncertainties, pending rejections, active
    maintenance facts (deterministic).
 3. A 5-to-7-bullet briefing of the last 12 months, hard-instructed to
    call out gaps rather than invent (the configured LLM provider).
-4. What patterns the validator and inbox have noticed — recurring
+4. What patterns the validator and inbox have noticed: recurring
    conflicts, watch-out items (deterministic).
-5. Where to look for more — pointer index by section with the most
+5. Where to look for more: pointer index by section with the most
    recent source events linked.
 
 Section 3 is the only LLM call. It is cached on
 ``properties.metadata.onboarding`` keyed by a hash of the
 last-fact / last-uncertainty / last-rejection timestamps so a re-read
 is free; mutating any of those three invalidates the cache on the
-next render. We do *not* hook regen onto fact insertion — that would
+next render. We do *not* hook regen onto fact insertion; that would
 push LLM latency onto the write path. Read-time regen is the
 right trade.
 """
@@ -86,7 +86,7 @@ Write the bullets now."""
 
 
 # How many bullets per "open issues" / "watch out" subsection. The
-# briefing aims for 60-second readability — if the deterministic
+# briefing aims for 60-second readability; if the deterministic
 # sections sprawl, the reader bounces. Ship-quality, not coverage.
 TOP_N: int = 3
 TOP_N_PATTERNS: int = 5
@@ -165,7 +165,7 @@ async def _load_header(session: AsyncSession, property_id: UUID) -> _PropertyHea
 
 
 async def _load_pending_rejections(session: AsyncSession, property_id: UUID) -> list[_RejectionRow]:
-    """Pending or needs_review rejections — newest first."""
+    """Pending or needs_review rejections, newest first."""
     rows = (
         await session.execute(
             text(
@@ -252,7 +252,7 @@ async def _load_active_tenant(session: AsyncSession, property_id: UUID) -> str |
 async def _last_mutation_timestamps(
     session: AsyncSession, property_id: UUID
 ) -> tuple[datetime | None, datetime | None, datetime | None]:
-    """Newest fact / uncertainty / rejection timestamps — feeds the cache key."""
+    """Newest fact / uncertainty / rejection timestamps; feeds the cache key."""
     row = (
         await session.execute(
             text(
@@ -464,7 +464,7 @@ def _render_open_issues(
     *,
     lang: str,
 ) -> list[str]:
-    """Top-N open issues, deterministic — ordered by impact + recency."""
+    """Top-N open issues, deterministic, ordered by impact + recency."""
     title = "## Open issues right now" if lang == "en" else "## Offene Punkte jetzt"
     lines: list[str] = [title, ""]
 
@@ -494,7 +494,7 @@ def _render_open_issues(
             if len(obs) > 140:
                 obs = obs[:137].rstrip() + "…"
             lines.append(
-                f"- _{u.section}_ — {obs} "
+                f"- _{u.section}_: {obs} "
                 f"(_{u.reason_uncertain}_) "
                 f"[source: event {u.event_id}](/events/{u.event_id}/source)"
             )
@@ -510,8 +510,8 @@ def _render_open_issues(
             if len(value) > 80:
                 value = value[:77].rstrip() + "…"
             lines.append(
-                f"- `{r.constraint_name}` — proposed "
-                f"**{r.section}.{r.field}** = `{value}` — {r.reason} "
+                f"- `{r.constraint_name}`: proposed "
+                f"**{r.section}.{r.field}** = `{value}`: {r.reason} "
                 f"[source: event {r.event_id}](/events/{r.event_id}/source)"
             )
         lines.append("")
@@ -519,9 +519,9 @@ def _render_open_issues(
 
     if not rendered_anything:
         msg = (
-            "No open issues — nothing waiting on you right now."
+            "No open issues: nothing waiting on you right now."
             if lang == "en"
-            else "Keine offenen Punkte — derzeit nichts zu erledigen."
+            else "Keine offenen Punkte: derzeit nichts zu erledigen."
         )
         lines.append(f"_{msg}_")
         lines.append("")
@@ -534,7 +534,7 @@ def _render_watch_out_for(
     *,
     lang: str,
 ) -> list[str]:
-    """Recurring patterns — what to keep an eye on."""
+    """Recurring patterns: what to keep an eye on."""
     title = "## Watch out for" if lang == "en" else "## Worauf achten"
     lines: list[str] = [title, ""]
 
@@ -571,15 +571,15 @@ def _render_watch_out_for(
         lines.append(sub)
         lines.append("")
         for section, n in unc_top:
-            lines.append(f"- _{section}_ — {n} unresolved")
+            lines.append(f"- _{section}_: {n} unresolved")
         lines.append("")
         rendered_anything = True
 
     if not rendered_anything:
         msg = (
-            "No recurring patterns yet — too little history to draw conclusions."
+            "No recurring patterns yet: too little history to draw conclusions."
             if lang == "en"
-            else "Noch keine wiederkehrenden Muster — zu wenig Historie."
+            else "Noch keine wiederkehrenden Muster: zu wenig Historie."
         )
         lines.append(f"_{msg}_")
         lines.append("")
@@ -601,9 +601,9 @@ def _render_pointer_index(
         by_section.setdefault(f.section, []).append(f)
     if not by_section:
         msg = (
-            "No facts on file yet — once events stream in, source links will appear here."
+            "No facts on file yet: once events stream in, source links will appear here."
             if lang == "en"
-            else "Noch keine Fakten — sobald Ereignisse einlaufen, erscheinen hier Quellverweise."
+            else "Noch keine Fakten: sobald Ereignisse einlaufen, erscheinen hier Quellverweise."
         )
         lines.append(f"_{msg}_")
         lines.append("")
@@ -797,11 +797,11 @@ async def render_onboarding_document(
 
     Five sections, in reading order:
 
-    1. Property in 60 seconds — stammdaten, what we know.
-    2. Open issues right now — uncertainties, rejections, active maintenance.
+    1. Property in 60 seconds: stammdaten, what we know.
+    2. Open issues right now: uncertainties, rejections, active maintenance.
     3. Key context (last 12 months): LLM briefing, cached.
-    4. Watch out for — recurring patterns.
-    5. Where to look for more — pointer index.
+    4. Watch out for: recurring patterns.
+    5. Where to look for more: pointer index.
 
     Section 3 is the only LLM call; if no provider is available the
     section degrades to a one-line note and the rest of the document
@@ -814,7 +814,7 @@ async def render_onboarding_document(
 
     # Briefings always render in English regardless of the property's
     # source-event majority. The briefing is read by the Hausverwaltung
-    # operator (English-speaking team), not by the tenant — keeping the
+    # operator (English-speaking team), not by the tenant; keeping the
     # output language fixed avoids confusing a new property manager who
     # opens a German-only property file and gets a German briefing.
     # The original event-language detection still drives the property
@@ -876,7 +876,7 @@ async def render_onboarding_document(
     )
     lines.extend(key_context)
     # "Watch out for" wants ALL rejections (resolved + pending) for pattern-
-    # spotting — load a separate cohort for it.
+    # spotting, so load a separate cohort for it.
     rejections_all = await _load_all_rejections(session, property_id)
     lines.extend(_render_watch_out_for(rejections_all, uncertainties, lang=lang))
     lines.extend(_render_pointer_index(facts, header, lang=lang))
@@ -898,7 +898,7 @@ async def render_onboarding_document(
 
 
 async def _load_all_rejections(session: AsyncSession, property_id: UUID) -> list[_RejectionRow]:
-    """Every rejection ever recorded — pattern recognition wants the full set."""
+    """Every rejection ever recorded; pattern recognition wants the full set."""
     rows = (
         await session.execute(
             text(

@@ -79,7 +79,7 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
         context_excerpt = (
             f"Building: {row.address}\n"
             f"Year built: {row.year_built} ({bucket or 'unknown'})\n"
-            f"Units affected: {row.affected_properties} — {names}\n"
+            f"Units affected: {row.affected_properties} ({names})\n"
             f"Heating incidents (last {WINDOW_DAYS}d): {row.total_incidents}"
         )
         evidence = [
@@ -95,7 +95,7 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
                 message=(
                     f"{row.total_incidents} heating complaints across "
                     f"{row.affected_properties} units sharing the same "
-                    f"{row.address} boiler — system failure likely."
+                    f"{row.address} boiler: system failure likely."
                 ),
                 evidence=evidence,
                 context_excerpt=context_excerpt,
@@ -161,7 +161,7 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
         names = ", ".join(data["properties"])
         context_excerpt = (
             f"Year bucket: {bucket}\n"
-            f"Affected properties: {affected} — {names}\n"
+            f"Affected properties: {affected} ({names})\n"
             f"Heating incidents (last {WINDOW_DAYS}d): {data['incidents']}"
         )
         evidence = [
@@ -176,7 +176,7 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
                 property_id=None,
                 message=(
                     f"Keystone detected: {affected} {bucket} boiler "
-                    f"properties had heating issues this winter — schedule "
+                    f"properties had heating issues this winter: schedule "
                     f"portfolio-wide inspection?"
                 ),
                 evidence=evidence,

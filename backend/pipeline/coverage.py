@@ -116,7 +116,7 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
 
     if report.stammdaten:
         joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in report.stammdaten)
-        lines.append(f"- **{stamm_label}** — {joined}")
+        lines.append(f"- **{stamm_label}**: {joined}")
 
     section_titles_de = {
         "lease": "Mietvertrag",
@@ -135,7 +135,7 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     for section, rows in report.sections.items():
         joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in rows)
         title_label = titles.get(section, section.replace("_", " ").title())
-        lines.append(f"- **{title_label}** — {joined}")
+        lines.append(f"- **{title_label}**: {joined}")
 
     lines.append("")
     return lines

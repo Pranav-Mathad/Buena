@@ -198,7 +198,7 @@ async def search_properties(
             id=h["id"],
             name=h["name"],
             address=h["address"],
-            snippet=(h["snippet"] or f"{h['name']} — {h['address']}")[:220],
+            snippet=(h["snippet"] or f"{h['name']}, {h['address']}")[:220],
             score=min(float(h["score"]), 1.0 * len(terms)),
         )
         for h in hits

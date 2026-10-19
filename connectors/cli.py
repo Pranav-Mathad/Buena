@@ -327,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Construct the argparse parser. Exposed for tests."""
     parser = argparse.ArgumentParser(
         prog="connectors.cli",
-        description="Customer data ingestion — Buena is the first composer.",
+        description="Customer data ingestion: Buena is the first composer.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -431,7 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
         "re-route",
         help=(
             "ONE-TIME migration: re-evaluate routing on every event that "
-            "has no scope set. Idempotent — safe to re-run."
+            "has no scope set. Idempotent: safe to re-run."
         ),
     )
     reroute.add_argument(

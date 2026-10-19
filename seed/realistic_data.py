@@ -212,9 +212,9 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         source="email",
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
-            "Subject: Elevator noise — Apt 4B\n\n"
+            "Subject: Elevator noise, Apt 4B\n\n"
             "Hi, the elevator is making a grinding noise when it reaches the "
-            "top floor. Nothing urgent but worth a look. — Lukas"
+            "top floor. Nothing urgent but worth a look.\n\nLukas"
         ),
         received_at=days_ago(178),
     ),
@@ -223,10 +223,10 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         source="email",
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
-            "Subject: Heating not working — Apt 4B\n\n"
+            "Subject: Heating not working, Apt 4B\n\n"
             "The radiators are cold since last night. The boiler in the "
-            "basement is making a loud rattling noise. Can someone come by? "
-            "— Lukas"
+            "basement is making a loud rattling noise. Can someone come by?\n\n"
+            "Lukas"
         ),
         received_at=days_ago(161),
     ),
@@ -247,7 +247,7 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
             "From: anna.weber@tenant.demo\n"
             "Subject: Heating stopped again\n\n"
             "Heat cut out again overnight, no hot water this morning. Baby in "
-            "the apartment — can we get this fixed today? — Anna"
+            "the apartment. Can we get this fixed today?\n\nAnna"
         ),
         received_at=days_ago(104),
     ),
@@ -266,9 +266,9 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
             "Subject: Hot water intermittent\n\n"
-            "Third time this winter — hot water keeps shutting off, boiler "
+            "Third time this winter: hot water keeps shutting off, boiler "
             "seems to kick off and on. Something is clearly not right with "
-            "the heating system. — Lukas"
+            "the heating system.\n\nLukas"
         ),
         received_at=days_ago(50),
     ),
@@ -295,7 +295,7 @@ _BERLIN_4B_FACTS: list[FactSeed] = [
     FactSeed(
         "overview",
         "building_notes",
-        "Part of Berliner Strasse 12 — pre-1990 building, shared central gas boiler.",
+        "Part of Berliner Strasse 12, pre-1990 building, shared central gas boiler.",
         0.95,
         "berlin_4b_lease_2024",
     ),
@@ -341,14 +341,14 @@ _BERLIN_4B_FACTS: list[FactSeed] = [
     FactSeed(
         "maintenance",
         "heating_issue_2025_11",
-        "Cold radiators + rattling boiler — Bob's Plumbing bled radiators and reset unit.",
+        "Cold radiators + rattling boiler; Bob's Plumbing bled radiators and reset unit.",
         0.92,
         "berlin_4b_heat_nov",
     ),
     FactSeed(
         "maintenance",
         "heating_issue_2026_01",
-        "Overnight heat + hot water cutout; tenant has infant — escalated same day.",
+        "Overnight heat + hot water cutout; tenant has infant, escalated same day.",
         0.94,
         "berlin_4b_heat_jan",
     ),
@@ -362,7 +362,7 @@ _BERLIN_4B_FACTS: list[FactSeed] = [
     FactSeed(
         "maintenance",
         "preferred_contractor",
-        "Bob's Plumbing — boiler specialist familiar with the Vitoplex unit.",
+        "Bob's Plumbing, boiler specialist familiar with the Vitoplex unit.",
         0.9,
         "berlin_4b_contractor_nov",
     ),
@@ -426,8 +426,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: No heat overnight\n\n"
-            "Woke up freezing this morning — radiators were stone cold from "
-            "around 2am. Came back on by 8am. — Felix"
+            "Woke up freezing this morning; radiators were stone cold from "
+            "around 2am. Came back on by 8am.\n\nFelix"
         ),
         received_at=days_ago(127),
     ),
@@ -443,8 +443,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: Boiler making loud noise\n\n"
-            "Every night around midnight the boiler starts banging — it's "
-            "loud enough that I can hear it through the floor. — Felix"
+            "Every night around midnight the boiler starts banging, and it's "
+            "loud enough that I can hear it through the floor.\n\nFelix"
         ),
         received_at=days_ago(81),
     ),
@@ -464,8 +464,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: Heating inconsistent\n\n"
-            "Warm in the morning, cold at night. Been happening all week. "
-            "— Felix"
+            "Warm in the morning, cold at night. Been happening all week.\n\n"
+            "Felix"
         ),
         received_at=days_ago(35),
     ),
@@ -473,7 +473,7 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         key="berlin_2a_compliance_apr",
         source="pdf",
         raw_content=(
-            "Gebäudeversicherung certificate — policy no. HDI-BER-2024-884. "
+            "Gebäudeversicherung certificate, policy no. HDI-BER-2024-884. "
             "Property: Berliner Strasse 12. Valid through 2026-12-31."
         ),
         received_at=days_ago(19),
@@ -491,7 +491,7 @@ _BERLIN_2A_FACTS: list[FactSeed] = [
     FactSeed(
         "overview",
         "building_notes",
-        "Part of Berliner Strasse 12 — shared central boiler with Apt 4B.",
+        "Part of Berliner Strasse 12, shared central boiler with Apt 4B.",
         0.95,
         "berlin_2a_lease_2025",
     ),
@@ -511,7 +511,7 @@ _BERLIN_2A_FACTS: list[FactSeed] = [
     FactSeed(
         "maintenance",
         "heating_issue_2025_12",
-        "Overnight no-heat incident — radiators cold 2am–8am.",
+        "Overnight no-heat incident: radiators cold 2am–8am.",
         0.93,
         "berlin_2a_heat_dec",
     ),
@@ -597,7 +597,7 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: sophie.becker@tenant.demo\n"
             "Subject: Kitchen sink leaking\n\n"
             "The kitchen sink has been dripping under the cabinet. Not urgent "
-            "but starting to warp the wood. — Sophie"
+            "but starting to warp the wood.\n\nSophie"
         ),
         received_at=days_ago(141),
     ),
@@ -623,7 +623,7 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: klaus.hoffmann@keystone.demo\n"
             "Subject: Balcony permit question\n\n"
             "Sophie asked about adding a small planter on the balcony rail. "
-            "Anything we need to check with the Bezirksamt? — Klaus"
+            "Anything we need to check with the Bezirksamt?\n\nKlaus"
         ),
         received_at=days_ago(73),
     ),
@@ -644,7 +644,7 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: sophie.becker@tenant.demo\n"
             "Subject: Key replacement request\n\n"
             "Lost my front door key on the ferry yesterday. Can we get a "
-            "replacement set? — Sophie"
+            "replacement set?\n\nSophie"
         ),
         received_at=days_ago(14),
     ),
@@ -661,7 +661,7 @@ _HAMBURG_FACTS: list[FactSeed] = [
     FactSeed(
         "overview",
         "building_notes",
-        "Elbchaussee 88 — 2005 build, Altona waterfront, district heating.",
+        "Elbchaussee 88, 2005 build, Altona waterfront, district heating.",
         0.95,
         "hamburg_lease_2024",
     ),
@@ -686,7 +686,7 @@ _HAMBURG_FACTS: list[FactSeed] = [
     FactSeed(
         "maintenance",
         "preferred_contractor",
-        "Hanseatic Repair Co. — general maintenance, Hamburg.",
+        "Hanseatic Repair Co., general maintenance, Hamburg.",
         0.9,
         "hamburg_contractor_dec",
     ),
@@ -765,7 +765,7 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: julia.bauer@tenant.demo\n"
             "Subject: Washing machine not draining\n\n"
             "The built-in washing machine is stopping mid-cycle with an E18 "
-            "code. Water just sits in the drum. — Julia"
+            "code. Water just sits in the drum.\n\nJulia"
         ),
         received_at=days_ago(125),
     ),
@@ -791,8 +791,8 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: maximilian.bauer@tenant.demo\n"
             "Subject: Fibre installation\n\n"
             "Deutsche Glasfaser will be running lines in the building next "
-            "month. Do we need approval to route the cable to our apartment? "
-            "— Max"
+            "month. Do we need approval to route the cable to our apartment?\n\n"
+            "Max"
         ),
         received_at=days_ago(65),
     ),
@@ -812,7 +812,7 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: julia.bauer@tenant.demo\n"
             "Subject: Parking spot transfer\n\n"
             "We'd like to switch our underground spot with apartment 3C's, "
-            "they have the wider one. Both parties agree. — Julia"
+            "they have the wider one. Both parties agree.\n\nJulia"
         ),
         received_at=days_ago(19),
     ),
@@ -825,7 +825,7 @@ _MUNICH_FACTS: list[FactSeed] = [
     FactSeed(
         "overview",
         "building_notes",
-        "Leopoldstrasse 45 — 2015 build, Schwabing, geothermal heat pump.",
+        "Leopoldstrasse 45, 2015 build, Schwabing, geothermal heat pump.",
         0.95,
         "munich_lease_2025",
     ),
@@ -865,7 +865,7 @@ _MUNICH_FACTS: list[FactSeed] = [
     FactSeed(
         "maintenance",
         "preferred_contractor",
-        "Alpenservice GmbH — building systems, Munich.",
+        "Alpenservice GmbH, building systems, Munich.",
         0.9,
         "munich_contractor_dec",
     ),
@@ -893,7 +893,7 @@ _MUNICH_FACTS: list[FactSeed] = [
     FactSeed(
         "activity",
         "parking_transfer_request_2026_04",
-        "Tenant requests underground parking spot swap with Apt 3C — mutual agreement.",
+        "Tenant requests underground parking spot swap with Apt 3C, by mutual agreement.",
         0.82,
         "munich_parking_apr",
     ),

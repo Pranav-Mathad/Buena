@@ -73,7 +73,7 @@ async def evaluate(session: AsyncSession) -> list[SignalCandidate]:
                 property_id=row.property_id,
                 message=(
                     f"Lease on {row.property_name} expires in {days_left} days "
-                    f"({end.isoformat()}) — renewal decision needed."
+                    f"({end.isoformat()}): renewal decision needed."
                 ),
                 evidence=[
                     {

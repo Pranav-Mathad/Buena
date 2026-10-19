@@ -74,7 +74,7 @@ def parse_one(
     raw_content = (
         f"[{EVENT_SOURCE.upper()}: {path.name}]\n\n{redact.scrub_text(body)}"
         if body
-        else f"Letter {path.name} — awaiting extraction"
+        else f"Letter {path.name} (awaiting extraction)"
     )
 
     return ConnectorEvent(
@@ -140,7 +140,7 @@ def walk_index_csv(
             yield ConnectorEvent(
                 source=EVENT_SOURCE,
                 source_ref=f"{filename}:{content_sha256[:16]}",
-                raw_content=(f"Letter {filename} — awaiting extraction"),
+                raw_content=(f"Letter {filename} (awaiting extraction)"),
                 metadata=metadata,
                 received_at=received_at,
                 document_type=doctype,
