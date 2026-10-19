@@ -143,7 +143,7 @@ const PropertyDetail = () => {
         <BriefingModal
           items={briefing.items}
           latencyMs={briefing.latencyMs}
-          cached={briefing.cached}
+          source={briefing.source}
           onClose={briefing.close}
           onRegenerate={briefing.regenerate}
         />

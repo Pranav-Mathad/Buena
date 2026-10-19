@@ -12,6 +12,7 @@ from datetime import UTC
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -301,6 +302,52 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
             md2 = await onboarding.render_onboarding(session, pid)
         assert "Gap: no current tenant" in md2
         assert call_count["n"] == 1, "second render must re-use the cache"
+    finally:
+        await _cleanup(bid, pid)
+
+
+@pytest.mark.usefixtures("db")
+async def test_briefing_source_says_how_the_briefing_was_produced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No provider: 'unavailable'; then the LLM writes it ('llm'); then 'cache'."""
+    bid, pid = await _seed_property()
+    try:
+        factory = get_sessionmaker()
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
+        async with factory() as session:
+            keyless = await onboarding.render_onboarding_document(session, pid)
+        assert keyless.briefing_source == "unavailable"
+        assert "Briefing unavailable" in keyless.markdown
+
+        async def _stub_draft(**kwargs: Any) -> str:
+            return "- Gap: no rent history captured."
+
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
+        async with factory() as session:
+            written = await onboarding.render_onboarding_document(session, pid)
+        async with factory() as session:
+            reread = await onboarding.render_onboarding_document(session, pid)
+        assert written.briefing_source == "llm"
+        assert reread.briefing_source == "cache"
+    finally:
+        await _cleanup(bid, pid)
+
+
+@pytest.mark.usefixtures("db")
+async def test_onboarding_endpoint_reports_a_keyless_briefing() -> None:
+    """With no LLM key the API must not present the briefing as LLM-written."""
+    from backend.main import app  # noqa: PLC0415
+
+    bid, pid = await _seed_property()
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(f"/admin/properties/{pid}/onboarding")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["briefing_source"] == "unavailable"
+        assert body["cached"] is False
     finally:
         await _cleanup(bid, pid)
 

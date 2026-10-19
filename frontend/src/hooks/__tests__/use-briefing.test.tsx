@@ -11,7 +11,7 @@ describe("useBriefing", () => {
       "GET /admin/properties/p-1/onboarding": {
         property_id: "p-1",
         markdown: "## Urgent\n- Heating fails twice a month",
-        cached: true,
+        briefing_source: "cache",
       },
     });
     const { result } = renderHook(() => useBriefing("p-1"));
@@ -19,7 +19,7 @@ describe("useBriefing", () => {
     await act(() => result.current.start());
 
     expect(result.current.open).toBe(true);
-    expect(result.current.cached).toBe(true);
+    expect(result.current.source).toBe("cache");
     expect(result.current.error).toBeNull();
     expect(result.current.items.some((it) => it.type === "bullet")).toBe(true);
   });

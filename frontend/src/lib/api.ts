@@ -150,16 +150,23 @@ type PropertyFileDTO = {
   sections: PropertyFileSectionDTO[];
 };
 
+/**
+ * Where the briefing's "Key context" section came from: written by the LLM
+ * on this request, read from the cache, or unavailable because no provider
+ * is configured (every other section is built from the property file).
+ */
+export type BriefingSource = "llm" | "cache" | "unavailable";
+
 export type OnboardingResponse = {
   propertyId: string;
   items: BriefingItem[];
-  cached: boolean;
+  source: BriefingSource;
 };
 
 type OnboardingDTO = {
   property_id: string;
   markdown: string;
-  cached: boolean;
+  briefing_source: BriefingSource;
 };
 
 export async function fetchOnboarding(id: string): Promise<OnboardingResponse> {
@@ -167,7 +174,7 @@ export async function fetchOnboarding(id: string): Promise<OnboardingResponse> {
   return {
     propertyId: dto.property_id,
     items: parseBriefingMarkdown(dto.markdown),
-    cached: dto.cached,
+    source: dto.briefing_source,
   };
 }
 

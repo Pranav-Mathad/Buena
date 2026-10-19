@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchOnboarding } from "@/lib/api";
+import { fetchOnboarding, type BriefingSource } from "@/lib/api";
 import type { BriefingItem } from "@/lib/text";
 
 /**
@@ -15,7 +15,7 @@ export function useBriefing(id: string | undefined) {
   const [generating, setGenerating] = useState(false);
   const [items, setItems] = useState<BriefingItem[]>([]);
   const [latencyMs, setLatencyMs] = useState(0);
-  const [cached, setCached] = useState(false);
+  const [source, setSource] = useState<BriefingSource>("unavailable");
   const [error, setError] = useState<string | null>(null);
 
   const load = async (): Promise<boolean> => {
@@ -26,12 +26,12 @@ export function useBriefing(id: string | undefined) {
       const data = await fetchOnboarding(id);
       setItems(data.items);
       setLatencyMs(performance.now() - started);
-      setCached(data.cached);
+      setSource(data.source);
       return true;
     } catch (e) {
       setItems([]);
       setLatencyMs(0);
-      setCached(false);
+      setSource("unavailable");
       setError(e instanceof Error ? e.message : "briefing service unreachable");
       return false;
     }
@@ -56,7 +56,7 @@ export function useBriefing(id: string | undefined) {
     generating,
     items,
     latencyMs,
-    cached,
+    source,
     error,
     start,
     regenerate,

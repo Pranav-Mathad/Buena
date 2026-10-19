@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
+from backend.services.onboarding import BriefingSource
 
 router = APIRouter()
 log = structlog.get_logger(__name__)
@@ -20,13 +21,16 @@ class OnboardingResponse(BaseModel):
 
     property_id: UUID
     markdown: str
-    cached: bool = Field(
+    briefing_source: BriefingSource = Field(
         ...,
         description=(
-            "True when the briefing came from the metadata.onboarding cache. "
-            "False means Gemini Pro was invoked this request."
+            "Where the Key context briefing came from: 'llm' (written by the "
+            "configured provider on this request), 'cache' (metadata.onboarding) "
+            "or 'unavailable' (no provider configured or reachable; the section "
+            "is a one-line note and every other section is complete)."
         ),
     )
+    cached: bool = Field(..., description="Same as briefing_source == 'cache'.")
 
 
 @router.get(
@@ -39,20 +43,16 @@ async def get_property_onboarding(
 ) -> OnboardingResponse:
     """Render the first-time-read onboarding view for a property.
 
-    Five sections: stammdaten + counts, open issues, Gemini Pro 12-month
-    briefing (the only LLM call), recurring patterns, pointer index.
+    Five sections: stammdaten + counts, open issues, an LLM-written
+    12-month briefing (the only LLM call), recurring patterns, pointer index.
     The briefing is cached on ``properties.metadata.onboarding`` keyed by
     a hash of the latest fact/uncertainty/rejection timestamp, so a
     re-read is free, but any mutation invalidates.
     """
     from backend.services import onboarding  # noqa: PLC0415
 
-    last_fact, last_unc, last_rej = await onboarding._last_mutation_timestamps(session, property_id)
-    cache_key = onboarding._cache_key(last_fact, last_unc, last_rej)
-    cached_briefing = await onboarding._read_cache(session, property_id, cache_key)
-
     try:
-        markdown = await onboarding.render_onboarding(session, property_id)
+        document = await onboarding.render_onboarding_document(session, property_id)
     except ValueError as exc:
         from fastapi import HTTPException  # noqa: PLC0415
 
@@ -61,11 +61,12 @@ async def get_property_onboarding(
     log.info(
         "admin.onboarding.render",
         property_id=str(property_id),
-        markdown_chars=len(markdown),
-        cached=cached_briefing is not None,
+        markdown_chars=len(document.markdown),
+        briefing_source=document.briefing_source,
     )
     return OnboardingResponse(
         property_id=property_id,
-        markdown=markdown,
-        cached=cached_briefing is not None,
+        markdown=document.markdown,
+        briefing_source=document.briefing_source,
+        cached=document.briefing_source == "cache",
     )

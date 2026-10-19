@@ -7,7 +7,7 @@ to read this document in 60 seconds and know:
 2. What's open right now — uncertainties, pending rejections, active
    maintenance facts (deterministic).
 3. A 5-to-7-bullet briefing of the last 12 months, hard-instructed to
-   call out gaps rather than invent (Gemini Pro).
+   call out gaps rather than invent (the configured LLM provider).
 4. What patterns the validator and inbox have noticed — recurring
    conflicts, watch-out items (deterministic).
 5. Where to look for more — pointer index by section with the most
@@ -18,7 +18,7 @@ Section 3 is the only LLM call. It is cached on
 last-fact / last-uncertainty / last-rejection timestamps so a re-read
 is free; mutating any of those three invalidates the cache on the
 next render. We do *not* hook regen onto fact insertion — that would
-push Gemini latency onto the write path. Read-time regen is the
+push LLM latency onto the write path. Read-time regen is the
 right trade.
 """
 
@@ -28,7 +28,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import structlog
@@ -641,7 +641,7 @@ def _render_pointer_index(
 
 
 # -----------------------------------------------------------------------------
-# Section renderer — Gemini Pro briefing (cached)
+# Section renderer: LLM briefing (cached)
 # -----------------------------------------------------------------------------
 
 
@@ -696,6 +696,20 @@ def _summarise_activity(activity: dict[str, int]) -> str:
     )
 
 
+# Where the "Key context" briefing came from: written by the LLM on this
+# request, read from the metadata cache, or not available (no provider
+# configured or reachable; the section is then a one-line note).
+BriefingSource = Literal["llm", "cache", "unavailable"]
+
+
+@dataclass(frozen=True)
+class OnboardingDocument:
+    """The rendered onboarding markdown and where its briefing came from."""
+
+    markdown: str
+    briefing_source: BriefingSource
+
+
 async def _render_key_context(
     session: AsyncSession,
     property_id: UUID,
@@ -707,7 +721,7 @@ async def _render_key_context(
     *,
     lang: str,
     cache_key: str,
-) -> list[str]:
+) -> tuple[list[str], BriefingSource]:
     """The LLM-written 5 to 7 bullet briefing, cached on ``properties.metadata``."""
     title = (
         "## Key context (last 12 months)"
@@ -722,7 +736,7 @@ async def _render_key_context(
             property_id=str(property_id),
             cache_key=cache_key,
         )
-        return [title, "", cached, ""]
+        return [title, "", cached, ""], "cache"
 
     facts_summary = _summarise_facts(facts)
     uncertainties_summary = _summarise_uncertainties(uncertainties)
@@ -754,7 +768,7 @@ async def _render_key_context(
             "Briefing unavailable: no LLM provider is configured or reachable. "
             "All deterministic sections above are still complete."
         )
-        return [title, "", msg, ""]
+        return [title, "", msg, ""], "unavailable"
 
     await _write_cache(session, property_id, key=cache_key, briefing=briefing)
     log.info(
@@ -763,7 +777,7 @@ async def _render_key_context(
         cache_key=cache_key,
         chars=len(briefing),
     )
-    return [title, "", briefing, ""]
+    return [title, "", briefing, ""], "llm"
 
 
 # -----------------------------------------------------------------------------
@@ -772,17 +786,24 @@ async def _render_key_context(
 
 
 async def render_onboarding(session: AsyncSession, property_id: UUID) -> str:
+    """Render the onboarding markdown; see :func:`render_onboarding_document`."""
+    return (await render_onboarding_document(session, property_id)).markdown
+
+
+async def render_onboarding_document(
+    session: AsyncSession, property_id: UUID
+) -> OnboardingDocument:
     """Render the full onboarding markdown for a property.
 
     Five sections, in reading order:
 
     1. Property in 60 seconds — stammdaten, what we know.
     2. Open issues right now — uncertainties, rejections, active maintenance.
-    3. Key context (last 12 months) — Gemini Pro briefing, cached.
+    3. Key context (last 12 months): LLM briefing, cached.
     4. Watch out for — recurring patterns.
     5. Where to look for more — pointer index.
 
-    Section 3 is the only LLM call; if Gemini is unavailable the
+    Section 3 is the only LLM call; if no provider is available the
     section degrades to a one-line note and the rest of the document
     still renders. Re-rendering is free unless facts / uncertainties /
     rejections have moved since the last render (cache key invalidates).
@@ -842,19 +863,18 @@ async def render_onboarding(session: AsyncSession, property_id: UUID) -> str:
         )
     )
     lines.extend(_render_open_issues(uncertainties, rejections, active_maintenance, lang=lang))
-    lines.extend(
-        await _render_key_context(
-            session,
-            property_id,
-            header,
-            facts,
-            uncertainties,
-            rejections,
-            activity,
-            lang=lang,
-            cache_key=cache_key,
-        )
+    key_context, briefing_source = await _render_key_context(
+        session,
+        property_id,
+        header,
+        facts,
+        uncertainties,
+        rejections,
+        activity,
+        lang=lang,
+        cache_key=cache_key,
     )
+    lines.extend(key_context)
     # "Watch out for" wants ALL rejections (resolved + pending) for pattern-
     # spotting — load a separate cohort for it.
     rejections_all = await _load_all_rejections(session, property_id)
@@ -870,8 +890,11 @@ async def render_onboarding(session: AsyncSession, property_id: UUID) -> str:
         rejections=len(rejections),
         events=total_events,
         cache_key=cache_key,
+        briefing_source=briefing_source,
     )
-    return "\n".join(lines).rstrip() + "\n"
+    return OnboardingDocument(
+        markdown="\n".join(lines).rstrip() + "\n", briefing_source=briefing_source
+    )
 
 
 async def _load_all_rejections(session: AsyncSession, property_id: UUID) -> list[_RejectionRow]:
