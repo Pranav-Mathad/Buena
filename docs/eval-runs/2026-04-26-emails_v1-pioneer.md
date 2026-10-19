@@ -1,6 +1,6 @@
 _Backend: **pioneer**_
 
-# Eval report — emails_v1
+# Eval report: emails_v1
 
 - rows scored: **30**
 - category accuracy: **73.3%**
@@ -33,14 +33,14 @@ _Backend: **pioneer**_
 
 ## Top 8 failures
 
-- `EMAIL-06574` — category 'other'→'tenant_change'; scope 'unrouted'→'liegenschaft'; spurious lease.termination_notice
-- `EMAIL-03537` — category 'other'→'payment'; scope 'unrouted'→'liegenschaft'; spurious liegenschaft_financials.outstanding_invoice
-- `EMAIL-06527` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice, financials.deposit_return_pending
-- `EMAIL-06553` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
-- `EMAIL-00452` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
-- `EMAIL-03065` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
-- `EMAIL-02430` — category 'compliance'→'owner_communication'
-- `EMAIL-06497` — category 'compliance'→'owner_communication'
+- `EMAIL-06574`: category 'other'→'tenant_change'; scope 'unrouted'→'liegenschaft'; spurious lease.termination_notice
+- `EMAIL-03537`: category 'other'→'payment'; scope 'unrouted'→'liegenschaft'; spurious liegenschaft_financials.outstanding_invoice
+- `EMAIL-06527`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice, financials.deposit_return_pending
+- `EMAIL-06553`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
+- `EMAIL-00452`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
+- `EMAIL-03065`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
+- `EMAIL-02430`: category 'compliance'→'owner_communication'
+- `EMAIL-06497`: category 'compliance'→'owner_communication'
 
 ## Cost ledger
 

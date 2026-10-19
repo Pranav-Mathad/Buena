@@ -1,4 +1,4 @@
-# Eval report — emails_v1
+# Eval report: emails_v1
 
 - rows scored: **30**
 - category accuracy: **16.7%**
@@ -31,23 +31,23 @@
 
 ## Top 20 failures
 
-- `EMAIL-06564` — category 'owner_communication'→'payment'; missed liegenschaft_financials.sonderumlage_einspruch; spurious financials.payment_mention
-- `EMAIL-06555` — category 'complaint'→'other'; missed maintenance.open_water_damage, financials.rent_reduction_announced
-- `EMAIL-06574` — category 'other'→'lease'; scope 'unrouted'→'liegenschaft'; spurious lease.renewal_discussion
-- `EMAIL-06547` — category 'owner_communication'→'payment'; missed liegenschaft_financials.sonderumlage_einspruch; spurious financials.payment_mention
-- `EMAIL-01246` — category 'maintenance'→'lease'; missed liegenschaft_maintenance.heating_service_scheduled; spurious lease.renewal_discussion
-- `EMAIL-00335` — category 'complaint'→'other'; missed maintenance.open_water_damage, financials.rent_reduction_announced
-- `EMAIL-03549` — category 'tenant_change'→'lease'; missed lease.termination_notice; spurious lease.renewal_discussion
-- `EMAIL-00214` — category 'tenant_change'→'lease'; missed lease.termination_notice; spurious lease.renewal_discussion
-- `EMAIL-06554` — missed liegenschaft_financials.outstanding_invoice; spurious financials.payment_mention
-- `EMAIL-06549` — missed liegenschaft_financials.annual_water_statement_2025; spurious financials.payment_mention
-- `EMAIL-03714` — missed liegenschaft_financials.outstanding_invoice; spurious financials.payment_mention
-- `EMAIL-06101` — missed maintenance.open_water_leak; spurious maintenance.latest_water_issue
-- `EMAIL-06548` — category 'tenant_change'→'other'; missed financials.deposit_return_pending
-- `EMAIL-06562` — category 'owner_communication'→'other'; missed overview.sale_intent
-- `EMAIL-06561` — category 'tenant_change'→'other'; missed lease.termination_notice
-- `EMAIL-06552` — category 'tenant_change'→'other'; missed lease.termination_notice
-- `EMAIL-06585` — category 'maintenance'→'other'; missed maintenance.key_lost
-- `EMAIL-03933` — category 'payment'→'other'; missed financials.nebenkosten_dispute
-- `EMAIL-00452` — category 'owner_communication'→'lease'; spurious lease.renewal_discussion
-- `EMAIL-04031` — category 'maintenance'→'other'; missed maintenance.open_water_leak
+- `EMAIL-06564`: category 'owner_communication'→'payment'; missed liegenschaft_financials.sonderumlage_einspruch; spurious financials.payment_mention
+- `EMAIL-06555`: category 'complaint'→'other'; missed maintenance.open_water_damage, financials.rent_reduction_announced
+- `EMAIL-06574`: category 'other'→'lease'; scope 'unrouted'→'liegenschaft'; spurious lease.renewal_discussion
+- `EMAIL-06547`: category 'owner_communication'→'payment'; missed liegenschaft_financials.sonderumlage_einspruch; spurious financials.payment_mention
+- `EMAIL-01246`: category 'maintenance'→'lease'; missed liegenschaft_maintenance.heating_service_scheduled; spurious lease.renewal_discussion
+- `EMAIL-00335`: category 'complaint'→'other'; missed maintenance.open_water_damage, financials.rent_reduction_announced
+- `EMAIL-03549`: category 'tenant_change'→'lease'; missed lease.termination_notice; spurious lease.renewal_discussion
+- `EMAIL-00214`: category 'tenant_change'→'lease'; missed lease.termination_notice; spurious lease.renewal_discussion
+- `EMAIL-06554`: missed liegenschaft_financials.outstanding_invoice; spurious financials.payment_mention
+- `EMAIL-06549`: missed liegenschaft_financials.annual_water_statement_2025; spurious financials.payment_mention
+- `EMAIL-03714`: missed liegenschaft_financials.outstanding_invoice; spurious financials.payment_mention
+- `EMAIL-06101`: missed maintenance.open_water_leak; spurious maintenance.latest_water_issue
+- `EMAIL-06548`: category 'tenant_change'→'other'; missed financials.deposit_return_pending
+- `EMAIL-06562`: category 'owner_communication'→'other'; missed overview.sale_intent
+- `EMAIL-06561`: category 'tenant_change'→'other'; missed lease.termination_notice
+- `EMAIL-06552`: category 'tenant_change'→'other'; missed lease.termination_notice
+- `EMAIL-06585`: category 'maintenance'→'other'; missed maintenance.key_lost
+- `EMAIL-03933`: category 'payment'→'other'; missed financials.nebenkosten_dispute
+- `EMAIL-00452`: category 'owner_communication'→'lease'; spurious lease.renewal_discussion
+- `EMAIL-04031`: category 'maintenance'→'other'; missed maintenance.open_water_leak

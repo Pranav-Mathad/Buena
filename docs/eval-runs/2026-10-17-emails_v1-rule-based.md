@@ -1,5 +1,8 @@
 <!--
-Provenance (added by hand; everything below the runner header is runner output, unedited).
+Provenance (added by hand; everything below the runner header is runner output).
+Separator: on 2026-10-19 the runner's em-dash separators became ": " (title and
+          per-email lines); no number changed. Re-running the command at commit
+          eaa78d1 on the database described below reproduces this body byte for byte.
 Command:  python -m eval.runner --set emails_v1 --out docs/eval-runs/2026-10-17-emails_v1-rule-based.md
 Commit:   8695bde
 Keys:     none set (no GEMINI_API_KEY, no PIONEER_API_KEY), so the extractor ran its
@@ -13,7 +16,7 @@ Input:    eval/ground_truth/emails_v1.jsonl after name pseudonymisation (2026-10
 
 _Backend: **gemini**_
 
-# Eval report — emails_v1
+# Eval report: emails_v1
 
 - rows scored: **30**
 - category accuracy: **63.3%**
@@ -46,25 +49,25 @@ _Backend: **gemini**_
 
 ## Top 19 failures
 
-- `EMAIL-06555` — category 'complaint'→'maintenance'; missed maintenance.open_water_damage, financials.rent_reduction_announced; spurious maintenance.open_water_leak
-- `EMAIL-00335` — category 'complaint'→'maintenance'; missed maintenance.open_water_damage, financials.rent_reduction_announced; spurious maintenance.open_water_leak
-- `EMAIL-06574` — category 'other'→'tenant_change'; scope 'unrouted'→'liegenschaft'; spurious lease.termination_notice
-- `EMAIL-06549` — category 'payment'→'maintenance'; missed liegenschaft_financials.annual_water_statement_2025; spurious maintenance.open_water_leak
-- `EMAIL-03537` — category 'other'→'owner_communication'; scope 'unrouted'→'liegenschaft'; spurious overview.sale_intent
-- `EMAIL-06548` — missed financials.deposit_return_pending; spurious lease.termination_notice
-- `EMAIL-06564` — missed liegenschaft_financials.sonderumlage_einspruch; spurious overview.sale_intent
-- `EMAIL-06547` — missed liegenschaft_financials.sonderumlage_einspruch; spurious overview.sale_intent
-- `EMAIL-03933` — missed financials.nebenkosten_dispute; spurious financials.payment_mention
-- `EMAIL-02430` — missed compliance.modernization_inquiry; spurious compliance.regulatory_mention
-- `EMAIL-06497` — missed compliance.modernization_inquiry; spurious compliance.regulatory_mention
-- `EMAIL-06554` — category 'payment'→'other'; missed liegenschaft_financials.outstanding_invoice
-- `EMAIL-01246` — category 'maintenance'→'other'; missed liegenschaft_maintenance.heating_service_scheduled
-- `EMAIL-00452` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
-- `EMAIL-03714` — category 'payment'→'other'; missed liegenschaft_financials.outstanding_invoice
-- `EMAIL-06527` — category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
-- `EMAIL-01970` — category 'compliance'→'other'; missed liegenschaft_compliance.brandschutz_request
-- `EMAIL-06553` — spurious overview.sale_intent
-- `EMAIL-03065` — spurious overview.sale_intent
+- `EMAIL-06555`: category 'complaint'→'maintenance'; missed maintenance.open_water_damage, financials.rent_reduction_announced; spurious maintenance.open_water_leak
+- `EMAIL-00335`: category 'complaint'→'maintenance'; missed maintenance.open_water_damage, financials.rent_reduction_announced; spurious maintenance.open_water_leak
+- `EMAIL-06574`: category 'other'→'tenant_change'; scope 'unrouted'→'liegenschaft'; spurious lease.termination_notice
+- `EMAIL-06549`: category 'payment'→'maintenance'; missed liegenschaft_financials.annual_water_statement_2025; spurious maintenance.open_water_leak
+- `EMAIL-03537`: category 'other'→'owner_communication'; scope 'unrouted'→'liegenschaft'; spurious overview.sale_intent
+- `EMAIL-06548`: missed financials.deposit_return_pending; spurious lease.termination_notice
+- `EMAIL-06564`: missed liegenschaft_financials.sonderumlage_einspruch; spurious overview.sale_intent
+- `EMAIL-06547`: missed liegenschaft_financials.sonderumlage_einspruch; spurious overview.sale_intent
+- `EMAIL-03933`: missed financials.nebenkosten_dispute; spurious financials.payment_mention
+- `EMAIL-02430`: missed compliance.modernization_inquiry; spurious compliance.regulatory_mention
+- `EMAIL-06497`: missed compliance.modernization_inquiry; spurious compliance.regulatory_mention
+- `EMAIL-06554`: category 'payment'→'other'; missed liegenschaft_financials.outstanding_invoice
+- `EMAIL-01246`: category 'maintenance'→'other'; missed liegenschaft_maintenance.heating_service_scheduled
+- `EMAIL-00452`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
+- `EMAIL-03714`: category 'payment'→'other'; missed liegenschaft_financials.outstanding_invoice
+- `EMAIL-06527`: category 'owner_communication'→'tenant_change'; spurious lease.termination_notice
+- `EMAIL-01970`: category 'compliance'→'other'; missed liegenschaft_compliance.brandschutz_request
+- `EMAIL-06553`: spurious overview.sale_intent
+- `EMAIL-03065`: spurious overview.sale_intent
 
 ## Cost ledger
 
