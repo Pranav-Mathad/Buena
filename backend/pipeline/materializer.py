@@ -259,7 +259,8 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
     """Bootstrap every property/building/liegenschaft file row.
 
     Used by ``connectors.cli materialize-all`` after the migration runs
-    (and by Cloud Run's startup script) to fill the cache up front.
+    (and by ``POST /admin/materialize-all`` in deployments without CLI
+    access) to fill the cache up front.
     Caller commits the surrounding transaction.
     """
     properties_written = 0

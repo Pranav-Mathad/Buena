@@ -31,8 +31,8 @@ async def materialize_all_endpoint(
     """Bootstrap the materialized file cache for every tier.
 
     Mirrors ``python -m connectors.cli materialize-all`` but reachable
-    over HTTP, which is needed on Cloud Run where the CLI can't connect to
-    Cloud SQL directly. Idempotent: re-running just refreshes
+    over HTTP, for deployments where the CLI cannot reach the database
+    directly. Idempotent: re-running just refreshes
     ``last_rendered_at`` and ``content_md`` for every row.
 
     The applier hook propagates updates on every fact write going

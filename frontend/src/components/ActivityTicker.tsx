@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { usePortfolioSummary } from "@/hooks/queries";
+import { API_BASE_URL } from "@/lib/config";
 
 const POLL_INTERVAL_MS = 30_000;
 const COUNT_UP_MS = 200;
 const FLASH_MS = 400;
+/** Host of the API this ticker polls, e.g. "localhost:8000". */
+function apiHost(): string {
+  // Evaluated at render, not import: main.tsx imports the app even when the
+  // URL is missing, and must still be able to show its configuration error.
+  try {
+    return new URL(API_BASE_URL).host;
+  } catch {
+    return API_BASE_URL;
+  }
+}
 
 function useCountUp(target: number) {
   const [display, setDisplay] = useState(target);
@@ -77,7 +88,7 @@ export const ActivityTicker = () => {
         <Stat value={signals} pulsing={false} label="signals pending" />
       </div>
       <div className="mt-2 pt-2 border-t border-border font-mono text-[11px] text-muted-foreground">
-        live · cloud run · europe-west10
+        polled every {POLL_INTERVAL_MS / 1000} s · {apiHost()}
       </div>
     </div>
   );
