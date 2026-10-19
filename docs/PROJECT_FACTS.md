@@ -7,16 +7,16 @@ section names the commit it was measured at.
 
 ## Size
 
-Measured at commit `e6c5601` (2026-10-19). Physical lines including blanks and
+Measured at commit `6bf92df` (2026-10-19). Physical lines including blanks and
 comments.
 
 | Claim | Value | Command |
 |---|---:|---|
-| Python, excluding tests | 24,019 lines | `git ls-files '*.py' \| grep -v -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
-| of which `backend/` | 15,314 | same, restricted to `backend/*.py` |
-| of which `connectors/` | 4,946 | same, restricted to `connectors/*.py` |
+| Python, excluding tests | 24,126 lines | `git ls-files '*.py' \| grep -v -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
+| of which `backend/` | 15,310 | same, restricted to `backend/*.py` |
+| of which `connectors/` | 5,057 | same, restricted to `connectors/*.py` |
 | of which `eval/`, `seed/`, `scripts/`, `mcp_server/`, `tools/` | 1,117 / 1,385 / 911 / 259 / 87 | same, per directory |
-| Python tests (including `conftest.py`) | 5,509 lines | `git ls-files '*.py' \| grep -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
+| Python tests (including `conftest.py`) | 5,620 lines | `git ls-files '*.py' \| grep -E '(^\|/)tests/\|(^\|/)conftest\.py$' \| xargs wc -l \| tail -1` |
 | TypeScript/TSX, excluding `components/ui` and tests | 4,626 lines | `git ls-files 'frontend/src/*.ts' 'frontend/src/*.tsx' \| grep -v -E 'components/ui/\|\.test\.\|/test/' \| xargs wc -l \| tail -1` |
 | Frontend tests and test helpers | 681 lines | `git ls-files 'frontend/src/*.test.ts' 'frontend/src/*.test.tsx' 'frontend/src/test/*' \| xargs wc -l \| tail -1` |
 | Generated shadcn components kept | 339 lines | `git ls-files 'frontend/src/components/ui/*' \| xargs wc -l \| tail -1` |
@@ -29,15 +29,15 @@ comments.
 
 ## Static checks
 
-At commit `e6c5601`: `ruff check .` and `ruff format --check .` report no
+At commit `6bf92df`: `ruff check .` and `ruff format --check .` report no
 issues; `mypy` (strict, over backend, connectors, eval, mcp_server, seed,
-scripts, tools) reports "no issues found in 169 source files";
+scripts, tools) reports "no issues found in 171 source files";
 `python scripts/check_sensitive_data.py` reports nothing; in `frontend/`,
 `npm run format:check`, `npm run lint` and `npm run typecheck` pass.
 
 ## Tests
 
-Measured at commit `e6c5601` against a freshly seeded `postgres:16`, no API
+Measured at commit `6bf92df` against a freshly seeded `postgres:16`, no API
 keys set, without the private dataset. A clean-machine rehearsal of the CI job (a fresh Python 3.11 venv against an
 empty `postgres:16` container, at commit `3ab355b`) gave the same result for
 the tests that existed then: 203 passed, 13 skipped, 0 failed.
@@ -45,11 +45,11 @@ the tests that existed then: 203 passed, 13 skipped, 0 failed.
 | Suite | Passed | Skipped | Failed | Command |
 |---|---:|---:|---:|---|
 | `backend/tests` | 134 | 8 | 0 | `pytest backend/tests -q` |
-| `connectors/tests` | 56 | 5 | 0 | `pytest connectors/tests -q` |
+| `connectors/tests` | 59 | 5 | 0 | `pytest connectors/tests -q` |
 | `eval/tests` | 4 | 0 | 0 | `pytest eval/tests -q` |
 | `mcp_server/tests` | 3 | 0 | 0 | `pytest mcp_server/tests -q` |
 | `scripts/tests` | 13 | 0 | 0 | `pytest scripts/tests -q` |
-| All five | 210 | 13 | 0 | `pytest -q` (all five suites are in `testpaths`) |
+| All five | 213 | 13 | 0 | `pytest -q` (all five suites are in `testpaths`) |
 | Frontend | 22 | 0 | 0 | `cd frontend && npm test` (11 files) |
 
 All 13 skips need the private dataset under `Extracted/` and say so in the
