@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFeaturedProperty } from "@/hooks/queries";
-import { ApiError, fetchAsk } from "@/lib/api";
+import { fetchAsk, llmFailureKind } from "@/lib/api";
 import { adaptAskResult, type AskResponse } from "@/lib/ask";
 import { suggestedQuestions } from "@/lib/constants";
 import { Card, PrimaryButton } from "./ui-bits";
@@ -10,11 +10,9 @@ import { SourceModal, type SourceModalSource } from "./SourceModal";
 
 /** Heading for a failed Ask request; the error message below it has the detail. */
 function describeError(e: unknown): string {
-  // The API answers 503 when no LLM provider is configured.
-  if (e instanceof ApiError) {
-    return e.status === 503 ? "Ask needs an LLM provider key" : "Q&A request failed";
-  }
-  return "Q&A service unreachable";
+  const kind = llmFailureKind(e);
+  if (kind === "no-key") return "Ask needs an LLM provider key";
+  return kind === "failed" ? "Q&A request failed" : "Q&A service unreachable";
 }
 
 const SourceCard = ({

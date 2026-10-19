@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useFeaturedProperty, useProperties } from "@/hooks/queries";
-import { fetchDraftReply, type DraftReplyContext } from "@/lib/api";
+import { fetchDraftReply, llmFailureKind, type DraftReplyContext } from "@/lib/api";
 import { sampleInboundMessages, type SampleInboundMessage } from "@/lib/constants";
 import { Card, PrimaryButton, SecondaryButton } from "@/components/ui-bits";
 import { Copy, Pencil } from "lucide-react";
@@ -84,11 +84,14 @@ const DraftReply = () => {
       // No canned fallback: a failed request is shown as a failure, never
       // replaced by a reply the model did not write.
       setDrafted(null);
-      setDraftError(
-        e instanceof Error
-          ? `Drafting service unreachable: ${e.message}`
-          : "Drafting service unreachable.",
-      );
+      const kind = llmFailureKind(e);
+      const title =
+        kind === "no-key"
+          ? "Reply drafting needs an LLM provider key"
+          : kind === "failed"
+            ? "Drafting request failed"
+            : "Drafting service unreachable";
+      setDraftError(e instanceof Error ? `${title}: ${e.message}` : `${title}.`);
     } finally {
       setDrafting(false);
     }
@@ -184,9 +187,15 @@ const DraftReply = () => {
             </Field>
             <div className="flex justify-end items-center gap-3">
               {draftError && (
-                <span className="text-[12px] font-mono text-warning">{draftError}</span>
+                <span role="alert" className="flex-1 min-w-0 text-[12px] font-mono text-warning">
+                  {draftError}
+                </span>
               )}
-              <PrimaryButton onClick={generate} disabled={!form.body.trim() || drafting}>
+              <PrimaryButton
+                onClick={generate}
+                disabled={!form.body.trim() || drafting}
+                className="shrink-0 whitespace-nowrap"
+              >
                 {drafting ? (
                   <>
                     <span className="dot bg-primary-foreground animate-pulse-soft" />

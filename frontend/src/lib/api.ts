@@ -35,6 +35,16 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * Why a call to an LLM-backed endpoint (Ask, reply drafting) failed. The API
+ * answers 503 when no LLM provider is configured, which is not the same as
+ * the service being down.
+ */
+export function llmFailureKind(e: unknown): "no-key" | "failed" | "unreachable" {
+  if (e instanceof ApiError) return e.status === 503 ? "no-key" : "failed";
+  return "unreachable";
+}
+
 // FastAPI errors carry {"detail": "..."} or a list of validation issues.
 async function readDetail(res: Response): Promise<string | null> {
   const body = await res.text().catch(() => "");
