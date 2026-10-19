@@ -271,6 +271,10 @@ sequenceDiagram
 Rules live in `backend/signals/rules/`: recurring maintenance on one property,
 leases expiring within 60 days, and cross-property patterns (a shared boiler
 across units in one building, or the same issue across a building-age cohort).
+The maintenance rules count incidents, one per reporting event, within 120 days
+of when each was reported (`backend/signals/rules/_incidents.py`): superseded
+facts still count, because a repeat report supersedes the previous fact, and an
+operator edit does not add an incident.
 The evaluator (`backend/signals/evaluator.py`) runs every
 30 seconds and on `POST /signals/evaluate`. For each candidate it computes the
 natural key and skips it while a signal with that key is pending or was

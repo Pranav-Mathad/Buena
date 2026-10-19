@@ -14,7 +14,9 @@ B. **Building-year cohort.** Group properties by year bucket
    cohort is a reason to inspect the rest of it.
 
 Both cases emit a ``property_id=None`` portfolio signal so the UI can
-render it in the portfolio view instead of under a single property.
+render it in the portfolio view instead of under a single property. Both
+count incidents (one per reporting event) as defined in
+:mod:`backend.signals.rules._incidents`.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.signals.rules._incidents import INCIDENTS_CTE
 from backend.signals.types import SignalCandidate
 
 log = structlog.get_logger(__name__)
@@ -48,24 +51,21 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
     """Flavor A: buildings where multiple units share the same issue."""
     result = await session.execute(
         text(
-            """
+            f"""
+            WITH {INCIDENTS_CTE}
             SELECT b.id AS building_id, b.address,
                    b.year_built,
-                   COUNT(DISTINCT f.property_id) AS affected_properties,
+                   COUNT(DISTINCT i.property_id) AS affected_properties,
                    COUNT(*) AS total_incidents,
                    ARRAY_AGG(DISTINCT p.name) AS property_names,
-                   ARRAY_AGG(f.id::text ORDER BY f.created_at) AS fact_ids,
-                   ARRAY_AGG(f.source_event_id::text ORDER BY f.created_at)
+                   ARRAY_AGG(i.id::text ORDER BY i.reported_at) AS fact_ids,
+                   ARRAY_AGG(i.source_event_id::text ORDER BY i.reported_at)
                      AS event_ids
-            FROM facts f
-            JOIN properties p ON p.id = f.property_id
+            FROM incidents i
+            JOIN properties p ON p.id = i.property_id
             JOIN buildings b ON b.id = p.building_id
-            WHERE f.section = 'maintenance'
-              AND f.superseded_by IS NULL
-              AND f.created_at >= now() - (:window || ' days')::interval
-              AND (f.value ~* :pattern OR f.field ~* :pattern)
             GROUP BY b.id, b.address, b.year_built
-            HAVING COUNT(DISTINCT f.property_id) >= 2
+            HAVING COUNT(DISTINCT i.property_id) >= 2
                AND COUNT(*) >= 3
             """
         ),
@@ -117,21 +117,18 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
     """Flavor B: portfolio-wide alert on a building-year cohort."""
     result = await session.execute(
         text(
-            """
+            f"""
+            WITH {INCIDENTS_CTE}
             SELECT b.id AS building_id,
                    b.year_built,
                    p.id AS property_id,
                    p.name AS property_name,
                    COUNT(*) AS incidents,
-                   ARRAY_AGG(f.id::text) AS fact_ids,
-                   ARRAY_AGG(f.source_event_id::text) AS event_ids
-            FROM facts f
-            JOIN properties p ON p.id = f.property_id
+                   ARRAY_AGG(i.id::text) AS fact_ids,
+                   ARRAY_AGG(i.source_event_id::text) AS event_ids
+            FROM incidents i
+            JOIN properties p ON p.id = i.property_id
             JOIN buildings b ON b.id = p.building_id
-            WHERE f.section = 'maintenance'
-              AND f.superseded_by IS NULL
-              AND f.created_at >= now() - (:window || ' days')::interval
-              AND (f.value ~* :pattern OR f.field ~* :pattern)
             GROUP BY b.id, b.year_built, p.id, p.name
             """
         ),

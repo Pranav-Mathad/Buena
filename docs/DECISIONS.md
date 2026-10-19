@@ -13,6 +13,38 @@ the code looks the way it does.
 Format: **Context**, **Decision**, **Reason**, **Revisit if**, and optionally
 **Status**.
 
+## 2026-10-19: maintenance signal rules count reported incidents, not current facts
+
+**Context.** `recurring_maintenance` and both flavours of
+`cross_property_pattern` counted maintenance facts with `superseded_by IS NULL`
+written in the last 120 days. Two things were wrong. The extractor files repeat
+reports of one issue under the same field (`open_heating_issue`), so each new
+report supersedes the previous fact and only one is ever current: three
+heating complaints on WE 29 raised no signal. And the window used the fact's
+`created_at`, so incidents reported months earlier counted as recent whenever
+their facts were written late (a seed or a backfill): the seed's heating
+reports from November 2025 to March 2026 produced "4 heating incidents in the
+last 120 days" and "heating issues this winter" in October 2026. A browser
+check of a fresh stack showed the first problem.
+
+**Decision.** The rules count incidents, defined once in
+`backend/signals/rules/_incidents.py`: every matching maintenance fact,
+superseded or not, collapsed to one row per source event (a fact without an
+event is its own incident), and windowed on the event's `received_at`. An
+operator edit keeps its fact's source event, so it does not add an incident.
+
+**Reason.** An incident is something a person reported, which is an event, not
+a fact version. Counting events matches what the signal messages claim.
+
+**Consequence.** On a fresh install the seed's dated heating signals no longer
+fire (their incidents are 7 to 11 months old), and WE 29's three heating
+reports from the sample events do. The seed uses fixed dates, so its signals
+were always going to age out; the old window hid that.
+
+**Revisit if.** A rule needs the current state of an issue rather than its
+history (for example "still open"), or the seed should keep producing these
+signals, in which case its dates should become relative to load time.
+
 ## 2026-10-18: at most one pending signal per natural key, enforced by the database
 
 **Context.** The evaluator skips a candidate when a signal with the same
