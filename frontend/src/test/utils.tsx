@@ -34,8 +34,8 @@ type Handler = (init: RequestInit | undefined) => unknown;
 
 /**
  * Replace global fetch with routes keyed by "METHOD /path" (query string
- * ignored). Unrouted requests fail the test with a 404. Returns the mock so
- * tests can assert on calls.
+ * ignored). Unrouted requests fail the test with a 404. A route may return a
+ * Response to control the status. Returns the mock so tests can assert on calls.
  */
 export function mockFetch(routes: Record<string, Handler | unknown>) {
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -46,6 +46,7 @@ export function mockFetch(routes: Record<string, Handler | unknown>) {
     }
     const route = routes[key];
     const body = typeof route === "function" ? (route as Handler)(init) : route;
+    if (body instanceof Response) return body;
     return new Response(typeof body === "string" ? body : JSON.stringify(body), { status: 200 });
   });
   vi.stubGlobal("fetch", fn);

@@ -76,4 +76,21 @@ describe("AskPanel", () => {
     expect(screen.getByText("Bank details live in the ERP.")).toBeInTheDocument();
     expect(within(document.body).queryByText("answered")).not.toBeInTheDocument();
   });
+
+  it("names a missing LLM key instead of calling the service unreachable", async () => {
+    mockFetch({
+      "GET /properties": [propertyDTO()],
+      "POST /properties/p-1/ask": new Response(
+        JSON.stringify({ detail: "Ask is unavailable: No LLM provider is configured" }),
+        { status: 503 },
+      ),
+    });
+    renderWithProviders(<AskPanel propertyId="p-1" />);
+    await userEvent.type(screen.getByRole("textbox"), "What is going on?");
+    await userEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(await screen.findByText("Ask needs an LLM provider key")).toBeInTheDocument();
+    expect(screen.getByText(/No LLM provider is configured/)).toBeInTheDocument();
+    expect(screen.queryByText("Q&A service unreachable")).not.toBeInTheDocument();
+  });
 });

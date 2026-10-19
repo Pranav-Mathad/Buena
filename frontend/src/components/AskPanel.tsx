@@ -1,12 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFeaturedProperty } from "@/hooks/queries";
-import { fetchAsk } from "@/lib/api";
+import { ApiError, fetchAsk } from "@/lib/api";
 import { adaptAskResult, type AskResponse } from "@/lib/ask";
 import { suggestedQuestions } from "@/lib/constants";
 import { Card, PrimaryButton } from "./ui-bits";
 import { AlertTriangle, ExternalLink, HelpCircle } from "lucide-react";
 import { SourceModal, type SourceModalSource } from "./SourceModal";
+
+/** Heading for a failed Ask request; the error message below it has the detail. */
+function describeError(e: unknown): string {
+  // The API answers 503 when no LLM provider is configured.
+  if (e instanceof ApiError) {
+    return e.status === 503 ? "Ask needs an LLM provider key" : "Q&A request failed";
+  }
+  return "Q&A service unreachable";
+}
 
 const SourceCard = ({
   s,
@@ -54,6 +63,7 @@ export const AskPanel = ({
   const [response, setResponse] = useState<AskResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorTitle, setErrorTitle] = useState("");
 
   const heroProperty = useFeaturedProperty();
 
@@ -87,6 +97,7 @@ export const AskPanel = ({
       .catch((e: unknown) => {
         if (cancelled) return;
         setResponse(null);
+        setErrorTitle(describeError(e));
         setErrorMsg(e instanceof Error ? e.message : "Q&A service unreachable");
       })
       .finally(() => {
@@ -163,7 +174,7 @@ export const AskPanel = ({
         <Card className="p-5 border-warning/40">
           <div className="flex items-center gap-2 text-warning">
             <AlertTriangle className="w-4 h-4" />
-            <span className="text-[14px] font-medium">Q&amp;A service unreachable</span>
+            <span className="text-[14px] font-medium">{errorTitle}</span>
           </div>
           <p className="text-[12px] font-mono text-muted-foreground mt-2">{errorMsg}</p>
         </Card>
