@@ -413,9 +413,11 @@ data rules are enforced. `KEYSTONE_BASE_URL` points it at any running backend.
 `Dockerfile`: dependencies installed in a build stage, a slim runtime stage
 running as an unprivileged user) and the frontend (a Vite build served by
 unprivileged nginx). The API's entrypoint (`scripts/entrypoint.sh`) applies the
-schema and migrations when `RUN_MIGRATIONS=true` and loads the synthetic sample
-data when `LOAD_SAMPLE_DATA=true`; compose sets both, and every step is
-idempotent. `FEATURED_PROPERTY` (a property UUID or alias, default `EH-029`)
+schema and migrations when `RUN_MIGRATIONS=true`. With `LOAD_SAMPLE_DATA=true`
+it loads the synthetic master data, renders every file, and runs the six
+synthetic tenant emails in `Extracted_demo/sample_events/` through the worker
+(`python -m connectors.cli load-sample-events`), so the featured property has a
+history on first start. Compose sets both, and every step is idempotent. `FEATURED_PROPERTY` (a property UUID or alias, default `EH-029`)
 names the property the UI opens first; `GET /properties` marks it with
 `is_hero`.
 

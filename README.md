@@ -79,7 +79,8 @@ cp .env.example .env && docker compose up
 - API and interactive docs: <http://localhost:8000/docs>
 
 The first start builds both images, applies the schema and loads synthetic
-sample data (56 properties). No API key is needed: extraction falls back to
+sample data: 56 properties, and six tenant emails for the featured property
+(WE 29) that go through the pipeline so its file has a history. No API key is needed: extraction falls back to
 the rule-based extractor and signal drafts to templates. Ask, reply drafting
 and the LLM contradiction check need a provider key in `.env`:
 `GEMINI_API_KEY` by default, or `LLM_PROVIDER=pioneer` with `PIONEER_API_KEY`.

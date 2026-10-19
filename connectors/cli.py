@@ -38,6 +38,7 @@ from connectors.buena_event_loader import (
     run_re_route,
 )
 from connectors.buena_loader import load_from_disk
+from connectors.sample_events import run_load_sample_events
 
 log = structlog.get_logger("connectors.cli")
 
@@ -292,6 +293,19 @@ def _cmd_materialize_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_load_sample_events(args: argparse.Namespace) -> int:
+    """Handle the ``load-sample-events`` subcommand."""
+    summary = run_load_sample_events()
+    if args.json:
+        print(json.dumps(summary.__dict__, indent=2))
+    else:
+        print(
+            f"sample events: {summary.inserted} inserted, "
+            f"{summary.already_present} already present, {summary.processed} processed."
+        )
+    return 0
+
+
 def _cmd_re_route(args: argparse.Namespace) -> int:
     """Handle the one-time ``re-route`` subcommand.
 
@@ -439,6 +453,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     materialize.add_argument("--json", action="store_true")
     materialize.set_defaults(func=_cmd_materialize_all)
+
+    sample = sub.add_parser(
+        "load-sample-events",
+        help=(
+            "Insert the synthetic emails in Extracted_demo/sample_events/ and "
+            "process them, so the featured property has a history. Idempotent."
+        ),
+    )
+    sample.add_argument("--json", action="store_true")
+    sample.set_defaults(func=_cmd_load_sample_events)
 
     return parser
 

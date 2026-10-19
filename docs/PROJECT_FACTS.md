@@ -126,3 +126,4 @@ From `docs/eval-runs/2026-04-25-step6-partial.md` (2026-04-25):
 |---|---:|---|
 | Synthetic master data | 1 Liegenschaft, 3 buildings, 52 units, 35 owners, 26 tenants (25 active), 16 contractors | `EXTRACTED_ROOT=Extracted_demo python -m connectors.cli load-stammdaten --source buena --json` |
 | Hand-written seed | 4 properties, 3 buildings, 29 events, 62 facts | `python -m seed.seed` (final `seed.done` log line) |
+| Sample events for WE 29 | 6 emails, all routed to WE 29; 8 current facts, no API key | `python -m connectors.cli load-sample-events --json` after the master data load, then `GET /properties` (measured on a fresh `docker compose up`, 2026-10-19) |
