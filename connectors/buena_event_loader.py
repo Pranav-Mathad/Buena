@@ -1,12 +1,14 @@
 """Stream Buena structured events into the events + facts tables.
 
-Phase 8 Step 3 backfills the deterministic data sources (bank
-transactions, invoice PDFs) directly: each event lands in ``events``
+This module backfills the deterministic data sources (bank
+transactions, invoice PDFs) directly, without the LLM worker: each event lands in ``events``
 via :func:`backend.pipeline.events.insert_event`, the structured router
 in :mod:`backend.pipeline.router` resolves a property when possible,
 and :mod:`backend.pipeline.structured_extractors` writes facts
 synchronously. Stamping ``processed_at = received_at`` keeps the live
-worker hands-off (KEYSTONE Part X "historical events stamped" rule).
+worker hands-off: the worker only claims events whose ``processed_at``
+is NULL, so historical events that already have their facts written
+are never re-extracted.
 
 Idempotency:
 
@@ -22,7 +24,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +39,7 @@ from backend.pipeline.structured_extractors import (
     stamp_processed,
 )
 from connectors import buena_archive
-from connectors.base import ConnectorEvent, DataMissing
+from connectors.base import ConnectorEvent, DataMissingError
 from connectors.migrations import apply_all as ensure_migrations
 
 log = structlog.get_logger(__name__)
@@ -49,8 +51,8 @@ class BackfillSummary:
 
     The four-tier counts (``routed_property / routed_building /
     routed_liegenschaft / unrouted``) sum to ``inserted_now`` and let the
-    operator read the per-tier miss rates that Phase 8.1 verification
-    requires.
+    operator read the per-tier miss rates, which is how routing quality
+    is checked after a backfill.
     """
 
     label: str
@@ -66,11 +68,7 @@ class BackfillSummary:
     @property
     def routed(self) -> int:
         """Total events that resolved to *some* scope (any tier)."""
-        return (
-            self.routed_property
-            + self.routed_building
-            + self.routed_liegenschaft
-        )
+        return self.routed_property + self.routed_building + self.routed_liegenschaft
 
     def as_json(self) -> dict[str, Any]:
         """Serializable view for the CLI's ``--json`` mode."""
@@ -127,9 +125,7 @@ async def _ingest_one(
             summary.unrouted += 1
             if summary.miss_reasons is None:
                 summary.miss_reasons = {}
-            summary.miss_reasons[route.reason] = (
-                summary.miss_reasons.get(route.reason, 0) + 1
-            )
+            summary.miss_reasons[route.reason] = summary.miss_reasons.get(route.reason, 0) + 1
 
         # Write facts (no-op when no scope is resolved).
         written = await fact_writer(
@@ -159,9 +155,7 @@ def _normalise_ts(received: datetime | None) -> datetime | None:
     if received is None:
         return None
     if received.tzinfo is None:
-        from datetime import timezone  # noqa: PLC0415
-
-        return received.replace(tzinfo=timezone.utc)
+        return received.replace(tzinfo=UTC)
     return received
 
 
@@ -178,10 +172,8 @@ async def _drive(
     for ev in iterator:
         summary.total_seen += 1
         try:
-            await _ingest_one(
-                factory, ev, fact_writer=fact_writer, summary=summary
-            )
-        except Exception:  # noqa: BLE001 — keep the backfill moving
+            await _ingest_one(factory, ev, fact_writer=fact_writer, summary=summary)
+        except Exception:  # noqa: BLE001 (keep the backfill moving)
             log.exception(
                 "backfill.error",
                 label=label,
@@ -209,7 +201,7 @@ async def backfill_bank(*, root: Path | None = None) -> BackfillSummary:
 async def backfill_invoices(*, root: Path | None = None) -> BackfillSummary:
     """Backfill every PDF under ``Extracted/rechnungen/`` (filename only).
 
-    PDF text is *not* extracted by default — Step 3 only needs the
+    PDF text is *not* extracted by default: the backfill only needs the
     filename for ID + document_type, which the connector populates from
     heuristics. ``extract_invoice_facts`` records the latest invoice +
     serviced_by edge when the property resolves.
@@ -223,7 +215,7 @@ async def backfill_invoices(*, root: Path | None = None) -> BackfillSummary:
 
 
 # -----------------------------------------------------------------------------
-# Sync wrappers — the CLI is sync; running coroutines via asyncio.run keeps the
+# Sync wrappers: the CLI is sync; running coroutines via asyncio.run keeps the
 # entry points small.
 # -----------------------------------------------------------------------------
 
@@ -281,12 +273,10 @@ async def _reroute_one(
     summary: RerouteSummary,
 ) -> None:
     """Re-evaluate routing for one already-ingested event."""
-    from sqlalchemy import text  # noqa: PLC0415 — local import keeps imports tidy
+    from sqlalchemy import text  # noqa: PLC0415 (local import keeps imports tidy)
 
     async with factory() as session:
-        route: StructuredRoute = await route_structured(
-            session, metadata, event_source=source
-        )
+        route: StructuredRoute = await route_structured(session, metadata, event_source=source)
         if route.property_id is not None:
             summary.moved_to_property += 1
         elif route.building_id is not None:
@@ -297,9 +287,7 @@ async def _reroute_one(
             summary.still_unrouted += 1
             if summary.miss_reasons is None:
                 summary.miss_reasons = {}
-            summary.miss_reasons[route.reason] = (
-                summary.miss_reasons.get(route.reason, 0) + 1
-            )
+            summary.miss_reasons[route.reason] = summary.miss_reasons.get(route.reason, 0) + 1
             await session.commit()
             return
 
@@ -323,7 +311,7 @@ async def _reroute_one(
         )
 
         # Write any facts that follow from the new scope. Same writer
-        # logic as the backfill — identical writes short-circuit.
+        # logic as the backfill; identical writes short-circuit.
         writer = (
             extract_bank_facts
             if source == "bank"
@@ -352,10 +340,11 @@ async def re_route_unrouted(
 ) -> RerouteSummary:
     """Walk every event with no scope set and re-evaluate routing.
 
-    One-time migration step after Phase 8.1 schema/router changes —
-    surfaces in ``DECISIONS.md`` as a documented re-attribution pass,
-    not as ongoing pipeline behavior. Idempotent: re-running on already-
-    re-routed events finds nothing new to scan.
+    One-time migration step for events ingested before the router
+    learned the building and Liegenschaft tiers; it is recorded in
+    ``docs/DECISIONS.md`` as a documented re-attribution pass, not as
+    ongoing pipeline behavior. Idempotent: re-running on already-re-routed
+    events finds nothing new to scan.
     """
     from sqlalchemy import text  # noqa: PLC0415
 
@@ -418,5 +407,5 @@ __all__ = [
     "run_backfill_bank",
     "run_backfill_invoices",
     "run_re_route",
-    "DataMissing",
+    "DataMissingError",
 ]

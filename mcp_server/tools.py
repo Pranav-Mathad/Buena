@@ -1,7 +1,9 @@
-"""Implementations of the five canonical MCP tools.
+"""Implementations of the five MCP tools.
 
-Every tool is a thin adapter over the Keystone REST backend (Part V:
-"MCP server is a thin adapter. All tools call the backend REST API.").
+Every tool is a thin adapter over the Keystone REST backend: all reads
+and writes go through the REST API, so the MCP server holds no business
+logic or database access of its own and cannot drift from what the API
+enforces.
 The ``KeystoneClient`` wraps ``httpx.AsyncClient`` so the server can be
 pointed at any deployment (dev, staging, Railway) via
 ``KEYSTONE_BASE_URL``.
@@ -82,7 +84,7 @@ class KeystoneClient:
         """GET /properties/{id}/activity.
 
         The backend doesn't currently filter by ``since`` server-side, so we
-        do it client-side here — the activity feed is small enough that this
+        do it client-side here; the activity feed is small enough that this
         is effectively free.
         """
         response = await self._request(
@@ -112,12 +114,14 @@ class KeystoneClient:
         return dict(response.json())
 
 
-# Tool registration helpers — used by mcp_server/main.py.
+# Tool registration helpers: the same five tools as plain coroutines bound
+# to a client, for callers that register tools themselves. mcp_server/main.py
+# declares its tools directly with FastMCP decorators and does not use this.
 ToolFn = Callable[..., Awaitable[Any]]
 
 
 def build_tools(client: KeystoneClient) -> dict[str, ToolFn]:
-    """Return the five canonical tools bound to ``client``."""
+    """Return the five MCP tools bound to ``client``."""
 
     async def get_property_context(property_id: str) -> str:
         """Return the living markdown document for a Keystone property."""
@@ -134,15 +138,11 @@ def build_tools(client: KeystoneClient) -> dict[str, ToolFn]:
         """Return pending signals, optionally filtered by property or severity."""
         return await client.list_signals(property_id=property_id, severity=severity)
 
-    async def get_activity(
-        property_id: str, since: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_activity(property_id: str, since: str | None = None) -> list[dict[str, Any]]:
         """Return recent events + extraction summaries for a property."""
         return await client.get_activity(property_id, since=since)
 
-    async def propose_action(
-        property_id: str | None, action: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def propose_action(property_id: str | None, action: dict[str, Any]) -> dict[str, Any]:
         """Create a pending signal on behalf of an external AI. Human approves in the inbox."""
         return await client.propose_action(property_id=property_id, action=action)
 

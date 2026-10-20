@@ -6,7 +6,7 @@ entire backfill, not just one run. Hitting the cap mid-run sets
 ``hit_at`` and aborts the process cleanly; subsequent invocations read
 the same row and abort *immediately* before issuing any LLM calls.
 
-Reset is intentional and friction-gated — see
+Reset is intentional and friction-gated; see
 :func:`reset_label` and the ``--reset-cost-ledger`` CLI flag, which
 prompts for ``y/N``.
 
@@ -18,7 +18,7 @@ Wiring:
   against the cap and short-circuits when exceeded.
 - For best-fit accounting, the caller can call :func:`record_actual`
   after the response lands to reconcile against measured token usage.
-  Phase 8 keeps this simple: estimated cost == actual cost.
+  Currently the two are the same: estimated cost == actual cost.
 """
 
 from __future__ import annotations
@@ -45,13 +45,12 @@ class LedgerState:
     exhausted: bool
 
 
-class CostCapExceeded(RuntimeError):
+class CostCapExceededError(RuntimeError):
     """Raised when a charge would push spend beyond ``cap_usd``."""
 
     def __init__(self, label: str, cumulative: Decimal, cap: Decimal) -> None:
         super().__init__(
-            f"cost cap reached for label={label!r}: "
-            f"cumulative=${cumulative:.4f} cap=${cap:.4f}"
+            f"cost cap reached for label={label!r}: cumulative=${cumulative:.4f} cap=${cap:.4f}"
         )
         self.label = label
         self.cumulative = cumulative
@@ -85,7 +84,9 @@ def get_state(label: str, *, url: str | None = None) -> LedgerState | None:
     )
 
 
-def ensure_label(label: str, cap_usd: Decimal | float | str, *, url: str | None = None) -> LedgerState:
+def ensure_label(
+    label: str, cap_usd: Decimal | float | str, *, url: str | None = None
+) -> LedgerState:
     """Create the ledger row if missing; return current state."""
     cap = Decimal(str(cap_usd))
     ensure_migrations(url)
@@ -103,6 +104,8 @@ def ensure_label(label: str, cap_usd: Decimal | float | str, *, url: str | None 
         )
         row = cur.fetchone()
         conn.commit()
+    if row is None:  # unreachable: INSERT ... ON CONFLICT ... RETURNING always yields a row
+        raise RuntimeError(f"cost_ledger upsert returned no row for label={label}")
     return LedgerState(
         source_label=row[0],
         cumulative_usd=Decimal(row[1]),
@@ -120,7 +123,7 @@ def charge(
     """Add ``amount_usd`` to ``label`` and return the post-charge state.
 
     Raises:
-        CostCapExceeded: if the post-charge cumulative would exceed the
+        CostCapExceededError: if the post-charge cumulative would exceed the
             stored ``cap_usd``. The row's ``hit_at`` is set on first
             breach so future calls also short-circuit.
     """
@@ -161,7 +164,7 @@ def charge(
                 cumulative=str(cumulative),
                 cap=str(cap),
             )
-            raise CostCapExceeded(label, cumulative, cap)
+            raise CostCapExceededError(label, cumulative, cap)
 
         cur.execute(
             """
@@ -187,11 +190,28 @@ def charge(
     )
 
 
-def reset_label(label: str, *, url: str | None = None) -> None:
+# Labels with this prefix belong to tests and may be reset freely.
+TEST_LABEL_PREFIX = "test_"
+
+
+def reset_label(label: str, *, url: str | None = None, allow_production: bool = False) -> None:
     """Delete the ledger row for ``label``. Used by ``--reset-cost-ledger``.
 
-    The CLI prompts ``y/N`` before calling this.
+    Only labels starting with :data:`TEST_LABEL_PREFIX` can be reset by
+    default. Any other label is a real spend record, and deleting it while
+    a backfill is charging it crashes that backfill; resetting one needs
+    ``allow_production=True``, which the CLI passes only after its ``y/N``
+    prompt.
+
+    Raises:
+        ValueError: ``label`` is not a test label and ``allow_production``
+            is false. Nothing is deleted.
     """
+    if not label.startswith(TEST_LABEL_PREFIX) and not allow_production:
+        raise ValueError(
+            f"refusing to reset cost ledger label {label!r}: only labels starting with "
+            f"{TEST_LABEL_PREFIX!r} can be reset without allow_production=True"
+        )
     with _connect(url) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM cost_ledger WHERE source_label = %s", (label,))
         conn.commit()

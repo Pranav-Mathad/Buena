@@ -1,19 +1,20 @@
-"""Tests for Phase 9 Step 9.1 — uncertainty as first-class output.
+"""Tests for uncertainty as a first-class pipeline output.
 
 Coverage:
 
 * ``_apply_confidence_floor`` demotes sub-floor facts and preserves
   the rest.
-* The Gemini schema's new ``uncertain[]`` round-trips into
+* The extraction schema's ``uncertain[]`` list round-trips into
   ``ExtractionResult.uncertain``.
 * The validator's ``needs_review`` rejections route to
   ``uncertainty_events`` (via the worker helper) and are *not*
   written to ``rejected_updates``.
 * End-to-end DB integration: a vague-rent email lands in
   ``uncertainty_events``, not in ``facts``.
-* Step 9.2 regression: a building floor-count change from email
-  still ends up in ``rejected_updates`` (hard-reject path), not in
-  ``uncertainty_events``.
+* Hard-reject regression: routing ``needs_review`` rejections to the
+  uncertainty inbox must not divert hard rejections. A building
+  floor-count change from email still ends up in ``rejected_updates``,
+  not in ``uncertainty_events``.
 """
 
 from __future__ import annotations
@@ -24,12 +25,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
-from backend.pipeline import constraints  # noqa: F401 — registers constraints
-from backend.pipeline.applier import apply as apply_plan
+from backend.pipeline import constraints  # noqa: F401 (registers constraints)
 from backend.pipeline.applier import apply_uncertainties
-from backend.pipeline.differ import DiffPlan, FactDecision, diff, load_current_facts
+from backend.pipeline.differ import DiffPlan, FactDecision, load_current_facts
 from backend.pipeline.extractor import (
     CONFIDENCE_FLOOR,
     _apply_confidence_floor,
@@ -40,32 +39,14 @@ from backend.pipeline.validator import (
     validate,
 )
 from backend.pipeline.worker import _needs_review_to_uncertainty
-from backend.services.gemini import ExtractionResult
+from backend.services.llm import ExtractionResult
 from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark_async = pytest.mark.asyncio
 
 
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
 # ----------------------------------------------------------------------------
-# Confidence floor — pure unit tests
+# Confidence floor: pure unit tests
 # ----------------------------------------------------------------------------
 
 
@@ -154,9 +135,7 @@ def test_confidence_floor_threshold_is_inclusive_floor() -> None:
 
 def test_extraction_result_uncertain_default_empty() -> None:
     """An ExtractionResult without explicit uncertain[] defaults to []."""
-    r = ExtractionResult(
-        category="other", priority="low", facts_to_update=[], summary=""
-    )
+    r = ExtractionResult(category="other", priority="low", facts_to_update=[], summary="")
     assert r.uncertain == []
 
 
@@ -237,15 +216,14 @@ def test_validate_returns_both_kinds_separately() -> None:
 
 
 # ----------------------------------------------------------------------------
-# DB integration — vague rent email roundtrips through the pipeline
+# DB integration: vague rent email roundtrips through the pipeline
 # ----------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("db")
 async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> None:
     """The applier helper inserts a row whose columns mirror the input dict."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
 
     factory = get_sessionmaker()
@@ -253,11 +231,10 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
         b = (
             await session.execute(
                 text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Uncertainty Bldg') RETURNING id"
+                    "INSERT INTO buildings (address) VALUES ('Test Uncertainty Bldg') RETURNING id"
                 )
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -269,7 +246,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"test-uncertainty-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -282,7 +259,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     items = [
@@ -297,9 +274,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
     ]
 
     async with factory() as session:
-        n = await apply_uncertainties(
-            session, event_id=e.id, property_id=p.id, items=items
-        )
+        n = await apply_uncertainties(session, event_id=e.id, property_id=p.id, items=items)
         await session.commit()
     assert n == 1
 
@@ -316,7 +291,7 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert row is not None
         assert row.relevant_section == "financials"
         assert row.relevant_field == "rent_amount"
@@ -331,42 +306,36 @@ async def test_uncertainty_event_lands_in_table_via_apply_uncertainties() -> Non
             {"eid": e.id},
         )
         await session.execute(text("DELETE FROM events WHERE id = :id"), {"id": e.id})
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": p.id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": p.id})
         await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": b.id})
         await session.commit()
 
 
 @pytest.mark.asyncio
-async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
-    """Step 9.2 regression: a free-text floor-count change still goes to rejected_updates."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
+@pytest.mark.usefixtures("db")
+async def test_floor_count_email_still_hard_rejects_with_uncertainty_routing() -> None:
+    """A free-text floor-count change is still a hard reject, not an uncertainty."""
     ensure_migrations()
 
     factory = get_sessionmaker()
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test 9.1 Regression') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test Floor Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
                     """
                     INSERT INTO properties (name, address, building_id, aliases)
-                    VALUES ('Test 9.1 Prop', 'addr', :bid, ARRAY['x'])
+                    VALUES ('Test Floor Prop', 'addr', :bid, ARRAY['x'])
                     RETURNING id
                     """
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         # Pre-existing floor_count fact so the constraint sees a current value.
         ref0 = f"seed-{uuid4().hex[:8]}"
         e0 = (
@@ -380,7 +349,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"ref": ref0, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.execute(
             text(
                 """
@@ -408,7 +377,7 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     plan = DiffPlan(
@@ -460,16 +429,14 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert rej is not None
         assert rej.proposed_field == "floor_count"
         assert rej.constraint_name == "building_floor_count_immutable"
         assert rej.reviewed_status == "pending"
         unc_count = (
             await session.execute(
-                text(
-                    "SELECT COUNT(*) FROM uncertainty_events WHERE event_id = :eid"
-                ),
+                text("SELECT COUNT(*) FROM uncertainty_events WHERE event_id = :eid"),
                 {"eid": e.id},
             )
         ).scalar()
@@ -480,17 +447,11 @@ async def test_floor_count_email_still_hard_rejects_after_step91() -> None:
             text("DELETE FROM rejected_updates WHERE event_id IN (:eid, :seed)"),
             {"eid": e.id, "seed": e0.id},
         )
-        await session.execute(
-            text("DELETE FROM facts WHERE property_id = :pid"), {"pid": p.id}
-        )
+        await session.execute(text("DELETE FROM facts WHERE property_id = :pid"), {"pid": p.id})
         await session.execute(
             text("DELETE FROM events WHERE id IN (:eid, :seed)"),
             {"eid": e.id, "seed": e0.id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id})
         await session.commit()

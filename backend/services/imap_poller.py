@@ -1,7 +1,7 @@
 """IMAP inbox poller.
 
-Polls the configured mailbox every tick (APScheduler, ~10s per KEYSTONE
-Phase 1). Each new message becomes an ``email`` event, idempotent on
+Polls the configured mailbox every tick (APScheduler, ~10s). Each new
+message becomes an ``email`` event, idempotent on
 ``Message-ID`` so replaying the inbox after a restart is safe.
 """
 
@@ -21,20 +21,10 @@ from backend.pipeline.events import insert_event
 log = structlog.get_logger(__name__)
 
 
-def _imap_configured() -> bool:
-    """Return True when IMAP env is real enough to attempt a connection."""
+def is_configured() -> bool:
+    """True when IMAP host, user and a real password are set."""
     s = get_settings()
-    configured = bool(
-        s.imap_host and s.imap_user and s.imap_password
-    ) and s.imap_password != "replace-me"
-
-    log.info(
-        "imap.config.check",
-        host=s.imap_host,
-        user=s.imap_user,
-        configured=configured,
-    )
-    return configured
+    return bool(s.imap_host and s.imap_user and s.imap_password) and s.imap_password != "replace-me"
 
 
 def _flatten_body(msg: Message) -> str:
@@ -43,13 +33,11 @@ def _flatten_body(msg: Message) -> str:
         parts: list[str] = []
         for part in msg.walk():
             if part.get_content_type() == "text/plain" and not part.is_multipart():
-                payload = part.get_payload(decode=True) or b""
+                payload = part.get_payload(decode=True)
+                if not isinstance(payload, bytes):
+                    continue
                 try:
-                    parts.append(
-                        payload.decode(
-                            part.get_content_charset() or "utf-8", "replace"
-                        )
-                    )
+                    parts.append(payload.decode(part.get_content_charset() or "utf-8", "replace"))
                 except LookupError:
                     parts.append(payload.decode("utf-8", "replace"))
         if parts:
@@ -57,9 +45,7 @@ def _flatten_body(msg: Message) -> str:
 
     payload = msg.get_payload(decode=True) or b""
     if isinstance(payload, bytes):
-        return payload.decode(
-            msg.get_content_charset() or "utf-8", "replace"
-        ).strip()
+        return payload.decode(msg.get_content_charset() or "utf-8", "replace").strip()
     return str(payload)
 
 
@@ -113,11 +99,12 @@ async def _ingest(message_id: str, raw: bytes) -> bool:
 
 async def poll_once() -> int:
     """Fetch new messages once."""
-    log.info("imap.poll.start")
-
-    if not _imap_configured():
-        log.warning("imap.skip", reason="not_configured")
+    if not is_configured():
+        # The scheduler only registers this job when IMAP is configured, so
+        # reaching here means a manual call; nothing to report.
+        log.debug("imap.skip", reason="not_configured")
         return 0
+    log.debug("imap.poll.start")
 
     settings = get_settings()
     inserted = 0

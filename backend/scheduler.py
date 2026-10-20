@@ -1,35 +1,35 @@
-"""APScheduler setup — worker ticks + IMAP poll.
+"""APScheduler setup: worker ticks + IMAP poll.
 
 Called from the FastAPI lifespan. The scheduler runs:
 
 - worker_tick every 2s: drains the events queue
-- imap_poll every 10s: fetches new mail
-- erp_poll every 30s
+- imap_poll every 10s: fetches new mail (only when IMAP is configured)
+- erp_poll every 30s (only when MOCK_ERP_URL is set)
 - signal_eval every 30s
-- regulation_watch every 60m
 
 All jobs are coalescing + no-overlap.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from backend.config import get_settings
 from backend.pipeline.worker import process_batch
 from backend.services.erp_poller import poll_once as erp_poll_once
+from backend.services.imap_poller import is_configured as imap_is_configured
 from backend.services.imap_poller import poll_once as imap_poll_once
-from backend.services.tavily import watch_regulations
 from backend.signals.evaluator import evaluate_all as evaluate_signals
 
 log = structlog.get_logger(__name__)
 
 
-def _now():
+def _now() -> datetime:
     """Return current UTC time for immediate scheduling."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -47,27 +47,30 @@ def build_scheduler() -> AsyncIOScheduler:
         next_run_time=_now(),
     )
 
-    # IMAP poller
-    scheduler.add_job(
-        imap_poll_once,
-        "interval",
-        seconds=10,
-        id="imap_poll",
-        coalesce=True,
-        max_instances=1,
-        next_run_time=_now(),
-    )
+    # IMAP poller: only registered when credentials are configured.
+    if imap_is_configured():
+        scheduler.add_job(
+            imap_poll_once,
+            "interval",
+            seconds=10,
+            id="imap_poll",
+            coalesce=True,
+            max_instances=1,
+            next_run_time=_now(),
+        )
 
-    # ERP poller
-    scheduler.add_job(
-        erp_poll_once,
-        "interval",
-        seconds=30,
-        id="erp_poll",
-        coalesce=True,
-        max_instances=1,
-        next_run_time=_now(),
-    )
+    # ERP poller: only registered when a feed is configured, so an unset
+    # MOCK_ERP_URL produces no job and no connection errors in the log.
+    if get_settings().mock_erp_url:
+        scheduler.add_job(
+            erp_poll_once,
+            "interval",
+            seconds=30,
+            id="erp_poll",
+            coalesce=True,
+            max_instances=1,
+            next_run_time=_now(),
+        )
 
     # Signal evaluator
     scheduler.add_job(
@@ -75,17 +78,6 @@ def build_scheduler() -> AsyncIOScheduler:
         "interval",
         seconds=30,
         id="signal_eval",
-        coalesce=True,
-        max_instances=1,
-        next_run_time=_now(),
-    )
-
-    # Regulation watcher
-    scheduler.add_job(
-        watch_regulations,
-        "interval",
-        minutes=60,
-        id="regulation_watch",
         coalesce=True,
         max_instances=1,
         next_run_time=_now(),

@@ -1,4 +1,4 @@
-"""Idempotent seeder for the Keystone demo dataset.
+"""Idempotent seeder for the Keystone sample dataset.
 
 Run as ``python -m seed.seed``. Safe to re-run: existing records are matched on
 natural keys (email, address, (source, source_ref), …) and left untouched.
@@ -45,11 +45,17 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "backend" / "db" / "schem
 Cursor = psycopg2.extensions.cursor
 
 
+def _returned_id(cur: Cursor) -> str:
+    """The ``id`` from an ``INSERT ... RETURNING id`` just executed on ``cur``."""
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("INSERT ... RETURNING id returned no row")
+    return str(row[0])
+
+
 def _schema_applied(cur: Cursor) -> bool:
     """Return True if the canonical ``properties`` table already exists."""
-    cur.execute(
-        "SELECT to_regclass('public.properties') IS NOT NULL AS exists;"
-    )
+    cur.execute("SELECT to_regclass('public.properties') IS NOT NULL AS exists;")
     row = cur.fetchone()
     return bool(row and row[0])
 
@@ -70,8 +76,8 @@ def _upsert_liegenschaft(
 ) -> str:
     """Insert a Liegenschaft (WEG) row keyed on ``buena_liegenschaft_id``.
 
-    Phase 8.1 introduces a tier above buildings: one Liegenschaft owns
-    N Häuser. The loader passes the customer's stable ID; later events
+    A Liegenschaft is the ownership tier above buildings: one
+    Liegenschaft owns N Häuser. The loader passes the customer's stable ID; later events
     that route to a WEG attach to the resulting UUID.
     """
     if buena_liegenschaft_id:
@@ -90,12 +96,10 @@ def _upsert_liegenschaft(
         """,
         (name, buena_liegenschaft_id, json.dumps(metadata or {})),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
-def _set_building_liegenschaft(
-    cur: Cursor, building_id: str, liegenschaft_id: str
-) -> None:
+def _set_building_liegenschaft(cur: Cursor, building_id: str, liegenschaft_id: str) -> None:
     """Idempotently attach a building to its Liegenschaft (no-op if already set)."""
     cur.execute(
         """
@@ -122,7 +126,7 @@ def _upsert_owner(cur: Cursor, owner: OwnerSeed) -> str:
         """,
         (owner.name, owner.email, owner.phone, json.dumps(owner.preferences)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_building(cur: Cursor, building: BuildingSeed) -> str:
@@ -139,7 +143,7 @@ def _upsert_building(cur: Cursor, building: BuildingSeed) -> str:
         """,
         (building.address, building.year_built, json.dumps(building.metadata)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_contractor(cur: Cursor, contractor: ContractorSeed) -> str:
@@ -156,7 +160,7 @@ def _upsert_contractor(cur: Cursor, contractor: ContractorSeed) -> str:
         """,
         (contractor.name, contractor.specialty, contractor.rating, json.dumps(contractor.contact)),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_property(
@@ -167,7 +171,7 @@ def _upsert_property(
 ) -> str:
     """Insert a property if absent; return the UUID as a string.
 
-    When ``prop.metadata`` is non-empty (Phase 8 Buena loader path) the
+    When ``prop.metadata`` is non-empty (the Buena loader path) the
     JSONB column carries the richer payload; otherwise the legacy
     ``{"seed_key": prop.key}`` shape is preserved so the hand-crafted
     Berliner seed continues to work bit-identically.
@@ -195,13 +199,13 @@ def _upsert_property(
             json.dumps(metadata),
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
     """Insert a tenant if absent; return the UUID as a string.
 
-    When ``tenant.metadata`` is non-empty (Phase 8 Buena loader path)
+    When ``tenant.metadata`` is non-empty (the Buena loader path)
     the JSONB column carries it; the original Berliner seed leaves it
     empty and the column defaults to ``'{}'``.
     """
@@ -227,7 +231,7 @@ def _upsert_tenant(cur: Cursor, property_id: str, tenant: TenantSeed) -> str:
             json.dumps(tenant.metadata or {}),
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_relationship(
@@ -268,7 +272,7 @@ def _upsert_event(
     """Insert an event keyed by (source, source_ref); return UUID as string.
 
     Seed events are stamped ``processed_at = received_at`` because their facts
-    were authored by hand — we don't want the live pipeline to re-extract them
+    were authored by hand; we don't want the live pipeline to re-extract them
     on startup and produce noisy rule-based duplicates.
     """
     cur.execute(
@@ -295,7 +299,7 @@ def _upsert_event(
             event.received_at,
         ),
     )
-    return cast(str, cur.fetchone()[0])
+    return _returned_id(cur)
 
 
 def _upsert_fact(
@@ -436,12 +440,12 @@ def seed(connection_url: str) -> dict[str, Any]:
 
 
 def main() -> int:
-    """CLI entry point — returns a POSIX exit code."""
+    """CLI entry point; returns a POSIX exit code."""
     configure_logging()
     settings = get_settings()
     try:
         seed(settings.database_url_sync)
-    except Exception:  # noqa: BLE001 — surface any failure clearly
+    except Exception:  # noqa: BLE001 (surface any failure clearly)
         log.exception("seed.failed")
         return 1
     return 0

@@ -2,7 +2,7 @@
 
 A building only has one year built; this is a Bauamt fact, not a
 free-text fact. We reject *any* attempt to change it after the
-stammdaten load — even structural permits don't change the year
+stammdaten load; even structural permits don't change the year
 built. Corrections are an admin action via the override endpoint
 with a written audit reason.
 """
@@ -41,13 +41,11 @@ class BuildingYearBuiltImmutable:
     ) -> ValidationResult:
         stammdaten_value = event_stammdaten(event, "building").get("year_built")
         if current is None:
-            if stammdaten_value is not None and values_differ(
-                proposed.value, stammdaten_value
-            ):
+            if stammdaten_value is not None and values_differ(proposed.value, stammdaten_value):
                 return ValidationResult.rejected(
                     "building year-built contradicts stammdaten "
                     f"({stammdaten_value} on file, event claims "
-                    f"{proposed.value}) — corrections require an explicit "
+                    f"{proposed.value}): corrections require an explicit "
                     "admin override with audit reason",
                 )
             return ValidationResult.passed("no prior fact, seeding")

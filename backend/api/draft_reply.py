@@ -1,14 +1,13 @@
-"""``POST /draft-reply`` — context-aware reply drafter.
+"""``POST /draft-reply``: context-aware reply drafting.
 
-The frontend's DraftReply page submits an inbound email/Slack message;
-this endpoint pulls the property's recent facts and events, asks
-Pioneer (Claude) to draft a reply that cites prior context when
-relevant, and returns the structured payload the page renders into
-the "With Keystone — context-aware reply" panel.
+The frontend's DraftReply page submits an inbound email or Slack message;
+this endpoint pulls the property's recent facts and events, asks the
+configured LLM provider to draft a reply that cites prior context where
+relevant, and returns the structured payload the page renders.
 
-The endpoint always returns 200 when the LLM call succeeds, even when
-no relevant context exists (``knows_about_incident=false``,
-``context=[]``). Pioneer transport failure is the only 5xx path.
+The endpoint returns 200 whenever the LLM call succeeds, even when no
+relevant context exists (``knows_about_incident=false``, ``context=[]``).
+It returns 503 when no provider is configured or the call fails.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
 from backend.services import draft_reply as draft_reply_service
-from backend.services import pioneer_llm
+from backend.services.llm import LLMUnavailableError
 
 router = APIRouter(prefix="/draft-reply", tags=["draft-reply"])
 log = structlog.get_logger(__name__)
@@ -85,7 +84,7 @@ async def _resolve_property(
 
     Returns ``(resolved_id, display_name)``. ``resolved_id`` may be
     ``None`` when the caller supplied only a name that doesn't match
-    any seeded property — in that case we still return the supplied
+    any seeded property; in that case we still return the supplied
     name so the LLM can draft a generic holding reply.
     """
     if property_id is not None:
@@ -211,11 +210,11 @@ async def draft_reply(
             recent_facts=facts,
             recent_events=events,
         )
-    except pioneer_llm.PioneerUnavailable as exc:
-        log.warning("draft_reply.unavailable", error=str(exc))
+    except LLMUnavailableError as exc:
+        log.warning("draft_reply.unavailable", error=str(exc)[:300])
         raise HTTPException(
             status_code=503,
-            detail=f"draft service unavailable: {exc}",
+            detail=f"Reply drafting is unavailable: {exc}",
         ) from exc
 
     context_items = [
@@ -244,5 +243,5 @@ async def draft_reply(
         context=context_items,
         knows_about_incident=result["knows_about_incident"],
         elapsed_ms=elapsed_ms,
-        model=str(result.get("model") or pioneer_llm.PIONEER_DEFAULT_MODEL),
+        model=str(result.get("model") or ""),
     )

@@ -3,20 +3,20 @@
 The runner builds one :class:`Row` per ground-truth example, and
 :class:`Report` aggregates them. All scores are computed honestly:
 
-- **Precision / Recall / F1 per category** — match key is
+- **Precision / Recall / F1 per category**: match key is
   ``(section, field)``. Value-equality is reported as a separate
   ``value_match_rate`` so we can see when the extractor finds the
   right slot but a different (still-defensible) phrasing.
-- **Routing accuracy** — fraction whose extracted scope matches
-  ``ground_truth.expected_scope`` (Phase 8.1: ``property | building |
-  liegenschaft | unrouted``).
-- **Calibration curve** — confidence-bucketed accuracy where
+- **Routing accuracy**: fraction whose extracted scope matches
+  ``ground_truth.expected_scope`` (one of ``property | building |
+  liegenschaft | unrouted``, the scopes the structured router emits).
+- **Calibration curve**: confidence-bucketed accuracy where
   "correct" means the extractor placed the fact in the right
   ``(section, field)`` slot. Value-equality lives in the per-section
   ``value_match_rate`` column so paraphrase doesn't pollute the
   calibration signal. The bucket midpoint should approximate accuracy
   if the extractor is honest about its uncertainty.
-- **Top-N failures** — rows where the extractor diverged most.
+- **Top-N failures**: rows where the extractor diverged most.
 
 No smoothing, no rounding-to-zero, no "but the model meant well".
 """
@@ -26,7 +26,6 @@ from __future__ import annotations
 import textwrap
 from dataclasses import dataclass, field
 from typing import Any
-
 
 # Confidence buckets for the calibration curve.
 CALIBRATION_BUCKETS: tuple[tuple[float, float], ...] = (
@@ -55,7 +54,7 @@ class Row:
     # extractor's facts_to_update[]
     extracted_facts: list[dict[str, Any]]
 
-    # Per-fact match details — len(matches) == len(expected_facts).
+    # Per-fact match details: len(matches) == len(expected_facts).
     # Each entry: {section, field, expected_value, extracted_value,
     # extracted_confidence, key_matched, value_matched}
     fact_matches: list[dict[str, Any]] = field(default_factory=list)
@@ -169,7 +168,7 @@ class Report:
         Iterates *every fact the extractor produced* (matched or
         spurious). A fact counts as ``correct`` when its
         ``(section, field)`` key matches a ground-truth fact for the
-        same row — i.e. the extractor put the observation in the right
+        same row, i.e. the extractor put the observation in the right
         slot. Value-equality is reported separately via
         :attr:`CategoryStats.value_match_rate`; conflating the two here
         punishes paraphrase even when the model nailed the slot.
@@ -180,8 +179,7 @@ class Report:
         buckets = [CalibrationBucket(low=lo, high=hi) for lo, hi in CALIBRATION_BUCKETS]
         for row in self.rows:
             expected_keys: set[tuple[str, str]] = {
-                (str(ef.get("section", "")), str(ef.get("field", "")))
-                for ef in row.expected_facts
+                (str(ef.get("section", "")), str(ef.get("field", ""))) for ef in row.expected_facts
             }
 
             for xf in row.extracted_facts:
@@ -214,7 +212,8 @@ class Report:
             missed = sum(1 for fm in row.fact_matches if not fm.get("key_matched"))
             spurious = len(row.spurious_facts)
             score = (
-                float(missed) + float(spurious)
+                float(missed)
+                + float(spurious)
                 + (0.5 if not row.category_correct else 0.0)
                 + (1.0 if not row.routing_correct else 0.0)
             )
@@ -230,9 +229,9 @@ class Report:
         return {"prompt_tokens": prompt, "completion_tokens": completion}
 
     def render_markdown(self) -> str:
-        """Pretty markdown summary suitable for committing to ``eval/runs/``."""
+        """Pretty markdown summary suitable for committing to ``docs/eval-runs/``."""
         lines: list[str] = [
-            f"# Eval report — {self.set_name}",
+            f"# Eval report: {self.set_name}",
             "",
             f"- rows scored: **{self.n_rows}**",
             f"- category accuracy: **{self.category_accuracy:.1%}**",
@@ -252,7 +251,13 @@ class Report:
                 f"{cs.f1:.2f} | {cs.value_match_rate:.2f} |"
             )
 
-        lines += ["", "## Calibration curve", "", "| bucket | n | correct | observed accuracy |", "|---|---:|---:|---:|"]
+        lines += [
+            "",
+            "## Calibration curve",
+            "",
+            "| bucket | n | correct | observed accuracy |",
+            "|---|---:|---:|---:|",
+        ]
         for b in self.calibration():
             lines.append(
                 f"| {b.low:.2f}–{b.high:.2f} | {b.count} | {b.correct} | {b.accuracy:.2f} |"
@@ -267,7 +272,7 @@ class Report:
             ]
             for r in failures:
                 summary = r.failure_summary or _row_diff(r)
-                lines.append(f"- `{r.event_id}` — {textwrap.shorten(summary, width=160)}")
+                lines.append(f"- `{r.event_id}`: {textwrap.shorten(summary, width=160)}")
 
         return "\n".join(lines).rstrip() + "\n"
 
@@ -276,27 +281,17 @@ def _row_diff(row: Row) -> str:
     """One-line diff between expected and extracted for the failure list."""
     parts: list[str] = []
     if not row.category_correct:
-        parts.append(
-            f"category {row.expected_category!r}→{row.extracted_category!r}"
-        )
+        parts.append(f"category {row.expected_category!r}→{row.extracted_category!r}")
     if not row.routing_correct:
-        parts.append(
-            f"scope {row.expected_scope!r}→{row.extracted_scope!r}"
-        )
-    missed = [
-        fm for fm in row.fact_matches if not fm.get("key_matched")
-    ]
+        parts.append(f"scope {row.expected_scope!r}→{row.extracted_scope!r}")
+    missed = [fm for fm in row.fact_matches if not fm.get("key_matched")]
     if missed:
-        parts.append(
-            "missed "
-            + ", ".join(f"{m['section']}.{m['field']}" for m in missed[:3])
-        )
+        parts.append("missed " + ", ".join(f"{m['section']}.{m['field']}" for m in missed[:3]))
     if row.spurious_facts:
         parts.append(
             "spurious "
             + ", ".join(
-                f"{f.get('section', '?')}.{f.get('field', '?')}"
-                for f in row.spurious_facts[:3]
+                f"{f.get('section', '?')}.{f.get('field', '?')}" for f in row.spurious_facts[:3]
             )
         )
     return "; ".join(parts) or "(no measurable diff)"
@@ -357,10 +352,7 @@ def score_row(
         # so paraphrased-but-equivalent extractions count.
         value_matched = bool(
             expected_value
-            and (
-                expected_value in extracted_value
-                or extracted_value in expected_value
-            )
+            and (expected_value in extracted_value or extracted_value in expected_value)
         )
         fact_matches.append(
             {

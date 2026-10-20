@@ -1,4 +1,4 @@
-"""Hand-crafted seed data for the Keystone demo.
+"""Hand-crafted seed data: a small synthetic portfolio of four properties.
 
 Data is keyed by stable string identifiers (``owner_key``, ``building_key``,
 ``event_key``, …) so :mod:`seed.seed` can resolve cross-references in a single
@@ -6,17 +6,18 @@ pass without relying on generated UUIDs. Every event carries a source and a
 timestamp; every fact references an event by key so that :func:`render_markdown`
 can emit the required ``[source: <event_id>]`` links.
 
-Dates are anchored on ``DEMO_NOW`` (2026-04-24) so the seeded history always
-spans the trailing six months relative to the demo.
+Dates are anchored on a fixed ``DEMO_NOW`` (2026-04-24) rather than the wall
+clock, so the seeded history always spans the same six months and relative
+dates in the rendered files are reproducible.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-UTC = timezone.utc
+UTC = UTC
 DEMO_NOW: datetime = datetime(2026, 4, 24, 12, 0, 0, tzinfo=UTC)
 
 
@@ -28,7 +29,7 @@ def days_ago(days: int, hour: int = 9, minute: int = 0) -> datetime:
 
 @dataclass(frozen=True)
 class OwnerSeed:
-    """Owner record — matched on ``email`` for idempotent upserts."""
+    """Owner record, matched on ``email`` for idempotent upserts."""
 
     key: str
     name: str
@@ -39,7 +40,7 @@ class OwnerSeed:
 
 @dataclass(frozen=True)
 class BuildingSeed:
-    """Building record — matched on ``address`` for idempotent upserts."""
+    """Building record, matched on ``address`` for idempotent upserts."""
 
     key: str
     address: str
@@ -49,7 +50,7 @@ class BuildingSeed:
 
 @dataclass(frozen=True)
 class ContractorSeed:
-    """Contractor record — matched on ``name`` for idempotent upserts."""
+    """Contractor record, matched on ``name`` for idempotent upserts."""
 
     key: str
     name: str
@@ -60,7 +61,7 @@ class ContractorSeed:
 
 @dataclass(frozen=True)
 class TenantSeed:
-    """Tenant record — matched on ``(property, email)`` for idempotency."""
+    """Tenant record, matched on ``(property, email)`` for idempotency."""
 
     name: str
     email: str
@@ -93,7 +94,7 @@ class FactSeed:
 
 @dataclass(frozen=True)
 class PropertySeed:
-    """Full demo fixture for a single property."""
+    """Full seed fixture for a single property."""
 
     key: str
     name: str
@@ -188,7 +189,8 @@ CONTRACTORS: list[ContractorSeed] = [
 
 
 # -----------------------------------------------------------------------------
-# Property 1 — Berliner Strasse 12, Apt 4B (demo hero)
+# Property 1: Berliner Strasse 12, Apt 4B (richest history: recurring
+# heating and boiler faults that escalate over the winter)
 # -----------------------------------------------------------------------------
 
 _BERLIN_4B_EVENTS: list[EventSeed] = [
@@ -210,9 +212,9 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         source="email",
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
-            "Subject: Elevator noise — Apt 4B\n\n"
+            "Subject: Elevator noise, Apt 4B\n\n"
             "Hi, the elevator is making a grinding noise when it reaches the "
-            "top floor. Nothing urgent but worth a look. — Lukas"
+            "top floor. Nothing urgent but worth a look.\n\nLukas"
         ),
         received_at=days_ago(178),
     ),
@@ -221,10 +223,10 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         source="email",
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
-            "Subject: Heating not working — Apt 4B\n\n"
+            "Subject: Heating not working, Apt 4B\n\n"
             "The radiators are cold since last night. The boiler in the "
-            "basement is making a loud rattling noise. Can someone come by? "
-            "— Lukas"
+            "basement is making a loud rattling noise. Can someone come by?\n\n"
+            "Lukas"
         ),
         received_at=days_ago(161),
     ),
@@ -245,7 +247,7 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
             "From: anna.weber@tenant.demo\n"
             "Subject: Heating stopped again\n\n"
             "Heat cut out again overnight, no hot water this morning. Baby in "
-            "the apartment — can we get this fixed today? — Anna"
+            "the apartment. Can we get this fixed today?\n\nAnna"
         ),
         received_at=days_ago(104),
     ),
@@ -264,9 +266,9 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: lukas.weber@tenant.demo\n"
             "Subject: Hot water intermittent\n\n"
-            "Third time this winter — hot water keeps shutting off, boiler "
+            "Third time this winter: hot water keeps shutting off, boiler "
             "seems to kick off and on. Something is clearly not right with "
-            "the heating system. — Lukas"
+            "the heating system.\n\nLukas"
         ),
         received_at=days_ago(50),
     ),
@@ -274,7 +276,7 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
         key="berlin_4b_tavily_neighborhood",
         source="web",
         raw_content=(
-            "Tavily snapshot (Wilmersdorf): median 2BR cold rent EUR 1,280; "
+            "Web snapshot (Wilmersdorf): median 2BR cold rent EUR 1,280; "
             "Berlin Mietspiegel 2025 caps rent adjustments at CPI+1.5% for "
             "pre-1990 stock."
         ),
@@ -283,42 +285,94 @@ _BERLIN_4B_EVENTS: list[EventSeed] = [
 ]
 
 _BERLIN_4B_FACTS: list[FactSeed] = [
-    FactSeed("overview", "unit_type", "2-bedroom apartment, 78 sqm, 4th floor",
-             0.98, "berlin_4b_lease_2024"),
-    FactSeed("overview", "building_notes",
-             "Part of Berliner Strasse 12 — pre-1990 building, shared central gas boiler.",
-             0.95, "berlin_4b_lease_2024"),
-    FactSeed("overview", "neighborhood",
-             "Wilmersdorf, Berlin. Median 2BR cold rent EUR 1,280 (Mietspiegel 2025).",
-             0.8, "berlin_4b_tavily_neighborhood"),
-    FactSeed("tenants", "primary_tenants", "Lukas Weber and Anna Weber (2 adults, 1 infant)",
-             0.97, "berlin_4b_lease_2024"),
-    FactSeed("tenants", "tenant_contact", "lukas.weber@tenant.demo / anna.weber@tenant.demo",
-             0.95, "berlin_4b_heat_jan"),
+    FactSeed(
+        "overview",
+        "unit_type",
+        "2-bedroom apartment, 78 sqm, 4th floor",
+        0.98,
+        "berlin_4b_lease_2024",
+    ),
+    FactSeed(
+        "overview",
+        "building_notes",
+        "Part of Berliner Strasse 12, pre-1990 building, shared central gas boiler.",
+        0.95,
+        "berlin_4b_lease_2024",
+    ),
+    FactSeed(
+        "overview",
+        "neighborhood",
+        "Wilmersdorf, Berlin. Median 2BR cold rent EUR 1,280 (Mietspiegel 2025).",
+        0.8,
+        "berlin_4b_tavily_neighborhood",
+    ),
+    FactSeed(
+        "tenants",
+        "primary_tenants",
+        "Lukas Weber and Anna Weber (2 adults, 1 infant)",
+        0.97,
+        "berlin_4b_lease_2024",
+    ),
+    FactSeed(
+        "tenants",
+        "tenant_contact",
+        "lukas.weber@tenant.demo / anna.weber@tenant.demo",
+        0.95,
+        "berlin_4b_heat_jan",
+    ),
     FactSeed("tenants", "move_in_date", "2024-09-01", 0.99, "berlin_4b_lease_2024"),
     FactSeed("lease", "start_date", "2024-09-01", 0.99, "berlin_4b_lease_2024"),
     FactSeed("lease", "end_date", "2026-08-31", 0.99, "berlin_4b_lease_2024"),
-    FactSeed("lease", "monthly_rent", "EUR 1,200 cold + EUR 180 utilities advance",
-             0.99, "berlin_4b_lease_2024"),
+    FactSeed(
+        "lease",
+        "monthly_rent",
+        "EUR 1,200 cold + EUR 180 utilities advance",
+        0.99,
+        "berlin_4b_lease_2024",
+    ),
     FactSeed("lease", "deposit", "EUR 3,600 held", 0.99, "berlin_4b_lease_2024"),
-    FactSeed("maintenance", "elevator_noise_2025_10",
-             "Elevator grinding noise reported on the top floor (non-urgent).",
-             0.85, "berlin_4b_elevator_202510"),
-    FactSeed("maintenance", "heating_issue_2025_11",
-             "Cold radiators + rattling boiler — Bob's Plumbing bled radiators and reset unit.",
-             0.92, "berlin_4b_heat_nov"),
-    FactSeed("maintenance", "heating_issue_2026_01",
-             "Overnight heat + hot water cutout; tenant has infant — escalated same day.",
-             0.94, "berlin_4b_heat_jan"),
-    FactSeed("maintenance", "heating_issue_2026_03",
-             "Hot water intermittent, boiler cycling off; third heating incident in 5 months.",
-             0.93, "berlin_4b_heat_mar"),
-    FactSeed("maintenance", "preferred_contractor",
-             "Bob's Plumbing — boiler specialist familiar with the Vitoplex unit.",
-             0.9, "berlin_4b_contractor_nov"),
-    FactSeed("financials", "rent_status_ytd",
-             "2026-Q1 rent EUR 3,600 received in full; 0 late payments.",
-             0.99, "berlin_4b_rent_q1"),
+    FactSeed(
+        "maintenance",
+        "elevator_noise_2025_10",
+        "Elevator grinding noise reported on the top floor (non-urgent).",
+        0.85,
+        "berlin_4b_elevator_202510",
+    ),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2025_11",
+        "Cold radiators + rattling boiler; Bob's Plumbing bled radiators and reset unit.",
+        0.92,
+        "berlin_4b_heat_nov",
+    ),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2026_01",
+        "Overnight heat + hot water cutout; tenant has infant, escalated same day.",
+        0.94,
+        "berlin_4b_heat_jan",
+    ),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2026_03",
+        "Hot water intermittent, boiler cycling off; third heating incident in 5 months.",
+        0.93,
+        "berlin_4b_heat_mar",
+    ),
+    FactSeed(
+        "maintenance",
+        "preferred_contractor",
+        "Bob's Plumbing, boiler specialist familiar with the Vitoplex unit.",
+        0.9,
+        "berlin_4b_contractor_nov",
+    ),
+    FactSeed(
+        "financials",
+        "rent_status_ytd",
+        "2026-Q1 rent EUR 3,600 received in full; 0 late payments.",
+        0.99,
+        "berlin_4b_rent_q1",
+    ),
 ]
 
 BERLIN_4B = PropertySeed(
@@ -349,7 +403,8 @@ BERLIN_4B = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 2 — Berliner Strasse 12, Apt 2A (pair for cross-property signal)
+# Property 2: Berliner Strasse 12, Apt 2A (shares a boiler with Apt 4B, so
+# the two properties together trigger a cross-property signal)
 # -----------------------------------------------------------------------------
 
 _BERLIN_2A_EVENTS: list[EventSeed] = [
@@ -371,8 +426,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: No heat overnight\n\n"
-            "Woke up freezing this morning — radiators were stone cold from "
-            "around 2am. Came back on by 8am. — Felix"
+            "Woke up freezing this morning; radiators were stone cold from "
+            "around 2am. Came back on by 8am.\n\nFelix"
         ),
         received_at=days_ago(127),
     ),
@@ -388,8 +443,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: Boiler making loud noise\n\n"
-            "Every night around midnight the boiler starts banging — it's "
-            "loud enough that I can hear it through the floor. — Felix"
+            "Every night around midnight the boiler starts banging, and it's "
+            "loud enough that I can hear it through the floor.\n\nFelix"
         ),
         received_at=days_ago(81),
     ),
@@ -409,8 +464,8 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         raw_content=(
             "From: felix.fischer@tenant.demo\n"
             "Subject: Heating inconsistent\n\n"
-            "Warm in the morning, cold at night. Been happening all week. "
-            "— Felix"
+            "Warm in the morning, cold at night. Been happening all week.\n\n"
+            "Felix"
         ),
         received_at=days_ago(35),
     ),
@@ -418,7 +473,7 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
         key="berlin_2a_compliance_apr",
         source="pdf",
         raw_content=(
-            "Gebäudeversicherung certificate — policy no. HDI-BER-2024-884. "
+            "Gebäudeversicherung certificate, policy no. HDI-BER-2024-884. "
             "Property: Berliner Strasse 12. Valid through 2026-12-31."
         ),
         received_at=days_ago(19),
@@ -426,39 +481,75 @@ _BERLIN_2A_EVENTS: list[EventSeed] = [
 ]
 
 _BERLIN_2A_FACTS: list[FactSeed] = [
-    FactSeed("overview", "unit_type", "1-bedroom apartment, 52 sqm, 2nd floor",
-             0.97, "berlin_2a_lease_2025"),
-    FactSeed("overview", "building_notes",
-             "Part of Berliner Strasse 12 — shared central boiler with Apt 4B.",
-             0.95, "berlin_2a_lease_2025"),
-    FactSeed("tenants", "primary_tenants", "Felix Fischer (single occupant)",
-             0.98, "berlin_2a_lease_2025"),
-    FactSeed("tenants", "tenant_contact", "felix.fischer@tenant.demo",
-             0.95, "berlin_2a_heat_dec"),
+    FactSeed(
+        "overview",
+        "unit_type",
+        "1-bedroom apartment, 52 sqm, 2nd floor",
+        0.97,
+        "berlin_2a_lease_2025",
+    ),
+    FactSeed(
+        "overview",
+        "building_notes",
+        "Part of Berliner Strasse 12, shared central boiler with Apt 4B.",
+        0.95,
+        "berlin_2a_lease_2025",
+    ),
+    FactSeed(
+        "tenants",
+        "primary_tenants",
+        "Felix Fischer (single occupant)",
+        0.98,
+        "berlin_2a_lease_2025",
+    ),
+    FactSeed("tenants", "tenant_contact", "felix.fischer@tenant.demo", 0.95, "berlin_2a_heat_dec"),
     FactSeed("tenants", "move_in_date", "2025-11-01", 0.99, "berlin_2a_lease_2025"),
     FactSeed("lease", "start_date", "2025-11-01", 0.99, "berlin_2a_lease_2025"),
     FactSeed("lease", "end_date", "2027-10-31", 0.99, "berlin_2a_lease_2025"),
-    FactSeed("lease", "monthly_rent", "EUR 1,050 cold",
-             0.99, "berlin_2a_lease_2025"),
+    FactSeed("lease", "monthly_rent", "EUR 1,050 cold", 0.99, "berlin_2a_lease_2025"),
     FactSeed("lease", "deposit", "EUR 3,150 held", 0.99, "berlin_2a_lease_2025"),
-    FactSeed("maintenance", "heating_issue_2025_12",
-             "Overnight no-heat incident — radiators cold 2am–8am.",
-             0.93, "berlin_2a_heat_dec"),
-    FactSeed("maintenance", "heating_issue_2026_02",
-             "Boiler banging audibly at night; expansion vessel losing pressure.",
-             0.93, "berlin_2a_heat_feb"),
-    FactSeed("maintenance", "heating_issue_2026_03",
-             "Heating output inconsistent throughout the day.",
-             0.9, "berlin_2a_heat_mar"),
-    FactSeed("maintenance", "contractor_recommendation",
-             "Bob's Plumbing recommends full service on Vitoplex boiler.",
-             0.92, "berlin_2a_contractor_feb"),
-    FactSeed("financials", "last_rent_payment",
-             "EUR 1,050 received for 2026-01 via ERP.",
-             0.99, "berlin_2a_rent_jan"),
-    FactSeed("compliance", "building_insurance",
-             "HDI policy HDI-BER-2024-884 valid through 2026-12-31.",
-             0.97, "berlin_2a_compliance_apr"),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2025_12",
+        "Overnight no-heat incident: radiators cold 2am–8am.",
+        0.93,
+        "berlin_2a_heat_dec",
+    ),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2026_02",
+        "Boiler banging audibly at night; expansion vessel losing pressure.",
+        0.93,
+        "berlin_2a_heat_feb",
+    ),
+    FactSeed(
+        "maintenance",
+        "heating_issue_2026_03",
+        "Heating output inconsistent throughout the day.",
+        0.9,
+        "berlin_2a_heat_mar",
+    ),
+    FactSeed(
+        "maintenance",
+        "contractor_recommendation",
+        "Bob's Plumbing recommends full service on Vitoplex boiler.",
+        0.92,
+        "berlin_2a_contractor_feb",
+    ),
+    FactSeed(
+        "financials",
+        "last_rent_payment",
+        "EUR 1,050 received for 2026-01 via ERP.",
+        0.99,
+        "berlin_2a_rent_jan",
+    ),
+    FactSeed(
+        "compliance",
+        "building_insurance",
+        "HDI policy HDI-BER-2024-884 valid through 2026-12-31.",
+        0.97,
+        "berlin_2a_compliance_apr",
+    ),
 ]
 
 BERLIN_2A = PropertySeed(
@@ -483,7 +574,7 @@ BERLIN_2A = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 3 — Hamburg, Elbchaussee 88
+# Property 3: Hamburg, Elbchaussee 88
 # -----------------------------------------------------------------------------
 
 _HAMBURG_EVENTS: list[EventSeed] = [
@@ -506,7 +597,7 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: sophie.becker@tenant.demo\n"
             "Subject: Kitchen sink leaking\n\n"
             "The kitchen sink has been dripping under the cabinet. Not urgent "
-            "but starting to warp the wood. — Sophie"
+            "but starting to warp the wood.\n\nSophie"
         ),
         received_at=days_ago(141),
     ),
@@ -532,7 +623,7 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: klaus.hoffmann@keystone.demo\n"
             "Subject: Balcony permit question\n\n"
             "Sophie asked about adding a small planter on the balcony rail. "
-            "Anything we need to check with the Bezirksamt? — Klaus"
+            "Anything we need to check with the Bezirksamt?\n\nKlaus"
         ),
         received_at=days_ago(73),
     ),
@@ -553,45 +644,80 @@ _HAMBURG_EVENTS: list[EventSeed] = [
             "From: sophie.becker@tenant.demo\n"
             "Subject: Key replacement request\n\n"
             "Lost my front door key on the ferry yesterday. Can we get a "
-            "replacement set? — Sophie"
+            "replacement set?\n\nSophie"
         ),
         received_at=days_ago(14),
     ),
 ]
 
 _HAMBURG_FACTS: list[FactSeed] = [
-    FactSeed("overview", "unit_type", "3-bedroom waterfront apartment, 118 sqm",
-             0.97, "hamburg_lease_2024"),
-    FactSeed("overview", "building_notes",
-             "Elbchaussee 88 — 2005 build, Altona waterfront, district heating.",
-             0.95, "hamburg_lease_2024"),
-    FactSeed("tenants", "primary_tenants", "Sophie Becker (single occupant)",
-             0.97, "hamburg_lease_2024"),
-    FactSeed("tenants", "tenant_contact", "sophie.becker@tenant.demo",
-             0.95, "hamburg_plumbing_dec"),
+    FactSeed(
+        "overview",
+        "unit_type",
+        "3-bedroom waterfront apartment, 118 sqm",
+        0.97,
+        "hamburg_lease_2024",
+    ),
+    FactSeed(
+        "overview",
+        "building_notes",
+        "Elbchaussee 88, 2005 build, Altona waterfront, district heating.",
+        0.95,
+        "hamburg_lease_2024",
+    ),
+    FactSeed(
+        "tenants", "primary_tenants", "Sophie Becker (single occupant)", 0.97, "hamburg_lease_2024"
+    ),
+    FactSeed(
+        "tenants", "tenant_contact", "sophie.becker@tenant.demo", 0.95, "hamburg_plumbing_dec"
+    ),
     FactSeed("tenants", "move_in_date", "2024-11-01", 0.99, "hamburg_lease_2024"),
     FactSeed("lease", "start_date", "2024-11-01", 0.99, "hamburg_lease_2024"),
     FactSeed("lease", "end_date", "2026-10-31", 0.99, "hamburg_lease_2024"),
     FactSeed("lease", "monthly_rent", "EUR 1,650 cold", 0.99, "hamburg_lease_2024"),
     FactSeed("lease", "deposit", "EUR 4,950 held", 0.99, "hamburg_lease_2024"),
-    FactSeed("maintenance", "kitchen_leak_2025_12",
-             "Kitchen P-trap leak resolved by Hanseatic Repair; no structural damage.",
-             0.94, "hamburg_contractor_dec"),
-    FactSeed("maintenance", "preferred_contractor",
-             "Hanseatic Repair Co. — general maintenance, Hamburg.",
-             0.9, "hamburg_contractor_dec"),
-    FactSeed("maintenance", "key_replacement_2026_04",
-             "Front door key replacement requested by tenant.",
-             0.88, "hamburg_keys_apr"),
-    FactSeed("financials", "last_rent_payment",
-             "EUR 1,650 received for 2026-01 via ERP.",
-             0.99, "hamburg_rent_jan"),
-    FactSeed("compliance", "facade_inspection_guidance",
-             "Altona Bezirksamt recommends 24-month facade inspection cadence.",
-             0.9, "hamburg_compliance_mar"),
-    FactSeed("compliance", "balcony_permit_note",
-             "Owner investigating balcony planter permitting with Bezirksamt.",
-             0.75, "hamburg_permit_feb"),
+    FactSeed(
+        "maintenance",
+        "kitchen_leak_2025_12",
+        "Kitchen P-trap leak resolved by Hanseatic Repair; no structural damage.",
+        0.94,
+        "hamburg_contractor_dec",
+    ),
+    FactSeed(
+        "maintenance",
+        "preferred_contractor",
+        "Hanseatic Repair Co., general maintenance, Hamburg.",
+        0.9,
+        "hamburg_contractor_dec",
+    ),
+    FactSeed(
+        "maintenance",
+        "key_replacement_2026_04",
+        "Front door key replacement requested by tenant.",
+        0.88,
+        "hamburg_keys_apr",
+    ),
+    FactSeed(
+        "financials",
+        "last_rent_payment",
+        "EUR 1,650 received for 2026-01 via ERP.",
+        0.99,
+        "hamburg_rent_jan",
+    ),
+    FactSeed(
+        "compliance",
+        "facade_inspection_guidance",
+        "Altona Bezirksamt recommends 24-month facade inspection cadence.",
+        0.9,
+        "hamburg_compliance_mar",
+    ),
+    FactSeed(
+        "compliance",
+        "balcony_permit_note",
+        "Owner investigating balcony planter permitting with Bezirksamt.",
+        0.75,
+        "hamburg_permit_feb",
+    ),
 ]
 
 HAMBURG = PropertySeed(
@@ -616,7 +742,7 @@ HAMBURG = PropertySeed(
 
 
 # -----------------------------------------------------------------------------
-# Property 4 — Munich, Leopoldstrasse 45
+# Property 4: Munich, Leopoldstrasse 45
 # -----------------------------------------------------------------------------
 
 _MUNICH_EVENTS: list[EventSeed] = [
@@ -639,7 +765,7 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: julia.bauer@tenant.demo\n"
             "Subject: Washing machine not draining\n\n"
             "The built-in washing machine is stopping mid-cycle with an E18 "
-            "code. Water just sits in the drum. — Julia"
+            "code. Water just sits in the drum.\n\nJulia"
         ),
         received_at=days_ago(125),
     ),
@@ -665,8 +791,8 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: maximilian.bauer@tenant.demo\n"
             "Subject: Fibre installation\n\n"
             "Deutsche Glasfaser will be running lines in the building next "
-            "month. Do we need approval to route the cable to our apartment? "
-            "— Max"
+            "month. Do we need approval to route the cable to our apartment?\n\n"
+            "Max"
         ),
         received_at=days_ago(65),
     ),
@@ -674,7 +800,7 @@ _MUNICH_EVENTS: list[EventSeed] = [
         key="munich_tavily_mar",
         source="web",
         raw_content=(
-            "Tavily snapshot (Schwabing, Munich): median 2BR cold rent "
+            "Web snapshot (Schwabing, Munich): median 2BR cold rent "
             "EUR 1,920. Munich Mietpreisbremse extended through 2029."
         ),
         received_at=days_ago(40),
@@ -686,49 +812,91 @@ _MUNICH_EVENTS: list[EventSeed] = [
             "From: julia.bauer@tenant.demo\n"
             "Subject: Parking spot transfer\n\n"
             "We'd like to switch our underground spot with apartment 3C's, "
-            "they have the wider one. Both parties agree. — Julia"
+            "they have the wider one. Both parties agree.\n\nJulia"
         ),
         received_at=days_ago(19),
     ),
 ]
 
 _MUNICH_FACTS: list[FactSeed] = [
-    FactSeed("overview", "unit_type", "2-bedroom apartment, 88 sqm, 5th floor",
-             0.97, "munich_lease_2025"),
-    FactSeed("overview", "building_notes",
-             "Leopoldstrasse 45 — 2015 build, Schwabing, geothermal heat pump.",
-             0.95, "munich_lease_2025"),
-    FactSeed("overview", "neighborhood",
-             "Schwabing. Median 2BR cold rent EUR 1,920 (Tavily / Mietspiegel).",
-             0.8, "munich_tavily_mar"),
-    FactSeed("tenants", "primary_tenants", "Maximilian Bauer and Julia Bauer (couple)",
-             0.97, "munich_lease_2025"),
-    FactSeed("tenants", "tenant_contact",
-             "maximilian.bauer@tenant.demo / julia.bauer@tenant.demo",
-             0.95, "munich_washer_dec"),
+    FactSeed(
+        "overview", "unit_type", "2-bedroom apartment, 88 sqm, 5th floor", 0.97, "munich_lease_2025"
+    ),
+    FactSeed(
+        "overview",
+        "building_notes",
+        "Leopoldstrasse 45, 2015 build, Schwabing, geothermal heat pump.",
+        0.95,
+        "munich_lease_2025",
+    ),
+    FactSeed(
+        "overview",
+        "neighborhood",
+        "Schwabing. Median 2BR cold rent EUR 1,920 (Mietspiegel).",
+        0.8,
+        "munich_tavily_mar",
+    ),
+    FactSeed(
+        "tenants",
+        "primary_tenants",
+        "Maximilian Bauer and Julia Bauer (couple)",
+        0.97,
+        "munich_lease_2025",
+    ),
+    FactSeed(
+        "tenants",
+        "tenant_contact",
+        "maximilian.bauer@tenant.demo / julia.bauer@tenant.demo",
+        0.95,
+        "munich_washer_dec",
+    ),
     FactSeed("tenants", "move_in_date", "2025-11-01", 0.99, "munich_lease_2025"),
     FactSeed("lease", "start_date", "2025-11-01", 0.99, "munich_lease_2025"),
     FactSeed("lease", "end_date", "2027-10-31", 0.99, "munich_lease_2025"),
     FactSeed("lease", "monthly_rent", "EUR 1,850 cold", 0.99, "munich_lease_2025"),
     FactSeed("lease", "deposit", "EUR 5,550 held", 0.99, "munich_lease_2025"),
-    FactSeed("maintenance", "washing_machine_2025_12",
-             "Washing machine E18 drain fault cleared by Alpenservice same day.",
-             0.93, "munich_contractor_dec"),
-    FactSeed("maintenance", "preferred_contractor",
-             "Alpenservice GmbH — building systems, Munich.",
-             0.9, "munich_contractor_dec"),
-    FactSeed("maintenance", "fibre_install_note",
-             "Tenant inquiring about Deutsche Glasfaser cable routing permission.",
-             0.82, "munich_internet_feb"),
-    FactSeed("financials", "last_rent_payment",
-             "EUR 1,850 received for 2026-01 via ERP.",
-             0.99, "munich_rent_jan"),
-    FactSeed("compliance", "mietpreisbremse_note",
-             "Munich Mietpreisbremse confirmed extended through 2029.",
-             0.88, "munich_tavily_mar"),
-    FactSeed("activity", "parking_transfer_request_2026_04",
-             "Tenant requests underground parking spot swap with Apt 3C — mutual agreement.",
-             0.82, "munich_parking_apr"),
+    FactSeed(
+        "maintenance",
+        "washing_machine_2025_12",
+        "Washing machine E18 drain fault cleared by Alpenservice same day.",
+        0.93,
+        "munich_contractor_dec",
+    ),
+    FactSeed(
+        "maintenance",
+        "preferred_contractor",
+        "Alpenservice GmbH, building systems, Munich.",
+        0.9,
+        "munich_contractor_dec",
+    ),
+    FactSeed(
+        "maintenance",
+        "fibre_install_note",
+        "Tenant inquiring about Deutsche Glasfaser cable routing permission.",
+        0.82,
+        "munich_internet_feb",
+    ),
+    FactSeed(
+        "financials",
+        "last_rent_payment",
+        "EUR 1,850 received for 2026-01 via ERP.",
+        0.99,
+        "munich_rent_jan",
+    ),
+    FactSeed(
+        "compliance",
+        "mietpreisbremse_note",
+        "Munich Mietpreisbremse confirmed extended through 2029.",
+        0.88,
+        "munich_tavily_mar",
+    ),
+    FactSeed(
+        "activity",
+        "parking_transfer_request_2026_04",
+        "Tenant requests underground parking spot swap with Apt 3C, by mutual agreement.",
+        0.82,
+        "munich_parking_apr",
+    ),
 ]
 
 MUNICH = PropertySeed(

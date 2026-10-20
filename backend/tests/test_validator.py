@@ -1,4 +1,4 @@
-"""Tests for Phase 9 Step 9.2 — constraint validator.
+"""Tests for the rule-based constraint validator.
 
 Pure-function tests on each constraint (no DB) plus an end-to-end
 ``validate()`` test on a representative DiffPlan. Persistence to the
@@ -14,13 +14,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
-from backend.pipeline import constraints  # noqa: F401 — registers everything
+from backend.pipeline import constraints  # noqa: F401 (registers everything)
 from backend.pipeline.differ import DiffPlan, FactDecision
 from backend.pipeline.validator import (
-    REGISTRY,
-    ValidationResult,
     constraints_for,
     persist_rejections,
     validate,
@@ -216,7 +213,7 @@ class TestPropertySquareMeters:
 
 class TestComplianceWildcard:
     def test_email_rejected_any_field(self) -> None:
-        # Wildcard — should fire on any field under 'compliance'.
+        # Wildcard: should fire on any field under 'compliance'.
         cs = constraints_for("compliance", "brandschutznachweis")
         assert cs, "compliance wildcard not loaded"
         c = cs[0]
@@ -301,41 +298,20 @@ def test_validate_first_match_wins() -> None:
     filtered, rejections = validate(plan, event=_email(), current_facts={})
     assert filtered.decisions == []
     assert len(rejections) == 1
-    assert rejections[0].constraint_name.endswith(
-        "compliance_facts_require_authoritative_source"
-    )
+    assert rejections[0].constraint_name.endswith("compliance_facts_require_authoritative_source")
 
 
 # ----------------------------------------------------------------------------
-# persist_rejections — DB roundtrip
+# persist_rejections: DB roundtrip
 # ----------------------------------------------------------------------------
 
 pytestmark_db = pytest.mark.asyncio
 
 
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("db")
 async def test_persist_rejections_roundtrip() -> None:
     """One decision in → one row in rejected_updates with correct columns."""
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
     ensure_migrations()
 
     factory = get_sessionmaker()
@@ -343,12 +319,9 @@ async def test_persist_rejections_roundtrip() -> None:
         # Fixture: building + property + event
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Validator Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test Validator Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -360,7 +333,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"test-validator-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -373,7 +346,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
 
     # Use the validate() output shape directly.
@@ -415,7 +388,7 @@ async def test_persist_rejections_roundtrip() -> None:
                 ),
                 {"eid": e.id},
             )
-        ).first()
+        ).one()
         assert row is not None
         assert row.proposed_section == "financials"
         assert row.proposed_field == "rent_amount"
@@ -428,13 +401,7 @@ async def test_persist_rejections_roundtrip() -> None:
             text("DELETE FROM rejected_updates WHERE event_id = :eid"),
             {"eid": e.id},
         )
-        await session.execute(
-            text("DELETE FROM events WHERE id = :eid"), {"eid": e.id}
-        )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id}
-        )
+        await session.execute(text("DELETE FROM events WHERE id = :eid"), {"eid": e.id})
+        await session.execute(text("DELETE FROM properties WHERE id = :pid"), {"pid": p.id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :bid"), {"bid": b.id})
         await session.commit()

@@ -1,7 +1,7 @@
 """Reconcile proposed facts against the current fact table.
 
-Resolution rules (KEYSTONE Part V):
-1. **Source precedence:** ``pdf > erp > email > slack > web > debug`` — a
+Resolution rules:
+1. **Source precedence:** ``pdf > erp > email > slack > web > debug``. A
    proposed fact from a weaker source cannot displace a stronger one unless
    it raises confidence materially (+0.1).
 2. **Confidence:** higher confidence wins between equal-source facts.
@@ -43,7 +43,7 @@ class FactDecision:
     value: str
     confidence: float
     supersedes_id: UUID | None
-    # Diagnostic only — why this decision was made.
+    # Diagnostic only: why this decision was made.
     reason: str
 
 
@@ -104,7 +104,8 @@ def _should_replace(
     if new_rank == old_rank and new_confidence < existing["confidence"]:
         return False, "lower_confidence"
 
-    return True, f"replace ({new_source}@{new_confidence:.2f} > {existing['source']}@{existing['confidence']:.2f})"
+    old = f"{existing['source']}@{existing['confidence']:.2f}"
+    return True, f"replace ({new_source}@{new_confidence:.2f} > {old})"
 
 
 async def diff(
@@ -113,7 +114,7 @@ async def diff(
     property_id: UUID,
     event_source: str,
     proposals: list[dict[str, Any]],
-    now: datetime | None = None,  # noqa: ARG001 — reserved for future recency logic
+    now: datetime | None = None,  # noqa: ARG001 (reserved for future recency logic)
 ) -> DiffPlan:
     """Compute a :class:`DiffPlan` for the proposed facts."""
     current = await load_current_facts(session, property_id)
@@ -128,15 +129,13 @@ async def diff(
         key = (section, field)
 
         if key in current:
-            # Phase 11 — human edits are sticky. The brief's
-            # "surgically updated without destroying human edits"
-            # rule means an extractor proposal cannot overwrite a
-            # fact a property manager has hand-corrected. Override
-            # is still possible via the API's force=true path.
+            # Human edits are sticky: a property file must be
+            # updated surgically without destroying human edits, so
+            # an extractor proposal cannot overwrite a fact a
+            # property manager has hand-corrected. Override is still
+            # possible via the API's force=true path.
             if current[key].get("human_edited"):
-                skipped.append(
-                    (f"{section}.{field}", "preserved_human_edit")
-                )
+                skipped.append((f"{section}.{field}", "preserved_human_edit"))
                 continue
             replace, reason = _should_replace(event_source, confidence, current[key], value)
             if not replace:

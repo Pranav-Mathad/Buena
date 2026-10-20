@@ -1,16 +1,16 @@
 """Materialized property file API.
 
-Phase 12 — exposes the cached, propagation-aware ``property_files``
-table as a first-class resource (separate from ``/properties/{id}``
-which is the master-record + structured-card surface).
+Exposes the cached, propagation-aware ``property_files`` table as a
+first-class resource (separate from ``/properties/{id}``, which is the
+master-record + structured-card surface).
 
 Two endpoints:
 
-- ``GET /property_files/{property_id}`` — full row shape for a single
+- ``GET /property_files/{property_id}``: full row shape for a single
   property's materialized markdown.
-- ``GET /property_files/changes?since=<ISO>&limit=50`` — recent
-  regenerations across the portfolio. The frontend (Phase 13) can
-  poll this to drive a "live update" feed without subscribing to
+- ``GET /property_files/changes?since=<ISO>&limit=50``: recent
+  regenerations across the portfolio. A frontend or external consumer
+  can poll this to drive a "live update" feed without subscribing to
   the in-process event bus. Ordering is ``last_rendered_at DESC``;
   ``trigger_*`` columns let consumers attribute each row to the
   fact write that triggered it.
@@ -39,6 +39,7 @@ def _cache_headers(response: Response, last_rendered_at: datetime) -> None:
     """
     response.headers["Cache-Control"] = "public, max-age=30"
     response.headers["ETag"] = f'"{int(last_rendered_at.timestamp())}"'
+
 
 router = APIRouter(prefix="/property_files", tags=["property_files"])
 log = structlog.get_logger(__name__)
@@ -83,8 +84,8 @@ async def list_changes(
 ) -> list[PropertyFileChangeRow]:
     """Return recent property-file regenerations.
 
-    Phase 13 will use this as the polling target for a "what changed"
-    feed; Phase 12 ships only the data layer.
+    Intended as the polling target for a "what changed" feed. No
+    first-party client consumes it yet; it is the data layer only.
     """
     if since is None:
         rows = (
@@ -140,9 +141,7 @@ async def list_changes(
             last_rendered_at=r.last_rendered_at,
             trigger_scope=r.trigger_scope,
             trigger_summary=r.trigger_summary,
-            trigger_event_id=(
-                UUID(str(r.trigger_event_id)) if r.trigger_event_id else None
-            ),
+            trigger_event_id=(UUID(str(r.trigger_event_id)) if r.trigger_event_id else None),
         )
         for r in rows
     ]
@@ -170,18 +169,14 @@ async def get_property_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="property file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="property file not materialized yet")
     _cache_headers(response, row.last_rendered_at)
     return PropertyFileRow(
         property_id=UUID(str(row.property_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),
@@ -191,7 +186,7 @@ async def get_property_file(
 class PropertyFileIndex(BaseModel):
     """Structured index emitted alongside the markdown.
 
-    Same data the frontmatter summarizes — exposed here as typed JSON
+    Same data the frontmatter summarizes, exposed here as typed JSON
     so an AI agent or a cross-property dashboard can read the file's
     shape (section counts, conflicts, coverage, low-confidence count)
     without parsing the markdown body.
@@ -210,7 +205,7 @@ async def get_property_file_index(
 ) -> PropertyFileIndex:
     """Return the structured ``content_index`` for one property.
 
-    Phase 12+ — the typed shape an LLM agent ingests in one tool call
+    The typed shape an LLM agent ingests in one tool call
     instead of re-parsing the markdown body. Cache-headered the same
     way ``/property_files/{id}`` is.
     """
@@ -227,9 +222,7 @@ async def get_property_file_index(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="property file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="property file not materialized yet")
     _cache_headers(response, row.last_rendered_at)
     return PropertyFileIndex(
         property_id=UUID(str(row.property_id)),

@@ -38,7 +38,7 @@ class OwnerChangeRequiresKaufvertrag:
         if event_source(event) == "pdf" and event_document_type(event) == "kaufvertrag":
             return ValidationResult.needs_review(
                 "owner change with Kaufvertrag PDF; human confirmation "
-                "required before applying — Grundbuch should be "
+                "required before applying; the Grundbuch should be "
                 "cross-checked",
                 required_source_type="kaufvertrag",
             )

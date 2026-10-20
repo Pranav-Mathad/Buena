@@ -1,1 +1,1 @@
-"""Seed data for the demo dataset."""
+"""Seed data for the synthetic sample portfolio."""

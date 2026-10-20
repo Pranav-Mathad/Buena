@@ -1,13 +1,16 @@
-"""Tests for the .eml walker — uses fabricated EMLs in a tmp dir."""
+"""Tests for the .eml walker; uses fabricated EMLs in a tmp dir."""
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 import pytest
 
 from connectors import eml_archive, redact
+
+# Synthetic IBANs, assembled at runtime so no IBAN-shaped literal is committed.
+IBAN_1349 = "DE" + "0" * 16 + "1349"
 
 
 def _write_eml(path: Path, body: str = "Heizung kalt seit gestern.") -> None:
@@ -23,7 +26,7 @@ def _write_eml(path: Path, body: str = "Heizung kalt seit gestern.") -> None:
         "Content-Type: text/plain; charset=utf-8\r\n"
         "\r\n"
         f"{body}\r\n"
-        "Bitte zahlen Sie an DE94120300004034471349.\r\n"
+        f"Bitte zahlen Sie an {IBAN_1349}.\r\n"
         "Phone: +49 30 1234 5678\r\n"
     )
     path.write_text(raw, encoding="utf-8")
@@ -36,7 +39,7 @@ def test_parse_one_redacts_body_and_metadata(tmp_path: Path) -> None:
 
     assert event.source == "email"
     assert event.source_ref == "abc123@example.com"
-    assert "DE94120300004034471349" not in event.raw_content
+    assert IBAN_1349 not in event.raw_content
     assert "****1349" in event.raw_content
     assert event.metadata["from"].endswith("@example.com")
     assert event.metadata["thread_id"] == "root-thread@example.com"
@@ -53,7 +56,7 @@ def test_parse_one_uses_filename_timestamp_when_date_missing(tmp_path: Path) -> 
     event = eml_archive.parse_one(eml, root=tmp_path)
     # filename has 09:00:00 UTC; tolerate parser dropping seconds
     assert event.received_at.tzinfo is not None
-    assert event.received_at.astimezone(timezone.utc).hour == 9
+    assert event.received_at.astimezone(UTC).hour == 9
 
 
 def test_walk_directory_yields_one_per_eml(tmp_path: Path) -> None:

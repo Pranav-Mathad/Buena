@@ -1,12 +1,13 @@
 """Schema-completeness scorecard for a property file.
 
-Phase 12+ — judges look at our markdown and ask "what's missing?". Today
-the file shows what we know (facts + uncertainties); the *absence* of
-data is invisible. This module declares per-section expected-fact
-coordinates so the renderer can emit a compact ``## Coverage`` block
-naming what's present (✓) and what's absent (⨯).
+A reader of a property file needs to know what's missing as well as
+what's known. The file itself shows what we know (facts +
+uncertainties); the *absence* of data is invisible. This module
+declares per-section expected-fact coordinates so the renderer can
+emit a compact ``## Coverage`` block naming what's present (✓) and
+what's absent (⨯).
 
-The expected-field lists are intentionally short and demo-focused — we
+The expected-field lists are intentionally short: we
 favour "the operator would notice if this were missing" over a complete
 catalog. Add fields here as new fact-discovery rules ship; the absence
 report grows naturally.
@@ -88,9 +89,7 @@ def compute_coverage(
     sections: dict[str, list[tuple[str, bool]]] = {}
     for section, field, label_en, label_de in _EXPECTED_FACTS:
         label = label_de if lang == "de" else label_en
-        sections.setdefault(section, []).append(
-            (label, (section, field) in fact_keys)
-        )
+        sections.setdefault(section, []).append((label, (section, field) in fact_keys))
 
     total_present = sum(1 for _, ok in stamm_rows if ok) + sum(
         1 for rows in sections.values() for _, ok in rows if ok
@@ -111,15 +110,13 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     Empty areas are skipped so the block stays tight.
     """
     title = "Abdeckung" if lang == "de" else "Coverage"
-    stamm_label = "Stammdaten"
+    stamm_label = "Stammdaten" if lang == "de" else "Master data"
 
     lines: list[str] = [f"## {title}", ""]
 
     if report.stammdaten:
-        joined = " · ".join(
-            f"{'✓' if ok else '⨯'} {label}" for label, ok in report.stammdaten
-        )
-        lines.append(f"- **{stamm_label}** — {joined}")
+        joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in report.stammdaten)
+        lines.append(f"- **{stamm_label}**: {joined}")
 
     section_titles_de = {
         "lease": "Mietvertrag",
@@ -136,11 +133,9 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     titles = section_titles_de if lang == "de" else section_titles_en
 
     for section, rows in report.sections.items():
-        joined = " · ".join(
-            f"{'✓' if ok else '⨯'} {label}" for label, ok in rows
-        )
+        joined = " · ".join(f"{'✓' if ok else '⨯'} {label}" for label, ok in rows)
         title_label = titles.get(section, section.replace("_", " ").title())
-        lines.append(f"- **{title_label}** — {joined}")
+        lines.append(f"- **{title_label}**: {joined}")
 
     lines.append("")
     return lines
@@ -149,13 +144,9 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
 def coverage_to_index(report: CoverageReport) -> dict[str, object]:
     """Return a JSON-friendly dict for the ``content_index`` JSONB column."""
     return {
-        "stammdaten": [
-            {"label": label, "present": ok} for label, ok in report.stammdaten
-        ],
+        "stammdaten": [{"label": label, "present": ok} for label, ok in report.stammdaten],
         "sections": {
-            section: [
-                {"label": label, "present": ok} for label, ok in rows
-            ]
+            section: [{"label": label, "present": ok} for label, ok in rows]
             for section, rows in report.sections.items()
         },
         "total_present": report.total_present,

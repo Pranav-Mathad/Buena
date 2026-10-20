@@ -1,26 +1,33 @@
-"""Rule 3 — ``cross_property_pattern`` (the portfolio-intelligence closer).
+"""Rule 3: ``cross_property_pattern``, issues that span several properties.
 
-Two flavors from Part IX + the demo script (beats 1:00 and 1:45):
+Two flavors:
 
 A. **Shared building.** If ≥2 properties inside a single building each carry
    recurring heating facts in the last 120 days, fire a portfolio-level
-   signal keyed on the building — this is the "3 heating complaints across
-   units sharing the same boiler" beat.
+   signal keyed on the building. Three heating complaints from units that
+   share a boiler point at the shared system, not at the individual units.
 B. **Building-year cohort.** Group properties by year bucket
    (``pre-1990``, ``1990-2010``, ``post-2010``) and if ≥3 properties in the
    same bucket have heating issues inside the window, fire a portfolio-wide
-   inspection recommendation — this is beat 1:45.
+   inspection recommendation: buildings of a similar age tend to have
+   heating systems of a similar vintage, so a cluster of failures in one
+   cohort is a reason to inspect the rest of it.
 
 Both cases emit a ``property_id=None`` portfolio signal so the UI can
-render it in the portfolio view instead of under a single property.
+render it in the portfolio view instead of under a single property. Both
+count incidents (one per reporting event) as defined in
+:mod:`backend.signals.rules._incidents`.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.signals.rules._incidents import INCIDENTS_CTE
 from backend.signals.types import SignalCandidate
 
 log = structlog.get_logger(__name__)
@@ -30,7 +37,7 @@ HEAT_PATTERN = r"heat|boiler|radiator|hot water"
 
 
 def _year_bucket(year: int | None) -> str | None:
-    """Classify a building's year_built into a demo-friendly cohort label."""
+    """Classify a building's year_built into a human-readable cohort label."""
     if year is None:
         return None
     if year < 1990:
@@ -41,27 +48,24 @@ def _year_bucket(year: int | None) -> str | None:
 
 
 async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
-    """Flavor A — buildings where multiple units share the same issue."""
+    """Flavor A: buildings where multiple units share the same issue."""
     result = await session.execute(
         text(
-            """
+            f"""
+            WITH {INCIDENTS_CTE}
             SELECT b.id AS building_id, b.address,
                    b.year_built,
-                   COUNT(DISTINCT f.property_id) AS affected_properties,
+                   COUNT(DISTINCT i.property_id) AS affected_properties,
                    COUNT(*) AS total_incidents,
                    ARRAY_AGG(DISTINCT p.name) AS property_names,
-                   ARRAY_AGG(f.id::text ORDER BY f.created_at) AS fact_ids,
-                   ARRAY_AGG(f.source_event_id::text ORDER BY f.created_at)
+                   ARRAY_AGG(i.id::text ORDER BY i.reported_at) AS fact_ids,
+                   ARRAY_AGG(i.source_event_id::text ORDER BY i.reported_at)
                      AS event_ids
-            FROM facts f
-            JOIN properties p ON p.id = f.property_id
+            FROM incidents i
+            JOIN properties p ON p.id = i.property_id
             JOIN buildings b ON b.id = p.building_id
-            WHERE f.section = 'maintenance'
-              AND f.superseded_by IS NULL
-              AND f.created_at >= now() - (:window || ' days')::interval
-              AND (f.value ~* :pattern OR f.field ~* :pattern)
             GROUP BY b.id, b.address, b.year_built
-            HAVING COUNT(DISTINCT f.property_id) >= 2
+            HAVING COUNT(DISTINCT i.property_id) >= 2
                AND COUNT(*) >= 3
             """
         ),
@@ -75,7 +79,7 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
         context_excerpt = (
             f"Building: {row.address}\n"
             f"Year built: {row.year_built} ({bucket or 'unknown'})\n"
-            f"Units affected: {row.affected_properties} — {names}\n"
+            f"Units affected: {row.affected_properties} ({names})\n"
             f"Heating incidents (last {WINDOW_DAYS}d): {row.total_incidents}"
         )
         evidence = [
@@ -91,7 +95,7 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
                 message=(
                     f"{row.total_incidents} heating complaints across "
                     f"{row.affected_properties} units sharing the same "
-                    f"{row.address} boiler — system failure likely."
+                    f"{row.address} boiler: system failure likely."
                 ),
                 evidence=evidence,
                 context_excerpt=context_excerpt,
@@ -110,31 +114,28 @@ async def _shared_building(session: AsyncSession) -> list[SignalCandidate]:
 
 
 async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
-    """Flavor B — portfolio-wide alert on a building-year cohort."""
+    """Flavor B: portfolio-wide alert on a building-year cohort."""
     result = await session.execute(
         text(
-            """
+            f"""
+            WITH {INCIDENTS_CTE}
             SELECT b.id AS building_id,
                    b.year_built,
                    p.id AS property_id,
                    p.name AS property_name,
                    COUNT(*) AS incidents,
-                   ARRAY_AGG(f.id::text) AS fact_ids,
-                   ARRAY_AGG(f.source_event_id::text) AS event_ids
-            FROM facts f
-            JOIN properties p ON p.id = f.property_id
+                   ARRAY_AGG(i.id::text) AS fact_ids,
+                   ARRAY_AGG(i.source_event_id::text) AS event_ids
+            FROM incidents i
+            JOIN properties p ON p.id = i.property_id
             JOIN buildings b ON b.id = p.building_id
-            WHERE f.section = 'maintenance'
-              AND f.superseded_by IS NULL
-              AND f.created_at >= now() - (:window || ' days')::interval
-              AND (f.value ~* :pattern OR f.field ~* :pattern)
             GROUP BY b.id, b.year_built, p.id, p.name
             """
         ),
         {"window": str(WINDOW_DAYS), "pattern": HEAT_PATTERN},
     )
 
-    buckets: dict[str, dict[str, list]] = {}
+    buckets: dict[str, dict[str, Any]] = {}
     for row in result.all():
         bucket = _year_bucket(row.year_built)
         if bucket is None:
@@ -157,14 +158,12 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
         names = ", ".join(data["properties"])
         context_excerpt = (
             f"Year bucket: {bucket}\n"
-            f"Affected properties: {affected} — {names}\n"
+            f"Affected properties: {affected} ({names})\n"
             f"Heating incidents (last {WINDOW_DAYS}d): {data['incidents']}"
         )
         evidence = [
             {"event_id": ev, "fact_id": fid}
-            for ev, fid in zip(
-                data["event_ids"], data["fact_ids"], strict=False
-            )
+            for ev, fid in zip(data["event_ids"], data["fact_ids"], strict=False)
             if ev or fid
         ]
         out.append(
@@ -174,7 +173,7 @@ async def _building_year_cohort(session: AsyncSession) -> list[SignalCandidate]:
                 property_id=None,
                 message=(
                     f"Keystone detected: {affected} {bucket} boiler "
-                    f"properties had heating issues this winter — schedule "
+                    f"properties had heating issues this winter: schedule "
                     f"portfolio-wide inspection?"
                 ),
                 evidence=evidence,

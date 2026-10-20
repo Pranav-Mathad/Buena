@@ -1,9 +1,9 @@
 """Rent amount changes require a lease-addendum PDF.
 
-Step 5's eval surfaced the failure mode directly: an owner-side email
+The extraction eval surfaced the failure mode directly: an owner-side email
 saying "we might need to look at the rent at some point" produced a
 spurious ``financials.rent_amount`` proposal. Even high-confidence
-free-text events shouldn't move the recorded rent — the only legal
+free-text events shouldn't move the recorded rent; the only legal
 instrument that changes a tenancy's rent is an addendum to the
 Mietvertrag.
 """
@@ -35,13 +35,12 @@ class RentAmountChangeRequiresAddendum:
         event: dict[str, Any],
     ) -> ValidationResult:
         if current is None:
-            # First-time set — likely from stammdaten or initial lease.
+            # First-time set, likely from stammdaten or initial lease.
             return ValidationResult.passed("no prior fact, seeding")
 
         if event_source(event) == "pdf" and event_document_type(event) == "lease_addendum":
             return ValidationResult.needs_review(
-                "rent change with lease_addendum PDF; needs human "
-                "confirmation before applying",
+                "rent change with lease_addendum PDF; needs human confirmation before applying",
                 required_source_type="lease_addendum",
             )
 

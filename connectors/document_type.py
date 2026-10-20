@@ -3,11 +3,12 @@
 Pure function over ``(filename, head_text)``. Filename heuristics run
 first (cheap, deterministic). When heuristics return ``None`` the
 classifier falls back to Gemini Flash on the first 800 chars of
-extracted text — and only when the Phase 8 cost ledger has remaining
-budget under the ``pdf_doctype`` sub-label (default sub-cap ``$2``).
+extracted text, and only when the cost ledger
+(:mod:`connectors.cost_ledger`) has remaining budget under the
+``pdf_doctype`` sub-label (default sub-cap ``$2``).
 
-Phase 9 :mod:`backend.pipeline.validator` reads the resulting label
-out of ``event.metadata.document_type`` to enforce constraints like
+:mod:`backend.pipeline.validator` reads the resulting label out of
+``event.metadata.document_type`` to enforce constraints like
 *"rent changes require a lease_addendum"*.
 """
 
@@ -21,7 +22,7 @@ from typing import Final, Literal, get_args
 import structlog
 
 from connectors import cost_ledger
-from connectors.cost_ledger import CostCapExceeded
+from connectors.cost_ledger import CostCapExceededError
 
 log = structlog.get_logger(__name__)
 
@@ -37,7 +38,7 @@ DocumentType = Literal[
     "other",
 ]
 
-#: All valid labels at runtime — used by the Gemini fallback to validate
+#: All valid labels at runtime, used by the Gemini fallback to validate
 #: the model output. ``get_args`` gives us the literal members.
 DOCUMENT_TYPES: Final[tuple[str, ...]] = get_args(DocumentType)
 
@@ -78,46 +79,45 @@ First {head_chars} characters of extracted text:
 {head_text}
 ---
 
-Choose ONE label from this exact list — answer with JSON only:
+Choose ONE label from this exact list and answer with JSON only:
 {labels_json}
 
 Output schema: {{"document_type": "<label>"}}
 Return "other" if uncertain. Do NOT invent labels."""
 
 
-def _classify_with_gemini(
-    filename: str, head_text: str, *, sub_cap_usd: Decimal
-) -> DocumentType:
+def _classify_with_gemini(filename: str, head_text: str, *, sub_cap_usd: Decimal) -> DocumentType:
     """Call Gemini Flash; charge the cost ledger; coerce to a known label.
 
     Returns ``"other"`` when Gemini is unavailable, the cost cap is
     exhausted, the model returns an unknown label, or any error
-    surfaces. Callers should treat ``"other"`` as "unknown" and Phase 9
-    constraints will reject it where a specific subtype is required.
+    surfaces. Callers should treat ``"other"`` as "unknown"; the
+    source-type constraints in :mod:`backend.pipeline.constraints` reject
+    it where a specific subtype is required.
     """
-    # 1. Pre-flight ledger charge — short-circuit before issuing any
+    # 1. Pre-flight ledger charge: short-circuit before issuing any
     # request when the sub-cap is exhausted.
     cost_ledger.ensure_label(DOCTYPE_LEDGER_LABEL, sub_cap_usd)
     try:
         cost_ledger.charge(DOCTYPE_LEDGER_LABEL, ESTIMATED_CLASSIFY_COST_USD)
-    except CostCapExceeded as exc:
+    except CostCapExceededError as exc:
         log.warning("doctype.cap_exhausted", filename=filename, error=str(exc))
         return "other"
 
     # 2. Lazy import so non-LLM tests don't require google-generativeai.
+    # This classifier is deliberately Gemini-specific (Flash, synchronous) and
+    # does not go through the LLM provider interface; without a Gemini key the
+    # filename heuristics are the only signal.
     try:
-        from backend.services.gemini import (  # noqa: PLC0415
-            GeminiUnavailable,
-            _configure_client,  # type: ignore[attr-defined]
-        )
-    except Exception as exc:  # noqa: BLE001 — service module unavailable
-        log.warning("doctype.gemini_import_failed", error=str(exc))
-        return "other"
+        from backend.services.llm.base import LLMNotConfiguredError  # noqa: PLC0415
+        from backend.services.llm.gemini import configure_client  # noqa: PLC0415
 
-    try:
-        genai = _configure_client()
-    except GeminiUnavailable as exc:
+        genai = configure_client()
+    except LLMNotConfiguredError as exc:
         log.info("doctype.gemini_unavailable", reason=str(exc))
+        return "other"
+    except ImportError as exc:
+        log.warning("doctype.gemini_import_failed", error=str(exc))
         return "other"
 
     prompt = _GEMINI_PROMPT_TEMPLATE.format(
@@ -139,7 +139,7 @@ def _classify_with_gemini(
         )
         text = (response.text or "").strip()
         data = json.loads(text) if text else {}
-    except Exception as exc:  # noqa: BLE001 — collapse all model errors
+    except Exception as exc:  # noqa: BLE001 (collapse all model errors)
         log.warning("doctype.gemini_error", filename=filename, error=str(exc))
         return "other"
 
@@ -169,7 +169,7 @@ def classify(
 
     Returns:
         One of :data:`DOCUMENT_TYPES`. ``"other"`` whenever the
-        classifier is uncertain — never guesses.
+        classifier is uncertain; it never guesses.
     """
     via_filename = _filename_heuristic(filename)
     if via_filename is not None:

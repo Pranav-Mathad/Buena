@@ -1,14 +1,14 @@
-"""Rule 2 — ``lease_expiring``.
+"""Rule 2: ``lease_expiring``.
 
 Fires when a property's ``lease.end_date`` fact parses to a date within the
-next 60 days. The window is intentionally configurable so the demo can
-widen it when no real lease is imminent (``LEASE_WINDOW_DAYS``).
+next 60 days. The window is a module constant (``LEASE_WINDOW_DAYS``) so it
+can be widened when running against data in which no lease is imminent.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime
 
 import structlog
 from sqlalchemy import text
@@ -36,8 +36,7 @@ def _parse_end_date(value: str) -> date | None:
 
 async def evaluate(session: AsyncSession) -> list[SignalCandidate]:
     """Return one candidate per property with a lease expiring in the window."""
-    today = datetime.now(timezone.utc).date()
-    horizon = today + timedelta(days=LEASE_WINDOW_DAYS)
+    today = datetime.now(UTC).date()
 
     result = await session.execute(
         text(
@@ -74,7 +73,7 @@ async def evaluate(session: AsyncSession) -> list[SignalCandidate]:
                 property_id=row.property_id,
                 message=(
                     f"Lease on {row.property_name} expires in {days_left} days "
-                    f"({end.isoformat()}) — renewal decision needed."
+                    f"({end.isoformat()}): renewal decision needed."
                 ),
                 evidence=[
                     {

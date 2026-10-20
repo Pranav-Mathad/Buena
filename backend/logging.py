@@ -24,6 +24,9 @@ def configure_logging() -> None:
         stream=sys.stdout,
         level=level,
     )
+    # APScheduler logs every job run at INFO (the worker runs every 2 s);
+    # keep its warnings and errors only.
+    logging.getLogger("apscheduler").setLevel(max(level, logging.WARNING))
 
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,

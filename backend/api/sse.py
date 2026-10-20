@@ -1,11 +1,11 @@
 """Server-sent events for live markdown updates.
 
 ``GET /properties/{id}/events`` streams JSON envelopes whenever the worker
-finishes processing an event attached to that property. The browser / Lovable
-front-end re-fetches the markdown on each push.
+finishes processing an event attached to that property. The browser
+frontend re-fetches the markdown on each push.
 
-``GET /portfolio/events`` is the same stream with no property filter — the
-Layout subscribes to it once so a portfolio-wide toast can fire whenever
+``GET /portfolio/events`` is the same stream with no property filter. The
+frontend layout subscribes to it once so a portfolio-wide toast can fire whenever
 any property's file gets a new fact.
 """
 
@@ -30,7 +30,7 @@ log = structlog.get_logger(__name__)
 async def _event_stream(property_id: UUID | None) -> AsyncIterator[bytes]:
     """Yield SSE-formatted lines for one subscriber.
 
-    ``property_id=None`` subscribes to the global feed — the EventBus
+    ``property_id=None`` subscribes to the global feed: the EventBus
     fans every publish to ``None`` subscribers in addition to the
     property-specific ones.
     """
@@ -43,7 +43,7 @@ async def _event_stream(property_id: UUID | None) -> AsyncIterator[bytes]:
         while True:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Heartbeat keeps intermediaries (nginx, etc.) from closing.
                 yield b": keep-alive\n\n"
                 continue
@@ -51,9 +51,7 @@ async def _event_stream(property_id: UUID | None) -> AsyncIterator[bytes]:
             yield b"event: fact_update\ndata: " + body + b"\n\n"
     finally:
         await bus.unsubscribe(property_id, queue)
-        log.info(
-            "sse.unsubscribe", property_id=str(property_id) if property_id else "*"
-        )
+        log.info("sse.unsubscribe", property_id=str(property_id) if property_id else "*")
 
 
 @router.get("/{property_id}/events")
@@ -68,11 +66,9 @@ async def property_events(property_id: UUID) -> StreamingResponse:
 
 @portfolio_router.get("/events")
 async def portfolio_events() -> StreamingResponse:
-    """Portfolio-wide live stream — every fact update across all properties."""
+    """Portfolio-wide live stream: every fact update across all properties."""
     return StreamingResponse(
         _event_stream(None),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-

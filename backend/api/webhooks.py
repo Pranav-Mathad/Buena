@@ -1,4 +1,4 @@
-"""External-system webhooks. Phase 2 ships the Slack ingestion endpoint."""
+"""External-system webhooks. Currently only Slack event ingestion."""
 
 from __future__ import annotations
 

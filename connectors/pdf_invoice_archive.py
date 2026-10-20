@@ -3,21 +3,22 @@
 Each event:
 
 - ``source`` = ``"invoice"``.
-- ``source_ref`` = ``sha256(file_bytes)[:16]`` — content-addressable so
+- ``source_ref`` = ``sha256(file_bytes)[:16]``, content-addressable so
   re-uploads of the same bytes collapse.
 - ``metadata.document_type`` is set via
   :func:`connectors.document_type.classify` (filename heuristics first;
   Gemini Flash fallback when heuristics fail and the cost ledger has
   budget).
-- ``metadata.original_path`` retains the relative path for Phase 10
-  document-linking.
+- ``metadata.original_path`` retains the relative path so the source-link
+  endpoint (:mod:`backend.api.source_links`) can redirect to the original
+  PDF under ``/files/``.
 - ``raw_content`` is the extracted text (PII scrubbed) when
   ``read_text=True``; otherwise a short header line. Reading text on
   every backfill row is expensive, so the default is metadata-only;
   callers can opt-in.
 
 When the dataset ships a sibling ``rechnungen_index.csv`` (Buena's
-incremental folders do), :func:`walk_index_csv` is the cheap path —
+incremental folders do), :func:`walk_index_csv` is the cheap path:
 it yields events without opening the PDFs at all.
 """
 
@@ -26,7 +27,7 @@ from __future__ import annotations
 import csv
 import hashlib
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +54,7 @@ def _parse_filename_date(name: str) -> datetime | None:
     if len(name) < 8 or not name[:8].isdigit():
         return None
     try:
-        return datetime.strptime(name[:8], "%Y%m%d").replace(tzinfo=timezone.utc)
+        return datetime.strptime(name[:8], "%Y%m%d").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -74,7 +75,7 @@ def parse_one(
     if read_text:
         try:
             body = extract_text(raw_bytes)
-        except Exception as exc:  # noqa: BLE001 — corrupt PDFs shouldn't kill the walk
+        except Exception as exc:  # noqa: BLE001 (corrupt PDFs shouldn't kill the walk)
             log.warning("invoice.extract_failed", path=str(path), error=str(exc))
             body = ""
         head_text = body[:PDF_HEAD_CHARS]
@@ -82,12 +83,11 @@ def parse_one(
     document_type = classify(path.name, head_text, use_llm=use_llm and read_text)
 
     received_at = _parse_filename_date(path.name) or datetime.fromtimestamp(
-        path.stat().st_mtime, tz=timezone.utc
+        path.stat().st_mtime, tz=UTC
     )
 
     relative_path = (
-        str(path.relative_to(root)) if root is not None and path.is_relative_to(root)
-        else str(path)
+        str(path.relative_to(root)) if root is not None and path.is_relative_to(root) else str(path)
     )
 
     metadata: dict[str, Any] = {
@@ -103,7 +103,7 @@ def parse_one(
     raw_content = (
         f"[{EVENT_SOURCE.upper()}: {path.name}]\n\n{redact.scrub_text(body)}"
         if body
-        else f"Invoice {path.name} — awaiting extraction"
+        else f"Invoice {path.name} (awaiting extraction)"
     )
 
     return ConnectorEvent(
@@ -130,9 +130,7 @@ def walk_directory(
     log.info("invoice.archive.start", root=str(root), files=len(paths))
     for path in paths:
         try:
-            yield parse_one(
-                path, root=root, read_text=read_text, use_llm=use_llm
-            )
+            yield parse_one(path, root=root, read_text=read_text, use_llm=use_llm)
         except Exception:  # noqa: BLE001
             log.exception("invoice.archive.parse_error", path=str(path))
 
@@ -157,14 +155,12 @@ def walk_index_csv(
             if not filename:
                 continue
             doctype = classify(filename, head_text="", use_llm=False)
-            received_at = _parse_filename_date(filename) or datetime.now(timezone.utc)
+            received_at = _parse_filename_date(filename) or datetime.now(UTC)
             content_sha256 = row.get("content_sha256") or _hash16(filename.encode())
             metadata: dict[str, Any] = {
                 "filename": filename,
                 "original_path": str(
-                    pdf_root.joinpath(filename)
-                    if pdf_root is not None
-                    else filename
+                    pdf_root.joinpath(filename) if pdf_root is not None else filename
                 ),
                 "content_sha256": content_sha256,
                 "document_type": doctype,
@@ -178,9 +174,7 @@ def walk_index_csv(
             yield ConnectorEvent(
                 source=EVENT_SOURCE,
                 source_ref=f"{filename}:{content_sha256[:16]}",
-                raw_content=(
-                    f"Invoice {filename} — awaiting extraction"
-                ),
+                raw_content=(f"Invoice {filename} (awaiting extraction)"),
                 metadata=metadata,
                 received_at=received_at,
                 document_type=doctype,

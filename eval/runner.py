@@ -3,7 +3,7 @@
 ```
 python -m eval.runner --set emails_v1
 python -m eval.runner --set emails_v1 --json
-python -m eval.runner --set emails_v1 --out eval/runs/2026-04-25-step4.md
+python -m eval.runner --set emails_v1 --out docs/eval-runs/2026-04-25-emails_v1.md
 ```
 
 The runner is intentionally honest about its inputs:
@@ -26,27 +26,25 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from dataclasses import asdict
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import structlog
 
-from decimal import Decimal
-
+from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.logging import configure_logging
-from backend.pipeline import extractor as extractor_module
 from backend.pipeline.extractor import extract as run_extractor
 from backend.pipeline.router import (
     route_structured,
     route_text_event,
 )
-from backend.services import pioneer_llm
-from backend.services.gemini import GeminiUnavailable
 from connectors import cost_ledger
-from connectors.cost_ledger import CostCapExceeded
+from connectors.cost_ledger import CostCapExceededError
 from connectors.migrations import apply_all as ensure_migrations
 from eval.metrics import Report, score_row
 
@@ -69,9 +67,7 @@ FLASH_COMPLETION_USD_PER_M = Decimal("0.30")
 TEXT_ROUTER_SOURCES: frozenset[str] = frozenset({"email", "slack", "debug"})
 
 #: Sources that travel through ``route_structured``.
-STRUCTURED_ROUTER_SOURCES: frozenset[str] = frozenset(
-    {"bank", "invoice", "letter", "erp", "web"}
-)
+STRUCTURED_ROUTER_SOURCES: frozenset[str] = frozenset({"bank", "invoice", "letter", "erp", "web"})
 
 log = structlog.get_logger("eval.runner")
 
@@ -84,8 +80,7 @@ def _load_ground_truth(set_name: str) -> list[dict[str, Any]]:
     path = GROUND_TRUTH_DIR / f"{set_name}.jsonl"
     if not path.is_file():
         raise FileNotFoundError(
-            f"ground truth set {set_name!r} not found at {path}; "
-            "see eval/README.md for the schema"
+            f"ground truth set {set_name!r} not found at {path}; see eval/README.md for the schema"
         )
     rows: list[dict[str, Any]] = []
     with path.open(encoding="utf-8") as handle:
@@ -96,9 +91,7 @@ def _load_ground_truth(set_name: str) -> list[dict[str, Any]]:
             try:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"{path}:{line_no} is not valid JSON — {exc}"
-                ) from exc
+                raise ValueError(f"{path}:{line_no} is not valid JSON: {exc}") from exc
     log.info("eval.ground_truth.loaded", set_name=set_name, rows=len(rows))
     return rows
 
@@ -122,9 +115,7 @@ async def _scope_for_event(
         factory = get_sessionmaker()
         async with factory() as session:
             if source in TEXT_ROUTER_SOURCES:
-                text_route = await route_text_event(
-                    session, raw_content, metadata=metadata
-                )
+                text_route = await route_text_event(session, raw_content, metadata=metadata)
                 if text_route.property_id is not None:
                     return "property"
                 if text_route.building_id is not None:
@@ -132,9 +123,7 @@ async def _scope_for_event(
                 if text_route.liegenschaft_id is not None:
                     return "liegenschaft"
                 return "unrouted"
-            structured = await route_structured(
-                session, metadata, event_source=source
-            )
+            structured = await route_structured(session, metadata, event_source=source)
             if structured.property_id is not None:
                 return "property"
             if structured.building_id is not None:
@@ -142,7 +131,7 @@ async def _scope_for_event(
             if structured.liegenschaft_id is not None:
                 return "liegenschaft"
             return "unrouted"
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully, log once
+    except Exception as exc:  # noqa: BLE001 (degrade gracefully, log once)
         log.warning("eval.routing.unavailable", error=str(exc))
         if metadata.get("eh_id") or "EH-" in raw_content or "WE " in raw_content:
             return "property"
@@ -154,39 +143,10 @@ def _gemini_call_cost(model: str, prompt_tokens: int, completion_tokens: int) ->
     is_pro = "pro" in model.lower()
     prompt_rate = PRO_PROMPT_USD_PER_M if is_pro else FLASH_PROMPT_USD_PER_M
     completion_rate = PRO_COMPLETION_USD_PER_M if is_pro else FLASH_COMPLETION_USD_PER_M
-    cost = (
-        Decimal(prompt_tokens) * prompt_rate / Decimal(1_000_000)
-        + Decimal(completion_tokens) * completion_rate / Decimal(1_000_000)
-    )
+    cost = Decimal(prompt_tokens) * prompt_rate / Decimal(1_000_000) + Decimal(
+        completion_tokens
+    ) * completion_rate / Decimal(1_000_000)
     return cost.quantize(Decimal("0.000001"))
-
-
-async def _pioneer_as_gemini(**kwargs: Any) -> Any:
-    """Adapter so the production extractor wrapper can call Pioneer transparently.
-
-    The wrapper in ``backend.pipeline.extractor.extract`` catches
-    :class:`GeminiUnavailable` and falls back to the rule-based path —
-    we want the same behavior on Pioneer transport failures so the
-    eval row still gets scored (with ``extractor.source="rule"``)
-    instead of crashing the whole run mid-set.
-    """
-    try:
-        return await pioneer_llm.extract_facts(**kwargs)
-    except pioneer_llm.PioneerUnavailable as exc:
-        raise GeminiUnavailable(str(exc)) from exc
-
-
-def _install_pioneer_backend() -> None:
-    """Swap the LLM backend the production extractor calls.
-
-    The wrapper imported ``gemini_extract`` and ``gemini_available`` as
-    module-level names; reassigning those names on
-    ``backend.pipeline.extractor`` flips the backend for this process
-    only. Production code paths are untouched.
-    """
-    extractor_module.gemini_extract = _pioneer_as_gemini  # type: ignore[assignment]
-    extractor_module.gemini_available = pioneer_llm.is_available  # type: ignore[assignment]
-    log.info("eval.backend.installed", backend="pioneer")
 
 
 # Mutated by ``main()`` based on ``--via``. Read by ``_score_one`` to
@@ -215,7 +175,7 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
 
     result = await run_extractor(
         property_name=property_name,
-        current_context_excerpt="(none — eval run)",
+        current_context_excerpt="(none, eval run)",
         source=str(row.get("source") or "email"),
         raw_content=raw_content,
     )
@@ -230,22 +190,17 @@ async def _score_one(row: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
     completion_tokens = getattr(result, "completion_tokens", None)
     model = getattr(result, "model", "") or ""
     extractor_source = getattr(result, "source", "")
-    if (
-        extractor_source == "gemini"
-        and prompt_tokens is not None
-        and completion_tokens is not None
-    ):
+    if extractor_source == "gemini" and prompt_tokens is not None and completion_tokens is not None:
         try:
             cost = _gemini_call_cost(model, int(prompt_tokens), int(completion_tokens))
             cost_ledger.charge(ACTIVE_LEDGER_LABEL, cost)
-        except CostCapExceeded:
+        except CostCapExceededError:
             log.warning("eval.cost_cap_hit", event_id=event_id)
             raise
         except Exception as exc:  # noqa: BLE001
             log.warning("eval.ledger_error", error=str(exc))
     elif extractor_source == "pioneer":
-        # Pioneer keys are sponsor-supplied for the hackathon; no ledger charge.
-        # Tokens are still surfaced in scored row metadata for reporting.
+        # No pricing table for the gateway; tokens are still reported per row.
         pass
 
     scored = score_row(
@@ -279,7 +234,7 @@ async def run(set_name: str) -> tuple[Report, list[dict[str, Any]]]:
     """Run the eval set end-to-end. Returns (report, raw payloads)."""
     rows = _load_ground_truth(set_name)
     # Ensure the cost-ledger row exists with a fresh cap. We deliberately
-    # don't auto-reset spend across runs — operators do that with
+    # don't auto-reset spend across runs; operators do that with
     # `python -m connectors.cli re-route ... --reset-cost-ledger`. The
     # eval-runner cap is generous because a 30-row pass at Pro pricing
     # is on the order of a few cents.
@@ -320,24 +275,22 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--out",
         default=None,
-        help="Optional markdown destination (e.g. eval/runs/2026-04-25-step4.md).",
+        help="Optional markdown destination (e.g. docs/eval-runs/<date>-<name>.md).",
     )
     p.add_argument(
         "--via",
         choices=["gemini", "pioneer"],
         default="gemini",
         help=(
-            "LLM backend the production extractor wrapper calls. 'pioneer' "
-            "monkey-patches backend.pipeline.extractor for this run only and "
-            "writes to the step5_eval_pioneer ledger label. Production code "
-            "paths are untouched."
+            "LLM provider for this run, equivalent to LLM_PROVIDER. Without that "
+            "provider's API key the extractor falls back to its rule-based path."
         ),
     )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point — returns a POSIX exit code."""
+    """CLI entry point; returns a POSIX exit code."""
     configure_logging()
     args = _build_parser().parse_args(argv)
     global ACTIVE_BACKEND, ACTIVE_LEDGER_LABEL
@@ -345,8 +298,9 @@ def main(argv: list[str] | None = None) -> int:
     ACTIVE_LEDGER_LABEL = (
         EVAL_LEDGER_LABEL_PIONEER if args.via == "pioneer" else EVAL_LEDGER_LABEL_GEMINI
     )
-    if args.via == "pioneer":
-        _install_pioneer_backend()
+    # --via selects the provider exactly as LLM_PROVIDER does in production.
+    os.environ["LLM_PROVIDER"] = args.via
+    get_settings.cache_clear()
     try:
         report, raw_payloads = asyncio.run(run(args.set))
     except FileNotFoundError as exc:
@@ -367,9 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str))
     else:
         markdown = report.render_markdown()
-        markdown = (
-            f"_Backend: **{ACTIVE_BACKEND}**_\n\n" + markdown
-        )
+        markdown = f"_Backend: **{ACTIVE_BACKEND}**_\n\n" + markdown
         try:
             state = cost_ledger.get_state(ACTIVE_LEDGER_LABEL)
         except Exception:  # noqa: BLE001

@@ -1,12 +1,14 @@
-"""Tests for Phase 10 Step 10.6 — trust-layer action endpoints.
+"""Tests for the trust-layer action endpoints.
 
 Two write surfaces:
 
-1. ``POST /admin/uncertainties/{id}/resolve`` — promote-to-fact /
+1. ``POST /admin/uncertainties/{id}/resolve``: promote-to-fact or
    dismiss, both audit-logged.
-2. ``POST /admin/rejected/{id}/override`` — already shipped in Phase
-   9.2; we re-verify here that the audit trail (approval_log) is
-   actually written, since the user explicitly asked us to verify.
+2. ``POST /admin/rejected/{id}/override``: the reviewer's decision on a
+   validator rejection. We check end to end that every decision also
+   writes an ``approval_log`` row, because a human override without an
+   audit trail would undermine the provenance the rest of the system
+   relies on.
 
 Both use httpx.AsyncClient + ASGITransport so the route's asyncpg
 session shares the test's event loop.
@@ -22,44 +24,16 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
 
 
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
-
-
 def _async_client() -> httpx.AsyncClient:
-    """ASGI-transport client — see test_source_links for rationale."""
+    """ASGI-transport client; see test_source_links for rationale."""
     from backend.main import app  # noqa: PLC0415
 
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    )
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
 
 
 # ---------------------------------------------------------------------------
@@ -73,12 +47,9 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Trust Action Test') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Trust Action Test') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -90,7 +61,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         ref = f"trust-{uuid4().hex[:8]}"
         e = (
             await session.execute(
@@ -103,7 +74,7 @@ async def _seed_property() -> tuple[UUID, UUID, UUID]:
                 ),
                 {"ref": ref, "pid": p.id},
             )
-        ).first()
+        ).one()
         await session.commit()
     return b.id, p.id, e.id
 
@@ -145,7 +116,7 @@ async def _seed_uncertainty(
                     "field": field,
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
     return UUID(str(row.id))
 
@@ -175,7 +146,7 @@ async def _seed_rejection(
                 ),
                 {"eid": event_id, "pid": property_id},
             )
-        ).first()
+        ).one()
         await session.commit()
     return UUID(str(row.id))
 
@@ -184,10 +155,12 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
     factory = get_sessionmaker()
     async with factory() as session:
         await session.execute(
-            text("DELETE FROM approval_log WHERE target_id IN ("
-                 "SELECT id::text FROM uncertainty_events WHERE property_id = :pid"
-                 " UNION SELECT id::text FROM rejected_updates WHERE property_id = :pid"
-                 ")"),
+            text(
+                "DELETE FROM approval_log WHERE target_id IN ("
+                "SELECT id::text FROM uncertainty_events WHERE property_id = :pid"
+                " UNION SELECT id::text FROM rejected_updates WHERE property_id = :pid"
+                ")"
+            ),
             {"pid": property_id},
         )
         await session.execute(
@@ -205,12 +178,8 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
             text("DELETE FROM events WHERE property_id = :pid"),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": property_id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :id"), {"id": building_id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": property_id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": building_id})
         await session.commit()
 
 
@@ -219,9 +188,9 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_uses_explicit_value_when_provided() -> None:
     """A POST with action=promote_to_fact + value writes the explicit value as a fact."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -254,7 +223,7 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
                     ),
                     {"fid": body["fact_id"]},
                 )
-            ).first()
+            ).one()
             assert fact is not None
             assert fact.section == "financials"
             assert fact.field == "rent_amount"
@@ -272,7 +241,7 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
                     ),
                     {"uid": uid},
                 )
-            ).first()
+            ).one()
             assert unc.status == "resolved"
             assert unc.resolved_to_fact_id == UUID(body["fact_id"])
             assert unc.resolved_at is not None
@@ -293,20 +262,20 @@ async def test_promote_uses_explicit_value_when_provided() -> None:
             assert audit is not None
             assert audit.actor == "ops@keystone.test"
             assert audit.action == "uncertainty.promote_to_fact"
-            payload = audit.payload if isinstance(audit.payload, dict) else json.loads(audit.payload)
+            payload = (
+                audit.payload if isinstance(audit.payload, dict) else json.loads(audit.payload)
+            )
             assert payload["value_written"] == "1450 EUR"
             assert payload["reason"] == "tenant confirmed by phone today"
     finally:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
     """Omitting ``value`` falls back to the uncertainty's hypothesis."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
-    uid = await _seed_uncertainty(
-        property_id=pid, event_id=eid, hypothesis="1250 EUR"
-    )
+    uid = await _seed_uncertainty(property_id=pid, event_id=eid, hypothesis="1250 EUR")
     try:
         async with _async_client() as client:
             resp = await client.post(
@@ -327,19 +296,17 @@ async def test_promote_falls_back_to_hypothesis_when_no_value() -> None:
                     text("SELECT value FROM facts WHERE id = :fid"),
                     {"fid": fact_id},
                 )
-            ).first()
+            ).one()
         assert fact.value == "1250 EUR"
     finally:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_promote_422s_when_no_value_and_no_hypothesis() -> None:
     """An uncertainty with NULL hypothesis + no body.value cannot be promoted."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
-    uid = await _seed_uncertainty(
-        property_id=pid, event_id=eid, hypothesis=None
-    )
+    uid = await _seed_uncertainty(property_id=pid, event_id=eid, hypothesis=None)
     try:
         async with _async_client() as client:
             resp = await client.post(
@@ -361,9 +328,9 @@ async def test_promote_422s_when_no_value_and_no_hypothesis() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
     """``action=dismiss`` flips status without a fact + writes approval_log."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -372,7 +339,7 @@ async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
                 f"/admin/uncertainties/{uid}/resolve",
                 json={
                     "action": "dismiss",
-                    "reason": "off-topic — not actually about this property",
+                    "reason": "off-topic: not actually about this property",
                     "reviewed_by": "ops@keystone.test",
                 },
             )
@@ -416,9 +383,9 @@ async def test_dismiss_does_not_write_a_fact_but_audit_logs() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_resolve_404_for_missing_uncertainty() -> None:
     """An unknown uncertainty id returns 404."""
-    await _setup_or_skip()
     async with _async_client() as client:
         resp = await client.post(
             f"/admin/uncertainties/{uuid4()}/resolve",
@@ -431,9 +398,9 @@ async def test_resolve_404_for_missing_uncertainty() -> None:
     assert resp.status_code == 404
 
 
+@pytest.mark.usefixtures("db")
 async def test_double_resolve_409s() -> None:
     """Resolving a non-open uncertainty fails with 409."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     uid = await _seed_uncertainty(property_id=pid, event_id=eid)
     try:
@@ -461,13 +428,13 @@ async def test_double_resolve_409s() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Existing rejected/override path — verify it audit-logs end-to-end
+# Rejected/override path: verify it audit-logs end-to-end
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_rejected_override_writes_fact_and_audit() -> None:
     """``decision=overridden`` writes a fact + an approval_log entry."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     rid = await _seed_rejection(property_id=pid, event_id=eid)
     try:
@@ -530,9 +497,9 @@ async def test_rejected_override_writes_fact_and_audit() -> None:
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_rejected_dismiss_does_not_write_fact() -> None:
     """``decision=dismissed`` records the audit trail but writes no fact."""
-    await _setup_or_skip()
     bid, pid, eid = await _seed_property()
     rid = await _seed_rejection(property_id=pid, event_id=eid)
     try:
@@ -564,10 +531,7 @@ async def test_rejected_dismiss_does_not_write_fact() -> None:
 
             audit_action = (
                 await session.execute(
-                    text(
-                        "SELECT action FROM approval_log "
-                        "WHERE target_id = :tid"
-                    ),
+                    text("SELECT action FROM approval_log WHERE target_id = :tid"),
                     {"tid": str(rid)},
                 )
             ).scalar()

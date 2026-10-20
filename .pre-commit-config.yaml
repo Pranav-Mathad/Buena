@@ -1,0 +1,27 @@
+# Install once with `pre-commit install`; run on everything with
+# `pre-commit run --all-files`. CI runs the same checks (see
+# .github/workflows/ci.yml), so a commit that passes here passes there.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in step with the ruff version installed by `pip install -e ".[dev]"`.
+    rev: v0.17.1
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (frontend)
+        # Uses the prettier pinned in frontend/package.json; run `npm ci` in
+        # frontend/ first.
+        entry: npm --prefix frontend exec --no -- prettier --write --ignore-unknown --ignore-path frontend/.prettierignore
+        language: system
+        files: ^frontend/
+        pass_filenames: true
+
+      - id: sensitive-data
+        name: no blocked addresses, IBANs or Cloud Run URLs
+        entry: python scripts/check_sensitive_data.py
+        language: python
+        types: [text]

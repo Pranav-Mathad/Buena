@@ -1,4 +1,4 @@
-"""PDF upload endpoint — drop a PDF, get a pipeline event."""
+"""PDF upload endpoint: drop a PDF, get a pipeline event."""
 
 from __future__ import annotations
 
@@ -39,7 +39,9 @@ async def upload_pdf(
 ) -> PdfUploadResponse:
     """Parse the PDF, insert an event, drain the worker once."""
     if file.content_type not in {"application/pdf", "application/x-pdf", None}:
-        raise HTTPException(status_code=415, detail=f"unsupported content-type: {file.content_type}")
+        raise HTTPException(
+            status_code=415, detail=f"unsupported content-type: {file.content_type}"
+        )
 
     data = await file.read()
     if not data:
@@ -47,7 +49,7 @@ async def upload_pdf(
 
     try:
         body = extract_text(data)
-    except Exception as exc:  # noqa: BLE001 — surface extractor errors as 400s
+    except Exception as exc:  # noqa: BLE001 (surface extractor errors as 400s)
         log.exception("pdf.extract.failed", filename=file.filename)
         raise HTTPException(status_code=400, detail=f"could not parse PDF: {exc}") from exc
 

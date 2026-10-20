@@ -2,13 +2,13 @@
 
 Parameterised by entity type (``owner | building | property | tenant
 | contractor``) and a column mapping. The loader reads the CSV, applies
-PII redaction, and adapts each row into one of Phase 0's seed
-dataclasses (``OwnerSeed``, ``BuildingSeed``, …) so we can reuse the
+PII redaction, and adapts each row into one of the seed
+dataclasses from :mod:`seed.realistic_data` (``OwnerSeed``, ``BuildingSeed``, …) so we can reuse the
 existing ``seed.seed._upsert_*`` helpers.
 
 The Buena composer (:mod:`connectors.buena_archive`) wires four CSV
-readers — `eigentuemer`, `gebaeude/liegenschaft`, `mieter`,
-`dienstleister` — plus the unit/property hybrid that comes from
+readers (`eigentuemer`, `gebaeude/liegenschaft`, `mieter`,
+`dienstleister`) plus the unit/property hybrid that comes from
 `einheiten.csv` joined with `liegenschaft` rows in `stammdaten.json`.
 """
 
@@ -19,7 +19,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import structlog
 
@@ -37,7 +37,7 @@ class ColumnMap:
 
     The keys are Keystone field names; the values are the customer's
     column header in the source CSV. ``metadata_columns`` is the
-    pass-through bucket — every header listed here ends up under
+    pass-through bucket: every header listed here ends up under
     ``metadata`` after PII redaction.
     """
 
@@ -81,7 +81,7 @@ def _redact_value(column: str, value: str, pii_columns: Iterable[str]) -> Any:
     if "email" in lower or "mail" in lower:
         return redact.email_redact(value)
     if "bic" in lower:
-        # BIC is bank identifier — not strictly PII but Buena treats it as
+        # BIC is a bank identifier: not strictly PII, but Buena treats it as
         # bank-internal. Keep as-is; downstream can scrub if needed.
         return value
     return redact.scrub_text(value)
@@ -111,9 +111,7 @@ def read_rows(
                 if value is None:
                     redacted[column] = None
                     continue
-                redacted[column] = _redact_value(
-                    column, value.strip(), column_map.pii_columns
-                )
+                redacted[column] = _redact_value(column, value.strip(), column_map.pii_columns)
 
             mapped: dict[str, Any] = {}
             for canonical, source_col in column_map.required.items():
@@ -124,15 +122,14 @@ def read_rows(
                 if col in redacted:
                     metadata[col] = redacted[col]
 
-            natural_key = str(mapped.get("id") or mapped.get("email") or
-                              mapped.get("name") or "")
+            natural_key = str(mapped.get("id") or mapped.get("email") or mapped.get("name") or "")
             log.debug(
                 "stammdaten.row",
                 entity_type=entity_type,
                 natural_key=natural_key,
             )
             yield StammdatenRow(
-                entity_type=cast(EntityType, entity_type),
+                entity_type=entity_type,
                 natural_key=natural_key,
                 fields=mapped,
                 metadata=metadata,
@@ -140,7 +137,7 @@ def read_rows(
 
 
 def parse_iso_date(value: Any) -> date | None:
-    """Public helper — exposed so composers can keep date logic consistent."""
+    """Public helper, exposed so composers can keep date logic consistent."""
     if value in (None, "", b""):
         return None
     if isinstance(value, date):

@@ -1,8 +1,18 @@
-"""Debug + manual-trigger event endpoints.
+"""Manual event injection.
 
-``POST /debug/trigger_event`` is the demo-resilience backup when IMAP fails
-on venue wifi. It accepts the same raw email payload the poller would
-produce and inserts it idempotently.
+``POST /debug/trigger_event`` inserts one event and runs it through the
+pipeline synchronously, bypassing the queue. It is the way to feed the
+system without a connector (no IMAP account, no archive) and the quickest
+end-to-end check that routing, extraction and rendering work.
+
+Two request shapes are accepted:
+
+- ``raw_content``: the event text exactly as a connector would store it
+  in ``events.raw_content``.
+- ``from`` / ``subject`` / ``body``: composed into the same
+  ``From:``/``Subject:``/body layout the IMAP poller produces.
+
+Insertion is idempotent on ``(source, source_ref)``.
 """
 
 from __future__ import annotations
@@ -12,7 +22,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
@@ -24,19 +34,34 @@ log = structlog.get_logger(__name__)
 
 
 class TriggerEventRequest(BaseModel):
-    """Payload for a manually injected event."""
+    """Payload for a manually injected event: ``raw_content`` or ``body``."""
 
     source: str = Field(default="email")
     source_ref: str | None = Field(
         default=None,
         description="Optional idempotency key. Auto-generated if omitted.",
     )
+    raw_content: str | None = Field(
+        default=None,
+        description="Event text stored verbatim, as a connector would write it.",
+    )
     from_: str | None = Field(default=None, alias="from")
     subject: str | None = None
-    body: str
+    body: str | None = Field(
+        default=None,
+        description="Email body; combined with 'from' and 'subject' into raw_content.",
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _exactly_one_content_field(self) -> TriggerEventRequest:
+        if (self.raw_content is None) == (self.body is None):
+            raise ValueError("provide exactly one of 'raw_content' or 'body'")
+        if self.raw_content is not None and (self.from_ or self.subject):
+            raise ValueError("'from' and 'subject' only apply together with 'body'")
+        return self
 
 
 class TriggerEventResponse(BaseModel):
@@ -48,7 +73,9 @@ class TriggerEventResponse(BaseModel):
 
 
 def _build_raw_content(req: TriggerEventRequest) -> str:
-    """Assemble the ``raw_content`` in the same shape IMAP produces."""
+    """Return ``raw_content`` as given, or compose it the way IMAP does."""
+    if req.raw_content is not None:
+        return req.raw_content
     from_line = f"From: {req.from_}\n" if req.from_ else ""
     subject_line = f"Subject: {req.subject}\n" if req.subject else ""
     return f"{from_line}{subject_line}\n{req.body}".strip() + "\n"
@@ -59,14 +86,15 @@ async def trigger_event(
     payload: TriggerEventRequest,
     session: AsyncSession = Depends(get_session),
 ) -> TriggerEventResponse:
-    """Insert an event synchronously and process it end-to-end immediately.
+    """Insert an event and process it end-to-end before responding.
 
-    Bypasses the FIFO queue so the demo trigger lands its fact even
-    when the worker has hundreds of older Buena events still pending
-    (the queue clears in the background as the regular worker drains).
+    Processes this event directly instead of waiting for its turn in the
+    queue, so the response reflects its outcome even when older events
+    are still pending; the scheduled worker drains those independently.
     """
-    if not payload.body.strip():
-        raise HTTPException(status_code=400, detail="body must not be empty")
+    content = payload.raw_content if payload.raw_content is not None else payload.body
+    if not (content or "").strip():
+        raise HTTPException(status_code=400, detail="event content must not be empty")
 
     source_ref = payload.source_ref or f"debug-{uuid.uuid4()}"
     event_id, inserted = await insert_event(
@@ -86,6 +114,4 @@ async def trigger_event(
         inserted=inserted,
         processed=processed,
     )
-    return TriggerEventResponse(
-        event_id=event_id, inserted=inserted, processed=processed
-    )
+    return TriggerEventResponse(event_id=event_id, inserted=inserted, processed=processed)

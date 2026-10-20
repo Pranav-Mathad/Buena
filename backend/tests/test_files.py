@@ -1,4 +1,4 @@
-"""Tests for Phase 10 Step 10.4 — ``GET /files/<path>``.
+"""Tests for ``GET /files/<path>``.
 
 Path safety is the only thing this endpoint exists to enforce, so the
 tests focus on traversal attempts (`..`, absolute paths, NUL bytes,
@@ -8,6 +8,7 @@ escape via realpath) and on the happy path serving a real file.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -19,11 +20,9 @@ from backend.config import get_settings
 
 
 @pytest.fixture()
-def isolated_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def isolated_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
     """Point the files router at a tmp dir + reset its lru_cache."""
-    monkeypatch.setattr(
-        get_settings(), "keystone_files_root", str(tmp_path), raising=True
-    )
+    monkeypatch.setattr(get_settings(), "keystone_files_root", str(tmp_path), raising=True)
     files_api._allowed_root.cache_clear()
     yield tmp_path
     files_api._allowed_root.cache_clear()
@@ -98,7 +97,7 @@ def test_endpoint_serves_file_via_test_client(isolated_root: Path) -> None:
     target = isolated_root / "letter.pdf"
     target.write_bytes(b"%PDF-1.7 a real-looking doc")
 
-    from backend.main import app  # noqa: PLC0415 — heavy import
+    from backend.main import app  # noqa: PLC0415 (heavy import)
 
     client = TestClient(app)
     resp = client.get("/files/letter.pdf")

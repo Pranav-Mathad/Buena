@@ -1,8 +1,8 @@
-"""Step 8 — signal discovery on Buena real data.
+"""Signal discovery on the Buena sample dataset.
 
-Run after Step 6's email backfill lands so the SQL has data to chew
+Run after the email backfill has loaded so the SQL has data to chew
 on. Produces a markdown report (printed to stdout, redirect to
-``eval/runs/YYYY-MM-DD-signal-discovery.md``) covering:
+``docs/eval-runs/YYYY-MM-DD-signal-discovery.md``) covering:
 
 1. Top properties by event volume (90 d).
 2. Overlapping maintenance categories per property.
@@ -14,17 +14,18 @@ on. Produces a markdown report (printed to stdout, redirect to
 8. Threads with no resolution after 14+ days.
 
 Each section emits a heading, a top-N table, and a one-line takeaway
-on what kind of signal rule the data suggests. Step 8's quality bar
-(``precision ≥ 80% on the eval set``) means each candidate must be
+on what kind of signal rule the data suggests. A signal rule must
+reach ``precision ≥ 80% on the eval set``, so each candidate must be
 validated end-to-end before promotion to ``signal_rule_definitions``;
 the discovery script just surfaces the candidates.
 
 Usage::
 
     python -m eval.notebooks.signal_discovery
-    python -m eval.notebooks.signal_discovery --out eval/runs/$(date +%Y-%m-%d)-signal-discovery.md
+    python -m eval.notebooks.signal_discovery \\
+        --out docs/eval-runs/$(date +%Y-%m-%d)-signal-discovery.md
 
-The script is intentionally read-only — no fact writes, no event
+The script is intentionally read-only: no fact writes, no event
 mutations. Safe to run while the backfill / live worker are active.
 """
 
@@ -37,14 +38,14 @@ from typing import Any
 
 import structlog
 
-from backend.config import get_settings  # noqa: F401 — kept for downstream tweaks
+from backend.config import get_settings  # noqa: F401 (kept for downstream tweaks)
 from backend.logging import configure_logging
 
 log = structlog.get_logger("eval.signal_discovery")
 
 
 # -----------------------------------------------------------------------------
-# SQL queries — single source of truth so the report mirrors what runs.
+# SQL queries: single source of truth so the report mirrors what runs.
 # -----------------------------------------------------------------------------
 
 
@@ -97,13 +98,16 @@ WITH thread_events AS (
   WHERE source = 'email'
     AND metadata->>'thread_id' IS NOT NULL
 )
-SELECT percentile_disc(0.5)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p50_hours,
-       percentile_disc(0.9)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p90_hours,
-       percentile_disc(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0) AS p99_hours,
-       MAX(EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0)              AS max_hours,
-       COUNT(*)                                                                        AS lag_samples
-FROM thread_events
-WHERE prev_received_at IS NOT NULL;
+SELECT percentile_disc(0.5)  WITHIN GROUP (ORDER BY lag_hours) AS p50_hours,
+       percentile_disc(0.9)  WITHIN GROUP (ORDER BY lag_hours) AS p90_hours,
+       percentile_disc(0.99) WITHIN GROUP (ORDER BY lag_hours) AS p99_hours,
+       MAX(lag_hours)                                           AS max_hours,
+       COUNT(*)                                                 AS lag_samples
+FROM (
+  SELECT EXTRACT(EPOCH FROM (received_at - prev_received_at)) / 3600.0 AS lag_hours
+  FROM thread_events
+  WHERE prev_received_at IS NOT NULL
+) lags;
 """
 
 
@@ -190,7 +194,7 @@ LIMIT 20;
 
 SQL_UNROUTED_VERWENDUNGSZWECK = """
 -- Most common verwendungszweck strings on unrouted bank rows. Top
--- entries are the keyword-discovery candidates Step 8 wants to surface
+-- entries are the keyword-discovery candidates this script surfaces
 -- for promotion into the WEG-keyword list or the alias seed.
 SELECT (metadata->>'verwendungszweck') AS verwendungszweck,
        COUNT(*)                        AS occurrences
@@ -209,7 +213,7 @@ LIMIT 30;
 SQL_THREADS_NO_RESOLUTION = """
 -- Threads where the latest message is > 14 days old AND no fact
 -- was written that came from a downstream message in that thread.
--- This is a "stale conversation" candidate — high precision when
+-- This is a "stale conversation" candidate: high precision when
 -- we filter to threads that started with maintenance / complaint
 -- categories.
 WITH thread_last AS (
@@ -251,9 +255,7 @@ LIMIT 20;
 # -----------------------------------------------------------------------------
 
 
-def _render_section(
-    title: str, sql: str, takeaway: str, rows: list[dict[str, Any]]
-) -> str:
+def _render_section(title: str, sql: str, takeaway: str, rows: list[dict[str, Any]]) -> str:
     """Format one section as Markdown."""
     if not rows:
         return f"## {title}\n\n_No rows returned._\n\n**Takeaway:** {takeaway}\n"
@@ -298,8 +300,7 @@ SECTIONS: list[tuple[str, str, str]] = [
     (
         "5. Contractor concentration per building",
         SQL_CONTRACTOR_CONCENTRATION,
-        "≥ 60 % of invoices from one contractor is the dependency-risk "
-        "candidate.",
+        "≥ 60 % of invoices from one contractor is the dependency-risk candidate.",
     ),
     (
         "6. Owner-communication volume per property",
@@ -330,7 +331,8 @@ SECTIONS: list[tuple[str, str, str]] = [
 
 async def _execute_all() -> str:
     """Run every section against the live DB and return Markdown."""
-    from sqlalchemy import text  # noqa: PLC0415 — local import, lazy DB binding
+    from sqlalchemy import text  # noqa: PLC0415 (local import, lazy DB binding)
+
     from backend.db.session import get_sessionmaker  # noqa: PLC0415
 
     factory = get_sessionmaker()
@@ -340,11 +342,9 @@ async def _execute_all() -> str:
             try:
                 rows = (await session.execute(text(sql))).mappings().all()
                 parts.append(_render_section(title, sql, takeaway, [dict(r) for r in rows]))
-            except Exception as exc:  # noqa: BLE001 — keep the report going
+            except Exception as exc:  # noqa: BLE001 (keep the report going)
                 log.exception("signal_discovery.section_error", title=title)
-                parts.append(
-                    f"## {title}\n\n_Section failed: {type(exc).__name__}: {exc}_\n"
-                )
+                parts.append(f"## {title}\n\n_Section failed: {type(exc).__name__}: {exc}_\n")
     return "\n".join(parts)
 
 
@@ -357,8 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out",
         default=None,
-        help="Optional Markdown destination "
-        "(e.g. eval/runs/2026-04-26-signal-discovery.md).",
+        help="Optional Markdown destination (e.g. docs/eval-runs/2026-04-26-signal-discovery.md).",
     )
     args = parser.parse_args(argv)
 

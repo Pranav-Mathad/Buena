@@ -1,8 +1,9 @@
 """FastAPI entry point.
 
-Phase 1 wires the event-triggering + SSE routers alongside the Phase 0
-properties API, and starts the APScheduler worker/IMAP jobs during the
-lifespan context so a single ``uvicorn backend.main:app`` boots the demo.
+Mounts every router, configures CORS from ``KEYSTONE_CORS_ORIGINS``, and runs
+the background scheduler (event worker, IMAP poller, signal evaluator, optional
+ERP poller) inside the app's lifespan, so ``uvicorn backend.main:app`` is the
+whole backend.
 """
 
 from __future__ import annotations
@@ -13,11 +14,12 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
 
 from backend.api.admin import router as admin_router
 from backend.api.buildings import (
     building_router as buildings_router,
+)
+from backend.api.buildings import (
     liegenschaft_router as liegenschaften_router,
 )
 from backend.api.draft_reply import router as draft_reply_router
@@ -31,6 +33,8 @@ from backend.api.signals import router as signals_router
 from backend.api.source_links import router as source_links_router
 from backend.api.sse import (
     portfolio_router as sse_portfolio_router,
+)
+from backend.api.sse import (
     router as sse_router,
 )
 from backend.api.uploads import router as uploads_router
@@ -38,6 +42,7 @@ from backend.api.webhooks import router as webhooks_router
 from backend.config import get_settings
 from backend.logging import configure_logging
 from backend.scheduler import build_scheduler
+from backend.services.llm import log_configuration as log_llm_configuration
 
 
 @asynccontextmanager
@@ -49,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = build_scheduler()
     scheduler.start()
     log.info("keystone.startup", env=settings.app_env, jobs=len(scheduler.get_jobs()))
+    log_llm_configuration()
     try:
         yield
     finally:
@@ -63,25 +69,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-_cors_origins = [
-    origin.strip()
-    for origin in get_settings().keystone_cors_origins.split(",")
-    if origin.strip()
-]
-
-# Always allow Lovable origins
-_cors_origins.extend([
-    "https://keystone-insight.lovable.app",
-    "https://preview--keystone-insight.lovable.app",
-    "https://keystone-insight.lovable.app",
-    "https://preview--keystone-insight.lovable.app",
-    "https://e014e01e-3cc6-4aff-8939-c1bc4f248e09.lovableproject.com",
-])
-
+# KEYSTONE_CORS_ORIGINS is the only source of allowed browser origins: no
+# hardcoded hosts and no wildcard patterns, since credentials are allowed.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_origin_regex=r"https://.*\.(lovable\.app|lovableproject\.com)",
+    allow_origins=get_settings().cors_origin_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -109,9 +101,3 @@ app.include_router(draft_reply_router)
 async def health() -> dict[str, str]:
     """Liveness probe used by Docker / Railway and local smoke tests."""
     return {"status": "ok"}
-
-
-@app.get("/aikido.txt", response_class=PlainTextResponse, tags=["system"])
-async def aikido_verification() -> str:
-    """Serve the Aikido domain verification string."""
-    return "validation.aikido.e29d600660a740cc0f0e7cabb18d4b0a"

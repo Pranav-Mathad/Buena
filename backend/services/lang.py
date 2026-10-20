@@ -29,7 +29,7 @@ def detect_language(text: str) -> str:
 
     Defaults to :data:`DEFAULT_LANG` when the text is too short or
     detection fails. We also pin a deterministic seed so two runs of
-    the eval pick the same language label for the same input —
+    the eval pick the same language label for the same input, because
     ``langdetect`` is non-deterministic by default.
     """
     if not text or len(text) < MIN_DETECT_CHARS:
@@ -39,7 +39,7 @@ def detect_language(text: str) -> str:
 
         DetectorFactory.seed = 0
         code = str(detect(text)).lower()
-    except Exception as exc:  # noqa: BLE001 — collapse to default on any error
+    except Exception as exc:  # noqa: BLE001 (collapse to default on any error)
         log.debug("lang.detect_failed", error=str(exc))
         return DEFAULT_LANG
     if code in {"de", "en"}:

@@ -1,8 +1,7 @@
 """Render a property / building / Liegenschaft's current facts into markdown.
 
-The renderer is the canonical read path. Phase 8.1 widens it from
-"property only" to the three-tier hierarchy
-(:func:`render_markdown` for property,
+The renderer is the canonical read path. It covers the three-tier
+hierarchy (:func:`render_markdown` for property,
 :func:`render_building_markdown` for Haus,
 :func:`render_liegenschaft_markdown` for WEG).
 
@@ -10,17 +9,17 @@ A property's markdown ends with a **Building Context** block (most
 recent N events for its building) and a **WEG Context** block (most
 recent N for its Liegenschaft). Walking up the hierarchy honours the
 PM mental model that a unit is part of a building, which is part of a
-WEG — and events at higher tiers genuinely affect the unit even when
+WEG, and events at higher tiers genuinely affect the unit even when
 not directly attributed to it.
 
 Every fact line carries the inline ``[source: <event_id>]`` link.
-Web-sourced facts (Tavily) get a 🌐 badge.
+Facts from web-sourced events get a 🌐 badge.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -57,7 +56,7 @@ SECTION_TITLES: dict[str, str] = {
 }
 
 #: German section titles surfaced when a property's source-event language
-#: majority is German (Phase 8 Step 5).
+#: majority is German.
 SECTION_TITLES_DE: dict[str, str] = {
     "overview": "Überblick",
     "tenants": "Mieter",
@@ -84,7 +83,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "open_building": "Open building view",
         "open_weg": "Open WEG view",
         "needs_review": "Needs Review",
-        "stammdaten": "Stammdaten",
+        "stammdaten": "Master data",
         "stammdaten_subtitle": "Master record from the lease/owner registry",
         "unit": "Unit",
         "tenant": "Current tenant",
@@ -99,7 +98,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "rooms": "Rooms",
         "no_active_tenant": "No active tenant on file",
         "older_label": "Older entries",
-        "older_subtitle": "Compact pointers — click any item to open the original",
+        "older_subtitle": "Compact pointers: click any item to open the original",
     },
     "de": {
         "building_context": "Hauskontext",
@@ -124,7 +123,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "rooms": "Zimmer",
         "no_active_tenant": "Kein aktiver Mieter erfasst",
         "older_label": "Ältere Einträge",
-        "older_subtitle": "Kompakte Verweise — anklicken öffnet das Original",
+        "older_subtitle": "Kompakte Verweise: anklicken öffnet das Original",
     },
 }
 
@@ -132,15 +131,15 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
 CONTEXT_LIMIT: int = 5
 
 
-#: Three-tier bucketing thresholds (Phase 12+).
+#: Three-tier bucketing thresholds.
 #: - Active (≤ ACTIVE_DAYS): full detail, confidence inline, full source link.
 #: - Recent (ACTIVE_DAYS < age ≤ RECENT_DAYS): tight one-liner with date + truncated value.
-#: - Archive (> RECENT_DAYS): not rendered per-fact at all — collapsed into a
-#:   single per-year roll-up block per section ("2024 — 12 entries; last: …").
+#: - Archive (> RECENT_DAYS): not rendered per-fact at all; collapsed into a
+#:   single per-year roll-up line per section (year, entry count, latest entry).
 #:
 #: Picked so a property with decades of history stays bounded: an active
-#: window of 90 days keeps the demo's "what's happening this quarter" beat
-#: dense, while everything older compresses into a few summary lines.
+#: window of 90 days keeps the current quarter's activity in full detail,
+#: while everything older compresses into a few summary lines.
 ACTIVE_DAYS: int = 90
 RECENT_DAYS: int = 365
 
@@ -152,7 +151,7 @@ ACTIVE_CUTOFF_DAYS: int = RECENT_DAYS
 #: is one click away via the source link.
 COMPACT_VALUE_PREVIEW_CHARS: int = 100
 
-#: The activity section is chronological — every processed event writes
+#: The activity section is chronological: every processed event writes
 #: a bullet there. Without a per-section cap, a property with 1000
 #: events produces a 200 KB markdown body even when most of those
 #: events landed today (so date-based bucketing doesn't compress them).
@@ -160,7 +159,7 @@ COMPACT_VALUE_PREVIEW_CHARS: int = 100
 #: into the per-year archive roll-up alongside truly old facts.
 ACTIVITY_ACTIVE_LIMIT: int = 15
 
-#: Sections subject to ``ACTIVITY_ACTIVE_LIMIT``. Keep this list short —
+#: Sections subject to ``ACTIVITY_ACTIVE_LIMIT``. Keep this list short:
 #: fact-bearing sections (lease, financials, compliance) should never
 #: silently drop facts; activity is the only chronological log section.
 _CAPPED_SECTIONS: frozenset[str] = frozenset({"activity"})
@@ -187,7 +186,7 @@ class FactRow:
     source_event_id: UUID | None
     confidence: float
     source: str | None
-    # ``occurred_at`` is the original event's ``received_at`` — the moment
+    # ``occurred_at`` is the original event's ``received_at``: the moment
     # the fact came into the world, NOT when extraction happened. The
     # renderer buckets on this so a 20-year-old letter extracted today
     # still gets the compact render.
@@ -198,7 +197,7 @@ class FactRow:
 class Stammdaten:
     """Master-record snapshot for a property.
 
-    Stammdaten lives outside the events/facts pipeline — it's the
+    Stammdaten lives outside the events/facts pipeline; it's the
     authoritative lease/owner registry loaded once at ingest. Surfacing
     it in the markdown closes the gap where a freshly-onboarded
     property has no extracted facts yet but still has a real tenant,
@@ -271,9 +270,7 @@ async def _fetch_header(session: AsyncSession, property_id: UUID) -> PropertyHea
     return PropertyHeader(name=row.name, address=row.address)
 
 
-async def _fetch_stammdaten(
-    session: AsyncSession, property_id: UUID
-) -> Stammdaten | None:
+async def _fetch_stammdaten(session: AsyncSession, property_id: UUID) -> Stammdaten | None:
     """Pull the master-record snapshot for a property.
 
     Joins ``properties.metadata`` (unit dimensions), the active row in
@@ -441,15 +438,15 @@ def _classify_tier(fact: FactRow, *, now: datetime | None = None) -> FactTier:
     """Bucket a fact into ``active`` / ``recent`` / ``archive``.
 
     Facts with no ``occurred_at`` (manual writes, master-data backfill)
-    are treated as ``active`` — operators want them visible and
+    are treated as ``active``: operators want them visible and
     editable rather than buried in an archive roll-up.
     """
     occurred = fact.occurred_at
     if occurred is None:
         return "active"
     if occurred.tzinfo is None:
-        occurred = occurred.replace(tzinfo=timezone.utc)
-    reference = now or datetime.now(timezone.utc)
+        occurred = occurred.replace(tzinfo=UTC)
+    reference = now or datetime.now(UTC)
     age = reference - occurred
     if age <= timedelta(days=ACTIVE_DAYS):
         return "active"
@@ -462,7 +459,7 @@ def _is_compact(fact: FactRow, *, now: datetime | None = None) -> bool:
     """Backward-compat predicate kept for the legacy two-tier callers.
 
     True for anything outside the active window (i.e., ``recent`` *or*
-    ``archive``). The Phase 12 renderer uses :func:`_classify_tier`
+    ``archive``). The three-tier renderer uses :func:`_classify_tier`
     directly; this stays so external callers that imported the old
     name don't break.
     """
@@ -470,8 +467,8 @@ def _is_compact(fact: FactRow, *, now: datetime | None = None) -> bool:
     if occurred is None:
         return False
     if occurred.tzinfo is None:
-        occurred = occurred.replace(tzinfo=timezone.utc)
-    reference = now or datetime.now(timezone.utc)
+        occurred = occurred.replace(tzinfo=UTC)
+    reference = now or datetime.now(UTC)
     return (reference - occurred) > timedelta(days=ACTIVE_CUTOFF_DAYS)
 
 
@@ -486,19 +483,15 @@ def _truncate(text_value: str, *, limit: int = COMPACT_VALUE_PREVIEW_CHARS) -> s
 def _format_fact_line_active(fact: FactRow) -> str:
     """Detailed render for facts inside the active window.
 
-    Same shape as the original Phase 10 line — value verbatim,
-    confidence inline, full source link + optional web badge.
+    Value verbatim, confidence inline, full source link + optional
+    web badge.
     """
     source = (
         f"[source: {fact.source_event_id}](/events/{fact.source_event_id}/source)"
         if fact.source_event_id is not None
         else "[source: unknown]"
     )
-    badge = (
-        " 🌐 _Updated from web sources_"
-        if (fact.source or "").lower() == "web"
-        else ""
-    )
+    badge = " 🌐 _Updated from web sources_" if (fact.source or "").lower() == "web" else ""
     return (
         f"- **{_format_field(fact.field)}:** {fact.value} "
         f"_(confidence {fact.confidence:.2f})_ {source}{badge}"
@@ -508,14 +501,15 @@ def _format_fact_line_active(fact: FactRow) -> str:
 def _format_fact_line_compact(fact: FactRow) -> str:
     """Tight one-liner used for the **recent** tier (90 d–1 y).
 
-    Reads as ``YYYY-MM — Field name: short preview… [open detail](link)``.
+    Reads as the ``YYYY-MM`` date, the field name, a short preview and
+    an ``[open detail](link)``.
     The ``[open detail]`` link points to the source-resolving endpoint
     so an operator can read the original event without leaving the file.
     """
     if fact.occurred_at is not None:
         occurred = fact.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         date_str = occurred.strftime("%Y-%m")
     else:
         date_str = "unknown"
@@ -526,16 +520,13 @@ def _format_fact_line_compact(fact: FactRow) -> str:
         else "_(no source on file)_"
     )
     preview = _truncate(fact.value)
-    return (
-        f"- *{date_str}* — **{_format_field(fact.field)}:** {preview} "
-        f"{detail_link}"
-    )
+    return f"- *{date_str}* · **{_format_field(fact.field)}:** {preview} {detail_link}"
 
 
 def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
     """Per-year roll-up for the **archive** tier (> 1 y).
 
-    Twelve invoices from 2024 collapse to a single line — operators get
+    Twelve invoices from 2024 collapse to a single line: operators get
     the count + a click-through to the most recent of those archive
     events, instead of twelve bullets pushing the file size past 60 KB.
     """
@@ -547,7 +538,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
             continue
         occurred = fact.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         by_year.setdefault(str(occurred.year), []).append(fact)
     if not by_year:
         return []
@@ -558,8 +549,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         # Newest in the year, by occurred_at, drives the link target.
         latest = max(
             rows,
-            key=lambda f: f.occurred_at  # type: ignore[arg-type,return-value]
-            or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
         )
         link = (
             f"[open detail](/events/{latest.source_event_id}/source)"
@@ -570,8 +560,7 @@ def _format_archive_block(facts: list[FactRow], *, lang: str) -> list[str]:
         entries_label = "Einträge" if lang == "de" else "entries"
         latest_summary = _truncate(latest.value, limit=60)
         out.append(
-            f"- **{year}** — {len(rows)} {entries_label} "
-            f"({last_label}: {latest_summary}) {link}"
+            f"- **{year}**: {len(rows)} {entries_label} ({last_label}: {latest_summary}) {link}"
         )
     return out
 
@@ -673,10 +662,10 @@ async def _recent_events_for_scope(
 def _context_body(event: dict[str, str | int]) -> str:
     """Render the human-facing body of a context event.
 
-    For PDF sources whose text hasn't been extracted yet we use the
-    forward-looking phrasing ``"Invoice <filename> — awaiting
-    extraction"`` (Phase 9 trust-layer ethos: honest about epistemic
-    state). Once text is extracted (``head_chars > 0``) the snippet
+    For PDF sources whose text hasn't been extracted yet we say the
+    invoice is awaiting extraction rather than implying its contents
+    are known, so the file is honest about what has and hasn't been
+    read. Once text is extracted (``head_chars > 0``) the snippet
     drives the display normally.
     """
     source = str(event.get("source") or "")
@@ -685,7 +674,7 @@ def _context_body(event: dict[str, str | int]) -> str:
 
     if source in {"invoice", "letter"} and head_chars == 0 and filename:
         label = "Invoice" if source == "invoice" else "Letter"
-        return f"{label} {filename} — awaiting extraction"
+        return f"{label} {filename} (awaiting extraction)"
 
     snippet = str(event.get("snippet") or "")
     return snippet[:90] or "(no body)"
@@ -695,7 +684,7 @@ def _format_context_event(event: dict[str, str | int]) -> str:
     """Render one per-tier context event as a markdown bullet with source link."""
     when = str(event.get("received_at") or "")[:10] if event.get("received_at") else "?"
     return (
-        f"- *{when}* · `{event['source']}`/{event['kategorie']} — "
+        f"- *{when}* · `{event['source']}`/{event['kategorie']}: "
         f"{_context_body(event)} "
         f"[source: {event['id']}](/events/{event['id']}/source)"
     )
@@ -714,9 +703,7 @@ async def _fetch_facts_by_scope(
         "liegenschaft": "liegenschaft_id",
     }[scope]
     other_columns = ["property_id", "building_id", "liegenschaft_id"]
-    other_clauses = " AND ".join(
-        f"f.{col} IS NULL" for col in other_columns if col != column
-    )
+    other_clauses = " AND ".join(f"f.{col} IS NULL" for col in other_columns if col != column)
     sql = f"""
         SELECT f.section, f.field, f.value, f.source_event_id, f.confidence,
                f.created_at, e.source AS source,
@@ -795,7 +782,7 @@ def _format_uncertainty_line(item: UncertaintyRow) -> str:
     if len(snippet) > 160:
         snippet = snippet[:157].rstrip() + "…"
     return (
-        f"- _Unclear: {snippet} — {item.reason_uncertain}_ "
+        f"- _Unclear: {snippet} ({item.reason_uncertain})_ "
         f"[source: event {item.event_id}](/events/{item.event_id}/source)"
     )
 
@@ -814,13 +801,11 @@ class RejectionRow:
     occurred_at: datetime | None
 
 
-async def _fetch_pending_rejections(
-    session: AsyncSession, property_id: UUID
-) -> list[RejectionRow]:
+async def _fetch_pending_rejections(session: AsyncSession, property_id: UUID) -> list[RejectionRow]:
     """Pull every ``reviewed_status='pending'`` rejection for a property.
 
     The renderer surfaces these inline, beneath the active fact at the
-    same ``(section, field)`` coordinate, as ⚠ conflict markers — so an
+    same ``(section, field)`` coordinate, as ⚠ conflict markers, so an
     operator reading the file sees both the accepted fact and the
     proposal the validator rejected, with a one-click review link.
     """
@@ -866,21 +851,19 @@ def _format_conflict_line(rej: RejectionRow, *, lang: str) -> str:
     if rej.occurred_at is not None:
         occurred = rej.occurred_at
         if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=timezone.utc)
+            occurred = occurred.replace(tzinfo=UTC)
         when = f" ({occurred.strftime('%Y-%m-%d')})"
     label = "Konflikt" if lang == "de" else "Conflict"
     review = "Überprüfen" if lang == "de" else "Review"
     preview = _truncate(rej.proposed_value, limit=80)
     return (
-        f"  - ⚠ **{label}:** {preview}{when} — flagged by "
+        f"  - ⚠ **{label}:** {preview}{when}, flagged by "
         f"`{rej.constraint_name}`. "
         f"[{review} →](/admin/rejected/{rej.id})"
     )
 
 
-def _format_open_conflicts_block(
-    unmatched: list[RejectionRow], *, lang: str
-) -> list[str]:
+def _format_open_conflicts_block(unmatched: list[RejectionRow], *, lang: str) -> list[str]:
     """Standalone block listing rejections that don't pair to a current fact.
 
     These are typically validator-rejected proposals at scopes that
@@ -891,11 +874,7 @@ def _format_open_conflicts_block(
     """
     if not unmatched:
         return []
-    title = (
-        "Offene Konflikte zur Überprüfung"
-        if lang == "de"
-        else "Open conflicts pending review"
-    )
+    title = "Offene Konflikte zur Überprüfung" if lang == "de" else "Open conflicts pending review"
     review = "Überprüfen" if lang == "de" else "Review"
     out: list[str] = [f"## {title}", ""]
     for rej in unmatched:
@@ -903,16 +882,14 @@ def _format_open_conflicts_block(
         if rej.occurred_at is not None:
             occurred = rej.occurred_at
             if occurred.tzinfo is None:
-                occurred = occurred.replace(tzinfo=timezone.utc)
+                occurred = occurred.replace(tzinfo=UTC)
             when = f" ({occurred.strftime('%Y-%m-%d')})"
         preview = _truncate(rej.proposed_value, limit=100)
         section_label = _format_field(rej.section)
         field_label = _format_field(rej.field) if rej.field else ""
-        coord = (
-            f"{section_label} · {field_label}" if field_label else section_label
-        )
+        coord = f"{section_label} · {field_label}" if field_label else section_label
         out.append(
-            f"- ⚠ **{coord}:** {preview}{when} — flagged by "
+            f"- ⚠ **{coord}:** {preview}{when}, flagged by "
             f"`{rej.constraint_name}`. "
             f"[{review} →](/admin/rejected/{rej.id})"
         )
@@ -930,12 +907,13 @@ def _emit_sections(
 ) -> dict[str, dict[str, int]]:
     """Append one ``## Section`` block per non-empty section to ``lines``.
 
-    Three-tier render (Phase 12+):
-      * **Active** (≤ 90 d): full bullet — value verbatim, confidence inline,
-        full source link, optional 🌐 web badge.
-      * **Recent** (90 d–1 y): tight one-liner — ``YYYY-MM · field: preview… [open detail]``.
-      * **Archive** (> 1 y): collapses to a per-year roll-up
-        (``2024 — 12 entries; last: …``) under an ``### Archive`` heading.
+    Three-tier render:
+      * **Active** (≤ 90 d): full bullet with the value verbatim, confidence
+        inline, full source link, optional 🌐 web badge.
+      * **Recent** (90 d–1 y): tight one-liner with month, field, preview
+        and an ``[open detail]`` link.
+      * **Archive** (> 1 y): collapses to a per-year roll-up (entry count
+        and latest entry) under an ``### Archive`` heading.
 
     When a pending ``rejected_updates`` row exists at the same
     ``(section, field)`` coordinate as an active fact, an indented
@@ -950,11 +928,11 @@ def _emit_sections(
     needs_review_label = labels["needs_review"]
     archive_label = "Archiv" if lang == "de" else "Archive"
     archive_subtitle = (
-        "Ältere Einträge gruppiert nach Jahr — anklicken öffnet das Original"
+        "Ältere Einträge gruppiert nach Jahr: anklicken öffnet das Original"
         if lang == "de"
-        else "Older entries grouped by year — click any line to open the original"
+        else "Older entries grouped by year: click any line to open the original"
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     def _title(section: str) -> str:
         label = titles.get(section)
@@ -998,13 +976,11 @@ def _emit_sections(
         # with 1000 events processed today doesn't blow up the file.
         # Active rows are sorted newest-first; rows beyond the limit
         # fold straight into the archive tier where they collapse to
-        # one per-year roll-up bullet (``2026 — 135 entries``) instead
+        # one per-year roll-up bullet (2026, 135 entries) instead
         # of 135 separate lines.
         if section in _CAPPED_SECTIONS and len(active_rows) > ACTIVITY_ACTIVE_LIMIT:
             active_rows.sort(
-                key=lambda f: (
-                    f.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
-                ),
+                key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
                 reverse=True,
             )
             overflow = active_rows[ACTIVITY_ACTIVE_LIMIT:]
@@ -1012,9 +988,7 @@ def _emit_sections(
             archive_rows = overflow + archive_rows
 
         recent_rows.sort(
-            key=lambda f: (
-                f.occurred_at or datetime.min.replace(tzinfo=timezone.utc)
-            ),
+            key=lambda f: f.occurred_at or datetime.min.replace(tzinfo=UTC),
             reverse=True,
         )
 
@@ -1086,9 +1060,9 @@ def _format_frontmatter(
 ) -> list[str]:
     """Emit the YAML frontmatter block at the top of every property file.
 
-    Stays *deterministic* — same fact set + same coverage answers, same
+    Stays *deterministic*: same fact set + same coverage answers, same
     frontmatter. Trigger metadata (``trigger_event_id`` / ``trigger_summary``)
-    is intentionally **not** in the frontmatter — it lives on the
+    is intentionally **not** in the frontmatter; it lives on the
     ``property_files`` row's columns instead. Mixing them in here would
     make the markdown body churn on every fact write even when content
     didn't change.
@@ -1106,7 +1080,7 @@ def _format_frontmatter(
         f"property_id: {property_id}",
         f"name: {name}",
         f"address: {address}",
-        f"tier: property",
+        "tier: property",
         f"language: {lang}",
         f"as_of: {rendered_at.strftime('%Y-%m-%dT%H:%M:%SZ')}",
         f"fact_count: {len(facts)}",
@@ -1133,25 +1107,23 @@ def _format_frontmatter(
 
 @dataclass(frozen=True)
 class RenderResult:
-    """Returned by :func:`render_property_full` — markdown + structured index."""
+    """Returned by :func:`render_property_full`: markdown + structured index."""
 
     markdown: str
     content_index: dict[str, object]
 
 
-async def render_property_full(
-    session: AsyncSession, property_id: UUID
-) -> RenderResult:
+async def render_property_full(session: AsyncSession, property_id: UUID) -> RenderResult:
     """Render the living markdown + structured ``content_index`` together.
 
-    Three new responsibilities (Phase 12+):
-      1. **YAML frontmatter** at the top — stable, agent-readable.
+    On top of the plain markdown render this adds:
+      1. **YAML frontmatter** at the top: stable, agent-readable.
       2. **Three-tier bucketing** in section emit (active / recent / archive).
       3. **⚠ Conflict markers** beneath active facts when a pending
          rejected proposal exists at the same coordinate.
-      4. **## Coverage** scorecard — what's known, what's missing.
+      4. **## Coverage** scorecard: what's known, what's missing.
     """
-    from backend.pipeline.coverage import (  # noqa: PLC0415 — local import
+    from backend.pipeline.coverage import (  # noqa: PLC0415 (local import)
         compute_coverage,
         coverage_to_index,
         render_coverage_block,
@@ -1172,11 +1144,9 @@ async def render_property_full(
     liegenschaft_id: UUID | None = None
     liegenschaft_name: str | None = None
     if building_id is not None:
-        liegenschaft_id, liegenschaft_name = await _liegenschaft_for_building(
-            session, building_id
-        )
+        liegenschaft_id, liegenschaft_name = await _liegenschaft_for_building(session, building_id)
 
-    rendered_at = datetime.now(timezone.utc)
+    rendered_at = datetime.now(UTC)
     coverage = compute_coverage(stammdaten, facts, lang=lang)
 
     log.debug(
@@ -1204,29 +1174,20 @@ async def render_property_full(
     # this, building/liegenschaft-scope rejections attached to the
     # property would never surface in the property's markdown.
     fact_keys = {(f.section, f.field) for f in facts}
-    unmatched_rejections = [
-        r for r in rejections if (r.section, r.field) not in fact_keys
-    ]
+    unmatched_rejections = [r for r in rejections if (r.section, r.field) not in fact_keys]
     body_lines.extend(_format_open_conflicts_block(unmatched_rejections, lang=lang))
     body_lines.extend(render_coverage_block(coverage, lang=lang))
 
     # Building Context
     if building_id is not None:
-        events = await _recent_events_for_scope(
-            session, scope="building", scope_id=building_id
-        )
+        events = await _recent_events_for_scope(session, scope="building", scope_id=building_id)
         if events:
             body_lines.append(f"## {labels['building_context']}")
             body_lines.append("")
-            body_lines.append(
-                f"_{labels['building_subtitle']} — "
-                f"{building_address or building_id}_"
-            )
+            body_lines.append(f"_{labels['building_subtitle']}: {building_address or building_id}_")
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
-            body_lines.append(
-                f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n"
-            )
+            body_lines.append(f"\n[{labels['open_building']}](/buildings/{building_id}/markdown)\n")
 
     # WEG Context
     if liegenschaft_id is not None:
@@ -1236,15 +1197,11 @@ async def render_property_full(
         if events:
             body_lines.append(f"## {labels['weg_context']}")
             body_lines.append("")
-            body_lines.append(
-                f"_{labels['weg_subtitle']} — "
-                f"{liegenschaft_name or liegenschaft_id}_"
-            )
+            body_lines.append(f"_{labels['weg_subtitle']}: {liegenschaft_name or liegenschaft_id}_")
             body_lines.append("")
             body_lines.extend(_format_context_event(ev) for ev in events)
             body_lines.append(
-                f"\n[{labels['open_weg']}](/liegenschaften/"
-                f"{liegenschaft_id}/markdown)\n"
+                f"\n[{labels['open_weg']}](/liegenschaften/{liegenschaft_id}/markdown)\n"
             )
 
     frontmatter = _format_frontmatter(
@@ -1304,11 +1261,11 @@ async def render_property_full(
 
 
 async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
-    """Backward-compat wrapper — returns just the markdown body.
+    """Backward-compat wrapper that returns just the markdown body.
 
     Existing callers (``GET /properties/{id}/markdown`` fallback,
     ``test_pipeline_happy_path``) keep their string contract; the
-    Phase 12 materializer should use :func:`render_property_full`
+    materializer should use :func:`render_property_full`
     so it can populate the ``content_index`` JSONB column too.
 
     Raises:
@@ -1317,9 +1274,7 @@ async def render_markdown(session: AsyncSession, property_id: UUID) -> str:
     return (await render_property_full(session, property_id)).markdown
 
 
-async def render_building_markdown(
-    session: AsyncSession, building_id: UUID
-) -> str:
+async def render_building_markdown(session: AsyncSession, building_id: UUID) -> str:
     """Render the living markdown for a building (Haus)."""
     row = (
         await session.execute(
@@ -1337,9 +1292,7 @@ async def render_building_markdown(
     if row is None:
         raise ValueError(f"Building {building_id} not found")
 
-    facts = await _fetch_facts_by_scope(
-        session, scope="building", scope_id=building_id
-    )
+    facts = await _fetch_facts_by_scope(session, scope="building", scope_id=building_id)
     lines: list[str] = [
         f"# Building {row.address}",
         "",
@@ -1355,22 +1308,14 @@ async def render_building_markdown(
         if events:
             lines.append("## WEG Context")
             lines.append("")
-            lines.append(
-                f"_Recent activity at the WEG — "
-                f"{row.lname or row.liegenschaft_id}_"
-            )
+            lines.append(f"_Recent activity at the WEG: {row.lname or row.liegenschaft_id}_")
             lines.append("")
             lines.extend(_format_context_event(ev) for ev in events)
-            lines.append(
-                f"\n[Open WEG view](/liegenschaften/"
-                f"{row.liegenschaft_id}/markdown)\n"
-            )
+            lines.append(f"\n[Open WEG view](/liegenschaften/{row.liegenschaft_id}/markdown)\n")
     return "\n".join(lines).rstrip() + "\n"
 
 
-async def render_liegenschaft_markdown(
-    session: AsyncSession, liegenschaft_id: UUID
-) -> str:
+async def render_liegenschaft_markdown(session: AsyncSession, liegenschaft_id: UUID) -> str:
     """Render the living markdown for a Liegenschaft (WEG)."""
     row = (
         await session.execute(
@@ -1381,11 +1326,9 @@ async def render_liegenschaft_markdown(
     if row is None:
         raise ValueError(f"Liegenschaft {liegenschaft_id} not found")
 
-    facts = await _fetch_facts_by_scope(
-        session, scope="liegenschaft", scope_id=liegenschaft_id
-    )
+    facts = await _fetch_facts_by_scope(session, scope="liegenschaft", scope_id=liegenschaft_id)
     lines: list[str] = [
-        f"# WEG — {row.name}",
+        f"# WEG: {row.name}",
         "",
         f"_Liegenschaft UUID {liegenschaft_id}_",
         "",

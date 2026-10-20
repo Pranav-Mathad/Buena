@@ -2,32 +2,34 @@
 
 Why this script exists
 ======================
-``Extracted/`` is gitignored (real Buena partner data, names + IBANs in the
+``Extracted/`` is gitignored (real Buena customer data, names + IBANs in the
 clear). Cloud Run deploys and fresh clones therefore have no stammdaten and
 ``GET /properties`` returns only the 4 hand-crafted seed rows. This script
 produces an equivalent ``Extracted_demo/stammdaten/stammdaten.json`` that is
 safe to commit:
 
 * All IDs preserved verbatim (``EH-NNN``, ``EIG-NNN``, ``MIE-NNN``, ``DL-NNN``,
-  ``HAUS-12/14/16``, ``LIE-001``) — these are routing primary keys the rest
+  ``HAUS-12/14/16``, ``LIE-001``); these are routing primary keys the rest
   of the system depends on.
 * All foreign-key columns preserved (``einheit_id``, ``eigentuemer_id``,
   ``einheit_ids``, ``haus_id``).
-* ``einheiten`` rows copied verbatim — no PII, just unit shape.
-* Building shape (``etagen``, ``baujahr``, ``fahrstuhl``) preserved — used
+* ``einheiten`` rows copied verbatim: no PII, just unit shape.
+* Building shape (``etagen``, ``baujahr``, ``fahrstuhl``) preserved; used
   by the Building Context renderer.
 * Operational numbers (``kaltmiete``, ``kaution``, ``wohnflaeche_qm``,
-  ``miteigentumsanteil``) preserved — needed for realistic demo math.
-* Liegenschaft demo address (Immanuelkirchstraße 26, 10405 Berlin) preserved
-  — already public in KEYSTONE.md and the beginner's guide.
+  ``miteigentumsanteil``) preserved; rent totals, deposits and ownership
+  shares computed from the file must stay realistic.
+* Liegenschaft street and postcode REPLACED with a fixed fictional
+  address (``DEMO_STREET`` / ``DEMO_PLZ`` below). Unit and building names
+  are derived from it, so routing aliases stay internally consistent.
 * Person/company names, emails, phones, IBANs, street addresses, tax IDs
   REPLACED with deterministic synthetic German values. The verwalter
-  (Buena's real partner property manager) is also replaced.
+  (the real property manager named in the Buena dataset) is also replaced.
 
 Determinism
 -----------
 Each replacement is derived from ``hashlib.sha256(row_id)`` so the output
-is reproducible across runs. A future run regenerates the same demo file.
+is reproducible across runs. A future run regenerates the same output file.
 
 Usage
 -----
@@ -51,26 +53,85 @@ TARGET_DIR = REPO_ROOT / "Extracted_demo" / "stammdaten"
 TARGET = TARGET_DIR / "stammdaten.json"
 
 GERMAN_FIRST_NAMES_M = [
-    "Lukas", "Maximilian", "Felix", "Paul", "Jonas", "Ben", "Tim", "Tom",
-    "Niklas", "Leon", "Finn", "David", "Daniel", "Samuel", "Erik",
-    "Moritz", "Jakob", "Elias", "Noah", "Henry",
+    "Lukas",
+    "Maximilian",
+    "Felix",
+    "Paul",
+    "Jonas",
+    "Ben",
+    "Tim",
+    "Tom",
+    "Niklas",
+    "Leon",
+    "Finn",
+    "David",
+    "Daniel",
+    "Samuel",
+    "Erik",
+    "Moritz",
+    "Jakob",
+    "Elias",
+    "Noah",
+    "Henry",
 ]
 GERMAN_FIRST_NAMES_F = [
-    "Anna", "Sophie", "Lena", "Marie", "Hannah", "Emma", "Lisa", "Sara",
-    "Mia", "Lea", "Clara", "Laura", "Julia", "Lara", "Anja",
-    "Charlotte", "Emilia", "Greta", "Ida", "Johanna",
+    "Anna",
+    "Sophie",
+    "Lena",
+    "Marie",
+    "Hannah",
+    "Emma",
+    "Lisa",
+    "Sara",
+    "Mia",
+    "Lea",
+    "Clara",
+    "Laura",
+    "Julia",
+    "Lara",
+    "Anja",
+    "Charlotte",
+    "Emilia",
+    "Greta",
+    "Ida",
+    "Johanna",
 ]
 GERMAN_LAST_NAMES = [
-    "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner",
-    "Becker", "Schulz", "Hoffmann", "Schäfer", "Koch", "Bauer", "Richter",
-    "Klein", "Wolf", "Schröder", "Neumann", "Schwarz", "Zimmermann",
-    "Braun", "Krüger", "Hartmann", "Lange", "Werner", "Schmitz", "Krause",
-    "Meier", "Lehmann", "Schmid",
+    "Müller",
+    "Schmidt",
+    "Schneider",
+    "Fischer",
+    "Weber",
+    "Meyer",
+    "Wagner",
+    "Becker",
+    "Schulz",
+    "Hoffmann",
+    "Schäfer",
+    "Koch",
+    "Bauer",
+    "Richter",
+    "Klein",
+    "Wolf",
+    "Schröder",
+    "Neumann",
+    "Schwarz",
+    "Zimmermann",
+    "Braun",
+    "Krüger",
+    "Hartmann",
+    "Lange",
+    "Werner",
+    "Schmitz",
+    "Krause",
+    "Meier",
+    "Lehmann",
+    "Schmid",
 ]
 
-# Per-contractor demo company names — same order/length as the source
-# (16 rows). Mirrors the original branche so the demo still demonstrates
-# the same vendor mix without using real corporate identities.
+# Per-contractor synthetic company names, same order/length as the source
+# (16 rows). Mirrors the original branche so the synthetic data keeps the
+# same vendor mix without using real corporate identities.
 CONTRACTOR_FIRMA_BY_INDEX = [
     "Hausmeister Demo GmbH",
     "Aufzug Demo & Co. KG",
@@ -125,7 +186,7 @@ def _phone(row_id: str) -> str:
 def _iban(row_id: str) -> str:
     """Return a 22-char synthetic German IBAN with deterministic last-4.
 
-    All digits zero except the trailing 4 — preserves length + ``DE`` prefix
+    All digits zero except the trailing 4; preserves length + ``DE`` prefix
     so any IBAN regex still matches and ``redact.iban_last4`` produces a
     distinct value per row.
     """
@@ -157,13 +218,17 @@ def _steuernummer(row_id: str) -> str:
     return f"{a:02d}/{b:03d}/{c:05d}"
 
 
+DEMO_STREET = "Musterstraße 26"
+DEMO_PLZ = "10115"
+
+
 def synthesize_liegenschaft(src: dict[str, Any]) -> dict[str, Any]:
-    """Keep public address fields, replace all verwalter PII."""
+    """Replace the WEG address and all verwalter PII; keep building shape."""
     return {
         "id": src["id"],
-        "name": src["name"],
-        "strasse": src["strasse"],
-        "plz": src["plz"],
+        "name": f"WEG {DEMO_STREET}",
+        "strasse": DEMO_STREET,
+        "plz": DEMO_PLZ,
         "ort": src["ort"],
         "baujahr": src.get("baujahr"),
         "sanierung": src.get("sanierung"),
@@ -302,9 +367,7 @@ def main() -> None:
         "einheiten": list(src["einheiten"]),
         "eigentuemer": [synthesize_owner(e) for e in src["eigentuemer"]],
         "mieter": [synthesize_tenant(m) for m in src["mieter"]],
-        "dienstleister": [
-            synthesize_contractor(d, i) for i, d in enumerate(src["dienstleister"])
-        ],
+        "dienstleister": [synthesize_contractor(d, i) for i, d in enumerate(src["dienstleister"])],
     }
 
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,8 +377,7 @@ def main() -> None:
     )
     print(f"wrote {TARGET}")
     print(
-        f"  liegenschaft: 1   gebaeude: {len(out['gebaeude'])}   "
-        f"einheiten: {len(out['einheiten'])}"
+        f"  liegenschaft: 1   gebaeude: {len(out['gebaeude'])}   einheiten: {len(out['einheiten'])}"
     )
     print(
         f"  eigentuemer: {len(out['eigentuemer'])}   "

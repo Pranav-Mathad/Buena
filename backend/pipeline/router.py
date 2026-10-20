@@ -18,7 +18,7 @@ Strategy:
      occupied property.
   3. ``metadata.invoice_ref`` → events with ``source='invoice'`` whose
      filename contains that INV-NNN → that event's resolved property.
-     (Sequencing matters — invoices need to be loaded before bank rows
+     (Sequencing matters: invoices need to be loaded before bank rows
      for this path to be useful; until then it's a documented miss.)
 
 Unmatched events stay with ``property_id IS NULL`` and surface in the
@@ -40,8 +40,17 @@ log = structlog.get_logger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-zÄÖÜäöüß0-9]{2,}")
 _STOPWORDS = {
-    "apt", "apartment", "the", "and", "for", "with", "from", "this",
-    "that", "strasse", "str",
+    "apt",
+    "apartment",
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "strasse",
+    "str",
 }
 
 
@@ -64,9 +73,7 @@ async def _load_routing_corpus(
     session: AsyncSession,
 ) -> list[tuple[UUID, str, list[str]]]:
     """Return ``(property_id, name, aliases_including_name)`` for all properties."""
-    result = await session.execute(
-        text("SELECT id, name, aliases FROM properties")
-    )
+    result = await session.execute(text("SELECT id, name, aliases FROM properties"))
     corpus: list[tuple[UUID, str, list[str]]] = []
     for row in result.all():
         aliases = list(row.aliases or [])
@@ -82,13 +89,13 @@ async def route(
     *,
     min_score: float = 0.3,
 ) -> PropertyRoute | None:
-    """Property-only text router — alias substring + token-overlap fallback.
+    """Property-only text router: alias substring + token-overlap fallback.
 
     Returns ``None`` when nothing matches; callers then escalate to
     :func:`route_text_event` to apply the WEG keyword heuristics.
 
-    Kept as a focused primitive so existing tests + Phase 1 worker
-    paths continue to work bit-identically.
+    Kept as a focused primitive so existing tests + the worker's
+    property-only path continue to work bit-identically.
     """
     haystack = raw_content.lower()
     corpus = await _load_routing_corpus(session)
@@ -173,9 +180,9 @@ async def route_text_event(
        This is intentionally before the property attempt: a Mahnung
        from an insurer or a Bauamt Brandschutz request should land at
        the WEG even though the body mentions the building's
-       ``Immanuelkirchstraße 26`` address (which the property
+       ``Musterstraße 26`` address (which the property
        token-overlap fallback would otherwise greedily claim).
-    2. :func:`route` — alias substring + token-overlap → property.
+    2. :func:`route`: alias substring + token-overlap → property.
     3. ``HAUS-NN`` mention in the body → building.
     4. WEG keyword (with a unit ref present, or after #2 missed) →
        Liegenschaft as a last-resort fallback.
@@ -230,7 +237,7 @@ async def route_text_event(
             )
 
     # 4. WEG-keyword last-resort (a unit ref was present but the
-    #    property router still missed — degenerate case; we'd rather
+    #    property router still missed; degenerate case, we'd rather
     #    route to WEG than leave it stranded)
     if keyword_match:
         liegenschaft_id = await _default_liegenschaft(session)
@@ -263,8 +270,8 @@ async def route_text_event(
 # -----------------------------------------------------------------------------
 
 
-# Phase 8.1 — keyword set for liegenschaft (WEG) routing. The list is
-# drawn from real Buena verwendungszweck strings + email subjects/bodies;
+# Keyword set for liegenschaft (WEG) routing. The list is drawn from
+# real verwendungszweck strings + email subjects/bodies in the sample dataset;
 # matching is case-insensitive with word boundaries because the dataset
 # mixes ``Hausgeld / HAUSGELD / hausgeld`` freely.
 WEG_KEYWORDS: tuple[str, ...] = (
@@ -281,7 +288,7 @@ WEG_KEYWORDS: tuple[str, ...] = (
     # Accounting / banking
     "kontofuehrungsgebuehr",
     "kontoführungsgebühr",
-    # External parties typically billing the WEG (Step 4 baseline added)
+    # External parties typically billing the WEG
     "mahnung",
     "rechnung",
     "jahresabrechnung",
@@ -296,15 +303,13 @@ WEG_KEYWORDS: tuple[str, ...] = (
     "brandschutz",
     "brandschutznachweis",
 )
-WEG_KATEGORIE: frozenset[str] = frozenset(
-    {"hausgeld", "dienstleister", "versorger", "sonstige"}
-)
+WEG_KATEGORIE: frozenset[str] = frozenset({"hausgeld", "dienstleister", "versorger", "sonstige"})
 _WEG_KEYWORD_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(k) for k in WEG_KEYWORDS) + r")\b",
     re.IGNORECASE,
 )
 _HAUS_RE = re.compile(r"\bHAUS-\d+\b", re.IGNORECASE)
-# Per-unit reference markers — used by route_text_event to decide when a
+# Per-unit reference markers, used by route_text_event to decide when a
 # WEG keyword genuinely indicates WEG attribution vs. a per-unit note
 # that happens to mention "Mahnung" or "Rechnung" alongside an EH-/WE-/GE-.
 _UNIT_REF_RE = re.compile(
@@ -326,23 +331,20 @@ class StructuredRoute:
     building_id: UUID | None = None
     liegenschaft_id: UUID | None = None
     method: str = "unrouted"  # 'eh_alias' | 'mie_to_eh' | 'invoice_ref'
-                              # | 'haus_alias' | 'weg_keyword'
-                              # | 'weg_kategorie' | 'inherit_from_invoice'
-                              # | 'unrouted'
+    # | 'haus_alias' | 'weg_keyword'
+    # | 'weg_kategorie' | 'inherit_from_invoice'
+    # | 'unrouted'
     reason: str = ""
 
     @property
     def is_routed(self) -> bool:
         """True iff at least one of the three scope IDs is set."""
         return any(
-            x is not None
-            for x in (self.property_id, self.building_id, self.liegenschaft_id)
+            x is not None for x in (self.property_id, self.building_id, self.liegenschaft_id)
         )
 
 
-async def _route_by_eh_alias(
-    session: AsyncSession, eh_id: str
-) -> UUID | None:
+async def _route_by_eh_alias(session: AsyncSession, eh_id: str) -> UUID | None:
     """Look up a property whose ``aliases`` array contains ``eh_id``."""
     row = (
         await session.execute(
@@ -359,9 +361,7 @@ async def _route_by_eh_alias(
     return UUID(str(row.id)) if row else None
 
 
-async def _route_by_mie_id(
-    session: AsyncSession, mie_id: str
-) -> UUID | None:
+async def _route_by_mie_id(session: AsyncSession, mie_id: str) -> UUID | None:
     """``MIE-NNN`` → tenant.metadata.buena_mie_id → occupied property."""
     row = (
         await session.execute(
@@ -385,7 +385,7 @@ async def _route_by_invoice_ref(
     """Inherit attribution from a prior invoice event referenced by ``invoice_ref``.
 
     Returns ``(property_id, building_id, liegenschaft_id)`` from the
-    invoice — at most one is set; all three None means the invoice
+    invoice; at most one is set; all three None means the invoice
     exists but lacks attribution itself.
     """
     row = (
@@ -415,9 +415,7 @@ async def _route_by_invoice_ref(
     )
 
 
-async def _route_by_haus_alias(
-    session: AsyncSession, haus_id: str
-) -> UUID | None:
+async def _route_by_haus_alias(session: AsyncSession, haus_id: str) -> UUID | None:
     """``HAUS-NN`` → buildings table via ``metadata->>'buena_haus_id'``."""
     row = (
         await session.execute(
@@ -438,15 +436,12 @@ async def _default_liegenschaft(session: AsyncSession) -> UUID | None:
     """Return the WEG when there is exactly one in the database.
 
     The liegenschaft-keyword + kategorie heuristics know an event is
-    WEG-level but Buena doesn't carry a per-Liegenschaft identifier in
-    bank rows. With only one Liegenschaft loaded the choice is
-    unambiguous; multi-Liegenschaft tenants will need a richer matcher.
+    WEG-level but the sample dataset doesn't carry a per-Liegenschaft
+    identifier in bank rows. With only one Liegenschaft loaded the
+    choice is unambiguous; multi-Liegenschaft tenants will need a
+    richer matcher.
     """
-    row = (
-        await session.execute(
-            text("SELECT id FROM liegenschaften LIMIT 2")
-        )
-    ).all()
+    row = (await session.execute(text("SELECT id FROM liegenschaften LIMIT 2"))).all()
     if len(row) == 1:
         return UUID(str(row[0].id))
     return None
@@ -460,7 +455,7 @@ async def route_structured(
 ) -> StructuredRoute:
     """Pick the scope a structured event belongs to using metadata IDs only.
 
-    Phase 8.1 precedence — first match wins:
+    Precedence (first match wins):
 
     1. ``eh_id``       → property (unit)
     2. ``mie_id``      → tenant → property
@@ -471,9 +466,9 @@ async def route_structured(
        - ``verwendungszweck`` (or any text field on the event) matches
          a WEG keyword (case-insensitive, word-boundary), or
        - ``event_source == 'invoice'`` *and* a single Liegenschaft exists
-         (Buena invariant: every invoice in the archive is a WEG bill —
-         filenames carry contractor + invoice number but no per-unit
-         attribution)
+         (invariant of the sample dataset: every invoice in the archive
+         is a WEG bill; filenames carry contractor + invoice number
+         but no per-unit attribution)
 
     Reasons surfaced in ``StructuredRoute.reason`` are kept short + stable
     so the ``GET /admin/unrouted`` diagnostic is skim-friendly.
@@ -485,8 +480,7 @@ async def route_structured(
     kategorie = (metadata.get("kategorie") or "").lower().strip()
     verwendungszweck = str(metadata.get("verwendungszweck") or "")
     raw_text = " ".join(
-        str(metadata.get(k) or "")
-        for k in ("verwendungszweck", "filename", "subject", "from")
+        str(metadata.get(k) or "") for k in ("verwendungszweck", "filename", "subject", "from")
     )
 
     # 1. Property (unit)
@@ -536,7 +530,7 @@ async def route_structured(
                 reason=f"matched {haus_id}",
             )
 
-    # 5. Liegenschaft (WEG) — kategorie / keyword / source heuristics
+    # 5. Liegenschaft (WEG): kategorie / keyword / source heuristics
     is_weg_kategorie = kategorie in WEG_KATEGORIE and kategorie != "hausgeld"
     # `hausgeld` as a kategorie is per-unit (verwendungszweck has EH-NNN);
     # it only collapses to WEG when EH-/MIE-/HAUS- all missed above and
@@ -567,12 +561,10 @@ async def route_structured(
                 reason="invoice without per-unit attribution",
             )
 
-    # Unrouted — produce a precise diagnostic
+    # Unrouted: produce a precise diagnostic
     if not any((eh_id, mie_id, invoice_ref, haus_id, kategorie)):
         reason = "no EH-/MIE-/INV-/HAUS-/kategorie in metadata"
     else:
         seen = ", ".join(s for s in (eh_id, mie_id, invoice_ref, haus_id) if s)
-        reason = (
-            f"refs {seen or '(none)'} kat={kategorie or '(none)'} unresolved"
-        )
+        reason = f"refs {seen or '(none)'} kat={kategorie or '(none)'} unresolved"
     return StructuredRoute(method="unrouted", reason=reason)

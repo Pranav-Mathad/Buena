@@ -67,34 +67,23 @@ async def _write_or_supersede_fact(
     """Write a fact unless an identical scope+(section, field, value) is current.
 
     Exactly one of ``property_id`` / ``building_id`` / ``liegenschaft_id``
-    must be set — the scope is the natural key for the
+    must be set; the scope is the natural key for the
     ``superseded_by IS NULL`` lookup. Re-writes with identical values
     short-circuit; differing values stamp ``superseded_by`` on the
     predecessor.
     """
     if sum(x is not None for x in (property_id, building_id, liegenschaft_id)) != 1:
-        raise ValueError(
-            "exactly one of property_id / building_id / liegenschaft_id required"
-        )
+        raise ValueError("exactly one of property_id / building_id / liegenschaft_id required")
 
     if property_id is not None:
-        scope_clause = (
-            "property_id = :scope_id "
-            "AND building_id IS NULL AND liegenschaft_id IS NULL"
-        )
+        scope_clause = "property_id = :scope_id AND building_id IS NULL AND liegenschaft_id IS NULL"
         scope_id = property_id
     elif building_id is not None:
-        scope_clause = (
-            "building_id = :scope_id "
-            "AND property_id IS NULL AND liegenschaft_id IS NULL"
-        )
+        scope_clause = "building_id = :scope_id AND property_id IS NULL AND liegenschaft_id IS NULL"
         scope_id = building_id
     else:
         assert liegenschaft_id is not None
-        scope_clause = (
-            "liegenschaft_id = :scope_id "
-            "AND property_id IS NULL AND building_id IS NULL"
-        )
+        scope_clause = "liegenschaft_id = :scope_id AND property_id IS NULL AND building_id IS NULL"
         scope_id = liegenschaft_id
 
     current = (
@@ -151,7 +140,7 @@ async def _write_or_supersede_fact(
             {"new_id": new_id, "old_id": current.id},
         )
 
-    # Phase 12 — propagate to the materialized files. Bank/invoice are
+    # Propagate to the materialized files. Bank/invoice are
     # the only paths that write building- or liegenschaft-scoped facts,
     # so the cascade rule lives here too. Same session = same
     # transaction = atomic with the fact write.
@@ -177,7 +166,7 @@ async def extract_bank_facts(
 ) -> int:
     """Write deterministic facts for one bank event. Returns count written.
 
-    Phase 8.1: scope is whichever of ``property_id`` / ``building_id`` /
+    Scope is whichever of ``property_id`` / ``building_id`` /
     ``liegenschaft_id`` is set. No-op when all three are None
     (the event is genuinely unrouted).
 
@@ -190,11 +179,7 @@ async def extract_bank_facts(
     typ = (metadata.get("typ") or "").upper()
     amount = metadata.get("betrag")
     valuta = metadata.get("valuta")
-    formatted = (
-        f"{_format_amount(amount)} on {valuta}"
-        if valuta
-        else _format_amount(amount)
-    )
+    formatted = f"{_format_amount(amount)} on {valuta}" if valuta else _format_amount(amount)
 
     if property_id is not None:
         section = "financials"
@@ -243,10 +228,7 @@ async def extract_bank_facts(
                 **scope_kwargs,
                 section=section,
                 field=f"last_{kategorie}_{verb}",
-                value=(
-                    f"{formatted} ({verb}, kategorie={kategorie}, "
-                    f"source=bank)"
-                ),
+                value=(f"{formatted} ({verb}, kategorie={kategorie}, source=bank)"),
                 confidence=0.95,
                 source_event_id=event_id,
             )
@@ -259,9 +241,7 @@ async def extract_bank_facts(
 # -----------------------------------------------------------------------------
 
 
-async def _resolve_contractor_id(
-    session: AsyncSession, dl_id: str | None
-) -> UUID | None:
+async def _resolve_contractor_id(session: AsyncSession, dl_id: str | None) -> UUID | None:
     """Look up a Buena DL-XXX in the contractors table via ``contact->>'buena_dl_id'``."""
     if not dl_id:
         return None
@@ -325,16 +305,14 @@ async def extract_invoice_facts(
 ) -> int:
     """Write deterministic facts for one invoice event.
 
-    Phase 8.1: an invoice routes at one of three tiers; the section name
+    An invoice routes at one of three tiers; the section name
     follows the scope.
     """
     dl_id = metadata.get("dl_id") or _dl_id_from_filename(metadata.get("filename"))
     contractor_id = await _resolve_contractor_id(session, dl_id)
 
     if contractor_id is not None and property_id is not None:
-        await _ensure_serviced_by(
-            session, property_id=property_id, contractor_id=contractor_id
-        )
+        await _ensure_serviced_by(session, property_id=property_id, contractor_id=contractor_id)
 
     if property_id is not None:
         section = "maintenance"
@@ -356,10 +334,7 @@ async def extract_invoice_facts(
             **scope_kwargs,
             section=section,
             field="last_contractor_invoice",
-            value=(
-                f"{doctype} from contractor "
-                f"{dl_id or '(unknown)'} — {filename}"
-            ),
+            value=(f"{doctype} from contractor {dl_id or '(unknown)'} ({filename})"),
             confidence=0.9,
             source_event_id=event_id,
         )
@@ -371,7 +346,8 @@ def _dl_id_from_filename(filename: str | None) -> str | None:
     """Pull a ``DL-NNN`` token out of a Buena invoice filename."""
     if not filename:
         return None
-    import re  # noqa: PLC0415 — local import keeps regex hot path cheap
+    import re  # noqa: PLC0415 (local import keeps regex hot path cheap)
+
     match = re.search(r"\b(DL-\d{3,})\b", filename)
     return match.group(1) if match else None
 

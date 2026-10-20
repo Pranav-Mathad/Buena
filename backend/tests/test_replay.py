@@ -1,4 +1,4 @@
-"""Tests for Phase 10 Step 10.2 — sequential replay engine.
+"""Tests for the sequential replay engine.
 
 The engine drives :func:`backend.pipeline.worker.process_one`, so we
 monkeypatch that to keep tests offline + fast. Pause / resume / stop
@@ -15,36 +15,10 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
 from backend.services import replay
-from connectors.migrations import apply_all as ensure_migrations
 
 pytestmark = pytest.mark.asyncio
-
-
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
-
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
-
-
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
 
 
 async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID]]:
@@ -53,12 +27,9 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Test Replay Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Test Replay Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -70,7 +41,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
                 ),
                 {"bid": b.id},
             )
-        ).first()
+        ).one()
         event_ids: list[UUID] = []
         for i in range(n_events):
             ref = f"replay-{uuid4().hex[:8]}"
@@ -92,7 +63,7 @@ async def _seed_property_with_events(n_events: int = 3) -> tuple[UUID, list[UUID
                         "pid": p.id,
                     },
                 )
-            ).first()
+            ).one()
             event_ids.append(e.id)
         await session.commit()
     return p.id, event_ids
@@ -124,29 +95,23 @@ async def _cleanup(property_id: UUID) -> None:
         # Building lookup via property no longer possible after delete; we
         # just clean the test row by name.
         await session.execute(
-            text(
-                "DELETE FROM properties WHERE id = :pid "
-            ),
+            text("DELETE FROM properties WHERE id = :pid "),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM buildings WHERE address = 'Test Replay Bldg'")
-        )
+        await session.execute(text("DELETE FROM buildings WHERE address = 'Test Replay Bldg'"))
         await session.commit()
 
 
+@pytest.mark.usefixtures("db")
 async def test_pause_resume_stop_full_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
     """Start → pause → resume → stop hits every state and the durable row tracks it."""
-    await _setup_or_skip()
     pid, _ = await _seed_property_with_events(n_events=3)
     try:
         # Replace process_one with a fast no-op so the test doesn't hit Gemini.
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -172,19 +137,18 @@ async def test_pause_resume_stop_full_cycle(monkeypatch: pytest.MonkeyPatch) -> 
         await _cleanup(pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_scheduled_pause_fires_at_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A scheduled pause at at_seconds=0 puts the run into ``paused`` immediately."""
-    await _setup_or_skip()
     pid, _ = await _seed_property_with_events(n_events=2)
     try:
+
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -214,11 +178,11 @@ async def test_scheduled_pause_fires_at_checkpoint(
         await _cleanup(pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_reset_property_wipes_facts_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``reset_property=True`` clears facts but leaves stammdaten / events."""
-    await _setup_or_skip()
     pid, event_ids = await _seed_property_with_events(n_events=1)
     try:
         # Pre-seed a fact so reset has something to delete.
@@ -243,9 +207,7 @@ async def test_reset_property_wipes_facts_only(
         async def _noop_process_one(_session: Any) -> UUID | None:
             return None
 
-        monkeypatch.setattr(
-            replay, "process_one", _noop_process_one, raising=True
-        )
+        monkeypatch.setattr(replay, "process_one", _noop_process_one, raising=True)
 
         snapshot = await replay.start_run(
             property_id=pid,
@@ -263,17 +225,13 @@ async def test_reset_property_wipes_facts_only(
         async with factory() as session:
             facts_left = (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM facts WHERE property_id = :pid"
-                    ),
+                    text("SELECT COUNT(*) FROM facts WHERE property_id = :pid"),
                     {"pid": pid},
                 )
             ).scalar()
             events_left = (
                 await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM events WHERE property_id = :pid"
-                    ),
+                    text("SELECT COUNT(*) FROM events WHERE property_id = :pid"),
                     {"pid": pid},
                 )
             ).scalar()
@@ -292,7 +250,7 @@ async def test_reset_property_wipes_facts_only(
 
 async def test_normalise_pauses_validates_and_sorts() -> None:
     """``_normalise_pauses`` drops bad rows and sorts by ``at_seconds``."""
-    raw = [
+    raw: list[Any] = [
         {"at_seconds": 30.0, "message": "second"},
         {"at_seconds": 10.0, "message": "first"},
         {"at_seconds": "not_a_number", "message": "drop me"},

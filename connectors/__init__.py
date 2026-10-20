@@ -1,7 +1,7 @@
 """Customer-agnostic data connectors.
 
-A *connector* is anything that turns a customer's raw data — folder of
-EMLs, bank CSV, master-data spreadsheet, archive of PDFs — into the
+A *connector* is anything that turns a customer's raw data (a folder of
+EMLs, a bank CSV, a master-data spreadsheet, an archive of PDFs) into the
 event/fact stream Keystone's pipeline already consumes.
 
 Reuses (does not replace):
@@ -14,8 +14,8 @@ Reuses (does not replace):
 - ``seed.seed._upsert_*`` helpers for master-data upserts.
 
 The first composer (``connectors.buena_archive``) targets the Buena
-hackathon dataset. The next customer gets a sibling composer; the
-shape-handling primitives below are shared.
+sample dataset's directory layout. Another customer gets a sibling
+composer; the shape-handling primitives below are shared.
 """
 
 from __future__ import annotations

@@ -8,28 +8,30 @@ and the cardinalities the survey reported.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from connectors import buena_archive, camt_bank, eml_archive, redact
-from connectors.base import DataMissing
+from connectors.base import DataMissingError
 
 
-def _root_or_skip():
+def _root_or_skip() -> Path:
     try:
         return buena_archive.require_root()
-    except DataMissing as exc:
-        pytest.skip(f"Buena dataset not present locally — {exc}")
+    except DataMissingError as exc:
+        pytest.skip(f"Buena dataset not present locally: {exc}")
 
 
 def test_get_extracted_root_falls_back_to_default() -> None:
     # With no env var explicitly set to anything, we get the default path
-    # (which may or may not exist — that's fine for this assertion).
+    # (which may or may not exist; that's fine for this assertion).
     root = buena_archive.get_extracted_root("")
     assert root.name == "Extracted"
 
 
-def test_require_root_raises_for_missing_path(tmp_path) -> None:
-    with pytest.raises(DataMissing):
+def test_require_root_raises_for_missing_path(tmp_path: Path) -> None:
+    with pytest.raises(DataMissingError):
         buena_archive.require_root(str(tmp_path / "does_not_exist"))
 
 

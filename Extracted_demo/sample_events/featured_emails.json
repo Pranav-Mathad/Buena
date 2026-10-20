@@ -1,0 +1,35 @@
+{
+  "description": "Synthetic tenant emails for WE 29 (EH-029, the default FEATURED_PROPERTY), loaded by `python -m connectors.cli load-sample-events` so the featured property has a history on first start. The sender is the synthetic tenant MIE-017 from stammdaten/stammdaten.json. days_ago is counted back from load time.",
+  "events": [
+    {
+      "source_ref": "sample-we29-01",
+      "days_ago": 110,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Heizung ausgefallen\n\nGuten Tag,\n\ndie Heizung in WE 29 ist seit heute Morgen ausgefallen. Alle Heizkörper bleiben kalt.\n\nViele Grüße\nLaura Schmitz"
+    },
+    {
+      "source_ref": "sample-we29-02",
+      "days_ago": 74,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Heizung wieder kalt\n\nHallo,\n\ndie Heizung in WE 29 ist schon wieder ausgefallen, zum zweiten Mal in diesem Winter.\n\nViele Grüße\nLaura Schmitz"
+    },
+    {
+      "source_ref": "sample-we29-03",
+      "days_ago": 40,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Wasserschaden im Bad\n\nGuten Tag,\n\nin WE 29 tropft seit gestern Wasser von der Decke im Bad. Bitte schicken Sie schnell einen Handwerker.\n\nDanke und viele Grüße\nLaura Schmitz"
+    },
+    {
+      "source_ref": "sample-we29-04",
+      "days_ago": 33,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Mietminderung wegen Wasserschaden\n\nSehr geehrte Damen und Herren,\n\nwegen des Wasserschadens in WE 29 kündige ich eine Mietminderung von 10 % an, bis der Schaden behoben ist.\n\nMit freundlichen Grüßen\nLaura Schmitz"
+    },
+    {
+      "source_ref": "sample-we29-05",
+      "days_ago": 12,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Heizung zum dritten Mal ausgefallen\n\nHallo,\n\ndie Heizung in WE 29 ist zum dritten Mal ausgefallen. Bitte lassen Sie die Anlage grundsätzlich prüfen.\n\nViele Grüße\nLaura Schmitz"
+    },
+    {
+      "source_ref": "sample-we29-06",
+      "days_ago": 5,
+      "raw_content": "From: Laura Schmitz <laura.schmitz@example.de>\nSubject: Lärm im Treppenhaus\n\nGuten Tag,\n\nseit einer Woche gibt es nachts Lärm im Treppenhaus vor WE 29.\n\nViele Grüße\nLaura Schmitz"
+    }
+  ]
+}

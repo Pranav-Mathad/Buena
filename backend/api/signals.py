@@ -1,15 +1,15 @@
-"""Approval inbox — list / approve / reject / edit / evaluate.
+"""Approval inbox: list, inspect, evaluate, approve, reject and edit signals.
 
-Shape matches what the Lovable UI will bind to:
-
-- ``GET /signals`` — list with filters (``status``, ``severity``, ``type``).
-- ``GET /signals/{id}`` — single signal with its proposed_action + evidence.
-- ``POST /signals/evaluate`` — manually fire the rule evaluator (demo trigger).
-- ``POST /signals/{id}/approve`` — dispatch via the Entire-compatible broker,
-  write outbox row + approval log entry, flip status to ``resolved``.
-- ``POST /signals/{id}/reject`` — log rejection, flip status to ``rejected``.
-- ``POST /signals/{id}/edit`` — allow the human to edit the drafted message
-  before approval; writes an ``approval_log`` row with ``decision='edited'``.
+- ``GET /signals``: list with filters (``status``, ``severity``, ``type``).
+- ``GET /signals/{id}``: one signal with its proposed action and evidence.
+- ``POST /signals/evaluate``: run the rule evaluator now instead of waiting
+  for the next scheduled run.
+- ``POST /signals/{id}/approve``: dispatch through the approval broker
+  (``backend.services.approval``), write the outbox row and an
+  ``approval_log`` entry, and set the status to ``resolved``.
+- ``POST /signals/{id}/reject``: log the rejection and set ``rejected``.
+- ``POST /signals/{id}/edit``: edit the drafted message before approval;
+  writes an ``approval_log`` row with ``decision='edited'``.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_session
-from backend.services.entire import get_broker
+from backend.services.approval import get_broker
 from backend.signals.evaluator import evaluate_all
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -88,7 +88,7 @@ class EvaluateResponse(BaseModel):
 
 
 class ProposeRequest(BaseModel):
-    """Payload for ``POST /signals/propose`` — MCP / external-AI entry point."""
+    """Payload for ``POST /signals/propose``: MCP / external-AI entry point."""
 
     property_id: UUID | None = None
     type: str = Field(..., min_length=1)
@@ -178,10 +178,12 @@ async def propose_signal(
 ) -> ProposeResponse:
     """Insert a pending signal authored by an external AI (Claude via MCP).
 
-    The human always approves before any outbox side effect — this endpoint
+    The human always approves before any outbox side effect; this endpoint
     deliberately does not dispatch.
     """
-    severity = payload.severity if payload.severity in {"low", "medium", "high", "urgent"} else "medium"
+    severity = (
+        payload.severity if payload.severity in {"low", "medium", "high", "urgent"} else "medium"
+    )
     action: dict[str, Any] = dict(payload.action)
     action.setdefault("type", "owner_notification")
     action.setdefault("channel", "email")
@@ -227,7 +229,11 @@ async def propose_signal(
 async def evaluate_now(
     session: AsyncSession = Depends(get_session),
 ) -> EvaluateResponse:
-    """Manually fire the rule evaluator. Useful for demo determinism."""
+    """Run the rule evaluator now instead of waiting for the next scheduled run.
+
+    Lets an operator (or a test) see the signals for freshly ingested
+    data immediately and at a known point in time.
+    """
     created = await evaluate_all(session)
     await session.commit()
     log.info("signals.evaluate", created=created)
@@ -280,9 +286,7 @@ async def edit_signal(
     if row is None:
         raise HTTPException(status_code=404, detail="signal not found")
     if row.status not in {"pending", "approved"}:
-        raise HTTPException(
-            status_code=409, detail=f"cannot edit signal in status={row.status}"
-        )
+        raise HTTPException(status_code=409, detail=f"cannot edit signal in status={row.status}")
 
     action = row.proposed_action or {}
     if isinstance(action, str):
@@ -326,7 +330,7 @@ async def approve_signal(
     signal_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> ActionResponse:
-    """Dispatch via the Entire-compatible broker, log, and resolve."""
+    """Dispatch through the approval broker, log the decision, resolve the signal."""
     row = (
         await session.execute(
             text(
@@ -341,9 +345,7 @@ async def approve_signal(
     if row is None:
         raise HTTPException(status_code=404, detail="signal not found")
     if row.status != "pending":
-        raise HTTPException(
-            status_code=409, detail=f"signal is {row.status}, cannot approve"
-        )
+        raise HTTPException(status_code=409, detail=f"signal is {row.status}, cannot approve")
 
     action = row.proposed_action or {}
     if isinstance(action, str):

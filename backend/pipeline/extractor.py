@@ -1,17 +1,16 @@
 """Extract structured facts from an event.
 
-Phase 8 Step 5 reshapes this module:
+- The event language is detected with :mod:`backend.services.lang` and
+  selects the German or English prompt.
+- The configured LLM provider (:mod:`backend.services.llm`) runs the shared
+  extraction prompt and schema. Without a configured provider, or after its
+  retries fail, a deterministic extractor built on
+  :mod:`backend.pipeline.lexicon` (German and English keywords) runs instead.
+- Either way, facts below :data:`CONFIDENCE_FLOOR` are moved to
+  ``uncertain[]``, so a low-confidence guess never becomes a fact.
 
-- Detect the event language with :mod:`backend.services.lang` and
-  dispatch to the matching prompt template (German vs English).
-- Default extractor model is **Gemini Pro** (per Step 5: extraction
-  quality matters more than throughput on the email path). Flash is
-  reserved for the auxiliary category-classification fallback below.
-- Rule fallback consults :mod:`backend.pipeline.lexicon` so the
-  keyword set lives in one place and covers German + English.
-
-Both paths return the same :class:`ExtractionResult` so downstream
-stages don't need to branch.
+Both paths return the same :class:`ExtractionResult`, so downstream stages
+do not branch on which one ran.
 """
 
 from __future__ import annotations
@@ -32,30 +31,18 @@ from backend.pipeline.lexicon import (
     TENANT_CHANGE,
     WATER,
     WINDOW_DOOR,
-    Topic,
     categorize,
 )
-from backend.services.gemini import (
-    ExtractionResult,
-    GeminiUnavailable,
-    extract_facts as gemini_extract,
-    is_available as gemini_available,
-)
 from backend.services.lang import detect_language
-from backend.services.pioneer_llm import (
-    PioneerUnavailable,
-    extract_facts as pioneer_extract,
-    is_available as pioneer_available,
-)
+from backend.services.llm import ExtractionResult, LLMUnavailableError, get_provider
 
 log = structlog.get_logger(__name__)
 
 
-# Phase 9 Step 9.1 — confidence floor. Facts the extractor produced
-# below this threshold are demoted to ``uncertain[]`` regardless of
-# whether the model itself flagged them, so the applier never writes
-# a low-confidence fact into the canonical ``facts`` table.
-# Hardcoded for now; a per-section config table is a Phase 9+ item.
+# Facts the extractor produced below this confidence are demoted to
+# ``uncertain[]`` whether or not the model flagged them, so the applier never
+# writes a low-confidence fact into ``facts``. One global value for now; a
+# per-section threshold would need calibration data per section.
 CONFIDENCE_FLOOR: float = 0.7
 
 
@@ -66,10 +53,10 @@ _FROM_RE = re.compile(r"^from:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 def _apply_confidence_floor(result: ExtractionResult) -> ExtractionResult:
     """Demote sub-floor facts to ``uncertain[]`` so they don't reach the applier.
 
-    The extractor (Gemini *or* rule fallback) sometimes emits facts at
-    confidence 0.6 — high enough to be worth surfacing, low enough to
-    not warrant overwriting a canonical fact. Step 9.1's contract is
-    that those land in ``uncertainty_events`` instead of ``facts``.
+    The extractor (LLM provider or rule fallback) sometimes emits facts at
+    confidence 0.6: high enough to be worth surfacing, low enough to
+    not warrant overwriting a canonical fact. Those land in
+    ``uncertainty_events`` instead of ``facts``.
     """
     keep: list[dict[str, Any]] = []
     demoted: list[dict[str, Any]] = []
@@ -127,23 +114,21 @@ def _extract_subject(raw: str) -> str:
 # Field names align with the field_vocabulary.json contract so the rule
 # fallback's output isn't penalised by the eval scorer just for naming.
 _TOPIC_DISPATCH: dict[str, tuple[str, str, str, str]] = {
-    HEATING.name:        ("maintenance", "high",   "maintenance", "open_heating_issue"),
-    WATER.name:          ("maintenance", "urgent", "maintenance", "open_water_leak"),
-    KEY_LOSS.name:       ("maintenance", "medium", "maintenance", "key_lost"),
-    WINDOW_DOOR.name:    ("maintenance", "medium", "maintenance", "defective_window"),
-    LEASE.name:          ("lease",       "medium", "lease",       "renewal_discussion"),
-    TENANT_CHANGE.name:  ("tenant_change","medium","lease",       "termination_notice"),
-    PAYMENT.name:        ("payment",     "medium", "financials",  "payment_mention"),
-    OWNER_COMM.name:     ("owner_communication", "medium", "overview", "sale_intent"),
-    COMPLAINT.name:      ("maintenance", "medium", "maintenance", "noise_complaint"),
-    COMPLIANCE.name:     ("compliance",  "medium", "compliance",  "regulatory_mention"),
+    HEATING.name: ("maintenance", "high", "maintenance", "open_heating_issue"),
+    WATER.name: ("maintenance", "urgent", "maintenance", "open_water_leak"),
+    KEY_LOSS.name: ("maintenance", "medium", "maintenance", "key_lost"),
+    WINDOW_DOOR.name: ("maintenance", "medium", "maintenance", "defective_window"),
+    LEASE.name: ("lease", "medium", "lease", "renewal_discussion"),
+    TENANT_CHANGE.name: ("tenant_change", "medium", "lease", "termination_notice"),
+    PAYMENT.name: ("payment", "medium", "financials", "payment_mention"),
+    OWNER_COMM.name: ("owner_communication", "medium", "overview", "sale_intent"),
+    COMPLAINT.name: ("maintenance", "medium", "maintenance", "noise_complaint"),
+    COMPLIANCE.name: ("compliance", "medium", "compliance", "regulatory_mention"),
 }
 
 
-def _rule_based(
-    *, source: str, raw_content: str, lang: str
-) -> ExtractionResult:
-    """Deterministic fallback when Gemini is unavailable or errors out.
+def _rule_based(*, source: str, raw_content: str, lang: str) -> ExtractionResult:
+    """Deterministic fallback when no LLM provider is configured or it fails.
 
     Uses :mod:`backend.pipeline.lexicon` for the keyword set so the
     German + English vocabularies coexist. Only emits a fact when one
@@ -170,8 +155,11 @@ def _rule_based(
     category, priority, section, field = _TOPIC_DISPATCH[topic.name]
     note = f"{subject}"
     if sender_hint:
-        note = f"{subject} (gemeldet via {source} von {sender_hint})" if lang == "de" \
+        note = (
+            f"{subject} (gemeldet via {source} von {sender_hint})"
+            if lang == "de"
             else f"{subject} (reported via {source} from {sender_hint})"
+        )
     return ExtractionResult(
         category=category,
         priority=priority,
@@ -196,23 +184,17 @@ async def extract(
     source: str,
     raw_content: str,
 ) -> ExtractionResult:
-    """Run an LLM extractor if possible; otherwise fall back to the lexicon rules.
+    """Run the configured LLM extractor, or the lexicon rules when it is unavailable.
 
-    Pioneer (Claude Sonnet 4.6 via the OpenAI-compatible gateway) is the
-    primary path — Phase 11 made it the production extractor after the
-    Gemini free-tier quota became unreliable. Gemini stays as a
-    secondary so a working ``GEMINI_API_KEY`` still gets exercised. The
-    lexicon-based rule fallback is the last line of defence and never
-    talks to a remote model.
-
-    ``lang`` is detected from ``raw_content`` and threaded into every
-    path so the prompt + lexicon align with the email body's language.
+    ``lang`` is detected from ``raw_content`` and used by both paths, so the
+    prompt and the lexicon match the event's language.
     """
     lang = detect_language(raw_content)
 
-    if pioneer_available():
+    provider = get_provider()
+    if provider is not None:
         try:
-            result = await pioneer_extract(
+            result = await provider.extract_facts(
                 property_name=property_name,
                 current_context_excerpt=current_context_excerpt,
                 source=source,
@@ -220,23 +202,10 @@ async def extract(
                 lang=lang,
             )
             return _apply_confidence_floor(result)
-        except PioneerUnavailable as exc:
-            log.warning("extractor.pioneer_unavailable", error=str(exc), lang=lang)
+        except LLMUnavailableError as exc:
+            log.warning("extractor.llm_unavailable", provider=provider.name, error=str(exc)[:300])
 
-    if gemini_available():
-        try:
-            result = await gemini_extract(
-                property_name=property_name,
-                current_context_excerpt=current_context_excerpt,
-                source=source,
-                raw_content=raw_content,
-                lang=lang,
-            )
-            return _apply_confidence_floor(result)
-        except GeminiUnavailable as exc:
-            log.warning("extractor.gemini_unavailable", error=str(exc), lang=lang)
-
-    log.info("extractor.fallback.rule_based", source=source, lang=lang)
-    return _apply_confidence_floor(
-        _rule_based(source=source, raw_content=raw_content, lang=lang)
-    )
+    # Expected on a keyless install, so only worth a debug line there.
+    log_fallback = log.info if provider is not None else log.debug
+    log_fallback("extractor.fallback.rule_based", source=source, lang=lang)
+    return _apply_confidence_floor(_rule_based(source=source, raw_content=raw_content, lang=lang))

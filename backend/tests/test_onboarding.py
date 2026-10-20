@@ -1,49 +1,38 @@
-"""Tests for Phase 10 Step 10.3 — onboarding view.
+"""Tests for the onboarding view.
 
-The onboarding view has one Gemini call (the 12-month briefing) and
-four deterministic sections. We monkeypatch the Gemini choke-point so
-tests are offline + deterministic; the deterministic sections are
+The onboarding view has one LLM call (the 12-month briefing) and
+four deterministic sections. We monkeypatch the provider lookup
+(``onboarding.get_provider``) so tests are offline + deterministic; the deterministic sections are
 exercised end-to-end against a real DB row, so cleanup matters.
 """
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from sqlalchemy import text
 
-from backend.config import get_settings
 from backend.db.session import get_sessionmaker
-from backend.services import gemini, onboarding
-from connectors.migrations import apply_all as ensure_migrations
+from backend.services import onboarding
 
 pytestmark = pytest.mark.asyncio
 
 
-def _reset_session_cache() -> None:
-    from backend.db import session as session_module  # noqa: PLC0415
+class _StubProvider:
+    """Stands in for an LLM provider; delegates complete_text to a test function."""
 
-    session_module.get_engine.cache_clear()
-    session_module.get_sessionmaker.cache_clear()
+    name = "stub"
+    model = "stub"
 
+    def __init__(self, draft: Any) -> None:
+        self._draft = draft
 
-async def _db_reachable() -> bool:
-    _reset_session_cache()
-    try:
-        factory = get_sessionmaker()
-        async with factory() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-async def _setup_or_skip() -> None:
-    if not await _db_reachable():
-        pytest.skip(f"dev DB unreachable at {get_settings().database_url}")
-    ensure_migrations()
+    async def complete_text(self, **kwargs: Any) -> str:
+        return str(await self._draft(**kwargs))
 
 
 async def _seed_property(
@@ -55,12 +44,9 @@ async def _seed_property(
     async with factory() as session:
         b = (
             await session.execute(
-                text(
-                    "INSERT INTO buildings (address) VALUES "
-                    "('Onboarding Test Bldg') RETURNING id"
-                )
+                text("INSERT INTO buildings (address) VALUES ('Onboarding Test Bldg') RETURNING id")
             )
-        ).first()
+        ).one()
         p = (
             await session.execute(
                 text(
@@ -76,7 +62,7 @@ async def _seed_property(
                     "meta": _json(metadata or {}),
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
     return b.id, p.id
 
@@ -105,12 +91,8 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
             text("DELETE FROM events WHERE property_id = :pid"),
             {"pid": property_id},
         )
-        await session.execute(
-            text("DELETE FROM properties WHERE id = :id"), {"id": property_id}
-        )
-        await session.execute(
-            text("DELETE FROM buildings WHERE id = :id"), {"id": building_id}
-        )
+        await session.execute(text("DELETE FROM properties WHERE id = :id"), {"id": property_id})
+        await session.execute(text("DELETE FROM buildings WHERE id = :id"), {"id": building_id})
         await session.commit()
 
 
@@ -121,9 +103,9 @@ async def _cleanup(building_id: UUID, property_id: UUID) -> None:
 
 async def test_cache_key_stable_for_same_inputs() -> None:
     """Identical timestamps → identical cache key."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ts = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
     a = onboarding._cache_key(ts, ts, ts)
     b = onboarding._cache_key(ts, ts, ts)
     assert a == b
@@ -131,10 +113,10 @@ async def test_cache_key_stable_for_same_inputs() -> None:
 
 async def test_cache_key_changes_when_any_timestamp_moves() -> None:
     """A shift in any of the three timestamps changes the cache key."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    ts = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
-    later = datetime(2026, 4, 1, 12, 0, 1, tzinfo=timezone.utc)
+    ts = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+    later = datetime(2026, 4, 1, 12, 0, 1, tzinfo=UTC)
     base = onboarding._cache_key(ts, ts, ts)
     assert onboarding._cache_key(later, ts, ts) != base
     assert onboarding._cache_key(ts, later, ts) != base
@@ -150,13 +132,13 @@ async def test_cache_key_handles_none_inputs() -> None:
 
 
 # ----------------------------------------------------------------------------
-# DB integration — empty property renders gracefully
+# DB integration: empty property renders gracefully
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch) -> None:
     """A bare property with no facts/events still produces all 5 sections."""
-    await _setup_or_skip()
     bid, pid = await _seed_property(
         metadata={
             "kaltmiete": "1100 EUR",
@@ -164,8 +146,8 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
         }
     )
     try:
-        # Force the Gemini-unavailable path so we don't hit the network.
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        # No LLM provider: the briefing degrades to a notice, nothing hits the network.
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -182,26 +164,26 @@ async def test_render_onboarding_empty_property(monkeypatch: pytest.MonkeyPatch)
         assert "Where to look for more" in md
         # No-issues message.
         assert "No open issues" in md
-        # Briefing degraded message present.
-        assert "Briefing skipped" in md
+        # With no LLM reachable the briefing degrades to an explicit notice.
+        assert "Briefing unavailable" in md
     finally:
         await _cleanup(bid, pid)
 
 
 # ----------------------------------------------------------------------------
-# DB integration — open issues surface
+# DB integration: open issues surface
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_surfaces_open_issues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A property with an active leak fact + open uncertainty + pending rejection
     shows all three under "Open issues right now"."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -218,7 +200,7 @@ async def test_render_onboarding_surfaces_open_issues(
                     ),
                     {"ref": ref, "pid": pid},
                 )
-            ).first()
+            ).one()
             await session.execute(
                 text(
                     """
@@ -288,17 +270,16 @@ async def test_render_onboarding_surfaces_open_issues(
 
 
 # ----------------------------------------------------------------------------
-# DB integration — Gemini briefing path with cache
+# DB integration: LLM briefing path with cache
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    """First render calls Gemini; second render reuses the cached briefing."""
-    await _setup_or_skip()
+    """First render calls the LLM; second render reuses the cached briefing."""
     bid, pid = await _seed_property()
     try:
-        # Force "available" + stub the Gemini drafter so the test stays offline.
-        monkeypatch.setattr(gemini, "is_available", lambda: True, raising=True)
+        # A stub provider keeps the test offline while exercising the LLM path.
         call_count = {"n": 0}
 
         async def _stub_draft(**kwargs: Any) -> str:
@@ -309,9 +290,7 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
                 "- Gap: no rent history captured."
             )
 
-        monkeypatch.setattr(
-            gemini, "draft_onboarding_briefing", _stub_draft, raising=True
-        )
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -327,28 +306,71 @@ async def test_briefing_caches_on_metadata(monkeypatch: pytest.MonkeyPatch) -> N
         await _cleanup(bid, pid)
 
 
-async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inserting a new fact bumps last-fact timestamp → cache key flips → Gemini called again."""
-    await _setup_or_skip()
+@pytest.mark.usefixtures("db")
+async def test_briefing_source_says_how_the_briefing_was_produced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No provider: 'unavailable'; then the LLM writes it ('llm'); then 'cache'."""
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: True, raising=True)
+        factory = get_sessionmaker()
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
+        async with factory() as session:
+            keyless = await onboarding.render_onboarding_document(session, pid)
+        assert keyless.briefing_source == "unavailable"
+        assert "Briefing unavailable" in keyless.markdown
+
+        async def _stub_draft(**kwargs: Any) -> str:
+            return "- Gap: no rent history captured."
+
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
+        async with factory() as session:
+            written = await onboarding.render_onboarding_document(session, pid)
+        async with factory() as session:
+            reread = await onboarding.render_onboarding_document(session, pid)
+        assert written.briefing_source == "llm"
+        assert reread.briefing_source == "cache"
+    finally:
+        await _cleanup(bid, pid)
+
+
+@pytest.mark.usefixtures("db")
+async def test_onboarding_endpoint_reports_a_keyless_briefing() -> None:
+    """With no LLM key the API must not present the briefing as LLM-written."""
+    from backend.main import app  # noqa: PLC0415
+
+    bid, pid = await _seed_property()
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(f"/admin/properties/{pid}/onboarding")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["briefing_source"] == "unavailable"
+        assert body["cached"] is False
+    finally:
+        await _cleanup(bid, pid)
+
+
+@pytest.mark.usefixtures("db")
+async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A new fact changes the cache key, so the next render calls the LLM again."""
+    bid, pid = await _seed_property()
+    try:
         call_count = {"n": 0}
 
         async def _stub_draft(**kwargs: Any) -> str:
             call_count["n"] += 1
             return f"- Briefing call #{call_count['n']}.\n- Gap: ongoing."
 
-        monkeypatch.setattr(
-            gemini, "draft_onboarding_briefing", _stub_draft, raising=True
-        )
+        monkeypatch.setattr(onboarding, "get_provider", lambda: _StubProvider(_stub_draft))
 
         factory = get_sessionmaker()
         async with factory() as session:
             await onboarding.render_onboarding(session, pid)
         assert call_count["n"] == 1
 
-        # Insert a fact — moves last_fact and flips the cache key.
+        # Insert a fact: moves last_fact and flips the cache key.
         async with factory() as session:
             ref = f"cache-{uuid4().hex[:8]}"
             ev = (
@@ -362,7 +384,7 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
                     ),
                     {"ref": ref, "pid": pid},
                 )
-            ).first()
+            ).one()
             await session.execute(
                 text(
                     """
@@ -387,19 +409,19 @@ async def test_cache_invalidates_on_new_fact(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ----------------------------------------------------------------------------
-# DB integration — recurring patterns surface in "Watch out for"
+# DB integration: recurring patterns surface in "Watch out for"
 # ----------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("db")
 async def test_watch_out_surfaces_recurring_constraint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A constraint that has triggered ≥2 times on this property surfaces under
     'Watch out for'. Single-trigger constraints do not (noise filter)."""
-    await _setup_or_skip()
     bid, pid = await _seed_property()
     try:
-        monkeypatch.setattr(gemini, "is_available", lambda: False, raising=True)
+        monkeypatch.setattr(onboarding, "get_provider", lambda: None)
 
         factory = get_sessionmaker()
         async with factory() as session:
@@ -419,7 +441,7 @@ async def test_watch_out_surfaces_recurring_constraint(
                         ),
                         {"ref": ref, "pid": pid},
                     )
-                ).first()
+                ).one()
                 await session.execute(
                     text(
                         """
@@ -448,9 +470,9 @@ async def test_watch_out_surfaces_recurring_constraint(
         await _cleanup(bid, pid)
 
 
+@pytest.mark.usefixtures("db")
 async def test_render_onboarding_404s_for_missing_property() -> None:
     """A missing property surfaces a clean ValueError from the renderer."""
-    await _setup_or_skip()
     factory = get_sessionmaker()
     async with factory() as session:
         with pytest.raises(ValueError, match="not found"):

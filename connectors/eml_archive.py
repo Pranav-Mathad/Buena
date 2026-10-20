@@ -14,7 +14,7 @@ For each message:
 
 PII redaction is applied to both the header values and the body via
 :mod:`connectors.redact`. Threading metadata is captured but not
-resolved here — the composite at the property level decides how to
+resolved here: the composite at the property level decides how to
 chain related events.
 """
 
@@ -24,7 +24,7 @@ import email
 import hashlib
 import re
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -40,9 +40,9 @@ log = structlog.get_logger(__name__)
 
 _FILENAME_TS_RE = re.compile(r"(\d{8})_(\d{6})_")
 
-# Subject-line forwarding markers — case-insensitive. ``Fwd:`` is the
+# Subject-line forwarding markers, case-insensitive. ``Fwd:`` is the
 # Anglo convention; ``WG:`` is the German "weitergeleitet" prefix. We
-# don't aggregate ``Aw:``/``Re:`` here — replies preserve the original
+# don't aggregate ``Aw:``/``Re:`` here; replies preserve the original
 # sender, so the outer ``From:`` is already the correct routing key.
 _FWD_PREFIX_RE = re.compile(r"^\s*(?:Fwd?|WG)\s*:\s*", re.IGNORECASE)
 
@@ -61,7 +61,7 @@ def _detect_forward(subject: str, body: str) -> str | None:
     """Return the inner sender when ``subject`` looks like a forward.
 
     Forwards complicate routing because the visible ``From:`` is the
-    forwarding mailbox (usually the property manager themselves) — so
+    forwarding mailbox (usually the property manager themselves), so
     the actual subject of the message is one quote-level deep. When
     the subject prefix is ``Fwd:`` / ``WG:`` and the body contains a
     ``From:`` / ``Von:`` line, we return that line so the worker can
@@ -82,9 +82,9 @@ def _parse_filename_timestamp(name: str) -> datetime | None:
     if not match:
         return None
     try:
-        return datetime.strptime(
-            f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S"
-        ).replace(tzinfo=timezone.utc)
+        return datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S").replace(
+            tzinfo=UTC
+        )
     except ValueError:
         return None
 
@@ -122,18 +122,14 @@ def _parse_date_header(raw_date: str | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _stable_message_id(headers: dict[str, str]) -> str:
     """Fallback source_ref when ``Message-ID`` is missing."""
     canonical = (
-        headers.get("from", "")
-        + "|"
-        + headers.get("date", "")
-        + "|"
-        + headers.get("subject", "")
+        headers.get("from", "") + "|" + headers.get("date", "") + "|" + headers.get("subject", "")
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()[:16]
 
@@ -183,21 +179,16 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
 
     message_id = headers["message_id"].strip("<>") or _stable_message_id(headers)
 
-    received_at = (
-        _parse_date_header(headers["date"]) or _parse_filename_timestamp(path.name)
-    )
+    received_at = _parse_date_header(headers["date"]) or _parse_filename_timestamp(path.name)
     if received_at is None:
-        received_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        received_at = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
     relative_path = (
-        str(path.relative_to(root)) if root is not None and path.is_relative_to(root)
-        else str(path)
+        str(path.relative_to(root)) if root is not None and path.is_relative_to(root) else str(path)
     )
 
     inner_sender_raw = _detect_forward(headers["subject"], body)
-    inner_sender = (
-        redact.scrub_text(inner_sender_raw) if inner_sender_raw else None
-    )
+    inner_sender = redact.scrub_text(inner_sender_raw) if inner_sender_raw else None
 
     metadata: dict[str, Any] = {
         "from": redacted_headers["from"],
@@ -208,11 +199,7 @@ def parse_one(path: Path, *, root: Path | None = None) -> ConnectorEvent:
         "thread_id": (
             _references_list(headers["references"])[0].strip("<>")
             if _references_list(headers["references"])
-            else (
-                headers["in_reply_to"].strip("<>")
-                if headers["in_reply_to"]
-                else message_id
-            )
+            else (headers["in_reply_to"].strip("<>") if headers["in_reply_to"] else message_id)
         ),
         "in_reply_to": headers["in_reply_to"].strip("<>") or None,
         "references": [r.strip("<>") for r in _references_list(headers["references"])],
@@ -240,5 +227,5 @@ def walk_directory(root: Path) -> Iterator[ConnectorEvent]:
     for path in paths:
         try:
             yield parse_one(path, root=root)
-        except Exception:  # noqa: BLE001 — keep the walk going
+        except Exception:  # noqa: BLE001 (keep the walk going)
             log.exception("eml.archive.parse_error", path=str(path))

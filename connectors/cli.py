@@ -1,4 +1,4 @@
-"""Connector CLI — single entry point for every customer ingest path.
+"""Connector CLI: the single entry point for every customer ingest path.
 
 Usage::
 
@@ -20,10 +20,13 @@ from typing import Any
 import structlog
 
 from backend.logging import configure_logging
-from connectors.base import DataMissing
+from backend.pipeline.materializer import run_materialize_all
 from connectors import cost_ledger as cost_ledger_module
+from connectors.base import DataMissingError
 from connectors.buena_email_loader import (
     LEDGER_LABEL as EMAIL_LEDGER_LABEL,
+)
+from connectors.buena_email_loader import (
     EmailBackfillSummary,
     run_backfill_emails,
 )
@@ -35,7 +38,7 @@ from connectors.buena_event_loader import (
     run_re_route,
 )
 from connectors.buena_loader import load_from_disk
-from backend.pipeline.materializer import run_materialize_all
+from connectors.sample_events import run_load_sample_events
 
 log = structlog.get_logger("connectors.cli")
 
@@ -66,15 +69,14 @@ def _cmd_load_stammdaten(args: argparse.Namespace) -> int:
     """Handle the ``load-stammdaten`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
 
     try:
         summary = load_from_disk(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
 
@@ -128,14 +130,13 @@ def _cmd_backfill_bank(args: argparse.Namespace) -> int:
     """Handle the ``backfill-bank`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
     try:
         summary = run_backfill_bank(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
     if args.json:
@@ -149,14 +150,13 @@ def _cmd_backfill_invoices(args: argparse.Namespace) -> int:
     """Handle the ``backfill-invoices`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
     try:
         summary = run_backfill_invoices(extracted_root=args.extracted_root)
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
     if args.json:
@@ -171,7 +171,10 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
     inserted = summary.inserted_now or 1
     pct_routed = (
         (summary.routed_property + summary.routed_building + summary.routed_liegenschaft)
-        / inserted * 100 if summary.inserted_now else 0.0
+        / inserted
+        * 100
+        if summary.inserted_now
+        else 0.0
     )
     pct_unrouted = (summary.unrouted / inserted * 100) if summary.inserted_now else 0.0
     miss_lines = (
@@ -183,9 +186,7 @@ def _format_email_backfill(summary: EmailBackfillSummary) -> str:
         )
         or "      (none)"
     )
-    err_lines = (
-        "\n".join(f"      {s}" for s in summary.error_samples) or "      (none)"
-    )
+    err_lines = "\n".join(f"      {s}" for s in summary.error_samples) or "      (none)"
     top_props = (
         "\n".join(
             f"      {n:>4}  {name}"
@@ -224,18 +225,16 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
     """Handle the ``backfill-emails`` subcommand."""
     if args.source not in SUPPORTED_SOURCES:
         print(
-            f"unknown --source: {args.source!r}; "
-            f"supported: {', '.join(SUPPORTED_SOURCES)}",
+            f"unknown --source: {args.source!r}; supported: {', '.join(SUPPORTED_SOURCES)}",
             file=sys.stderr,
         )
         return 2
 
     if args.reset_cost_ledger:
-        # Friction gate — ledger reset is intentional. The y/N prompt
+        # Friction gate: ledger reset is intentional. The y/N prompt
         # makes it impossible to wipe spend by reflex.
         prompt = (
-            f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' "
-            "(deletes durable spend record)? [y/N] "
+            f"Reset cost ledger row '{EMAIL_LEDGER_LABEL}' (deletes durable spend record)? [y/N] "
         )
         try:
             answer = input(prompt).strip().lower()
@@ -244,10 +243,10 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
         if answer != "y":
             print("aborted: cost ledger NOT reset", file=sys.stderr)
             return 4
-        cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL)
+        cost_ledger_module.reset_label(EMAIL_LEDGER_LABEL, allow_production=True)
         print(f"cost ledger row '{EMAIL_LEDGER_LABEL}' reset")
 
-    from decimal import Decimal as _Decimal  # noqa: PLC0415 — local import
+    from decimal import Decimal as _Decimal  # noqa: PLC0415 (local import)
 
     try:
         summary = run_backfill_emails(
@@ -258,7 +257,7 @@ def _cmd_backfill_emails(args: argparse.Namespace) -> int:
             limit=args.limit,
             concurrency=args.concurrency,
         )
-    except DataMissing as exc:
+    except DataMissingError as exc:
         print(f"buena dataset missing: {exc}", file=sys.stderr)
         return 3
 
@@ -277,9 +276,10 @@ def _cmd_materialize_all(args: argparse.Namespace) -> int:
 
     Calls the renderer for every property/building/liegenschaft and
     upserts the rendered markdown into the matching ``*_files`` table.
-    Idempotent — re-running just refreshes ``last_rendered_at`` and the
-    ``content_md`` snapshot. Used as the Phase 12 bootstrap path so the
-    cache exists before the applier hook starts propagating updates.
+    Idempotent: re-running just refreshes ``last_rendered_at`` and the
+    ``content_md`` snapshot. Run it once to bootstrap the cache on an
+    existing database, so every file exists before the applier hook starts
+    propagating incremental updates into it.
     """
     counts = run_materialize_all()
     if args.json:
@@ -289,6 +289,19 @@ def _cmd_materialize_all(args: argparse.Namespace) -> int:
             f"materialized {counts['properties']} properties, "
             f"{counts['buildings']} buildings, "
             f"{counts['liegenschaften']} liegenschaften."
+        )
+    return 0
+
+
+def _cmd_load_sample_events(args: argparse.Namespace) -> int:
+    """Handle the ``load-sample-events`` subcommand."""
+    summary = run_load_sample_events()
+    if args.json:
+        print(json.dumps(summary.__dict__, indent=2))
+    else:
+        print(
+            f"sample events: {summary.inserted} inserted, "
+            f"{summary.already_present} already present, {summary.processed} processed."
         )
     return 0
 
@@ -314,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Construct the argparse parser. Exposed for tests."""
     parser = argparse.ArgumentParser(
         prog="connectors.cli",
-        description="Customer data ingestion — Buena is the first composer.",
+        description="Customer data ingestion: Buena is the first composer.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -372,8 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-total-cost-usd",
         type=float,
         default=20.00,
-        help="Hard ceiling on the cost ledger for label "
-        f"'{EMAIL_LEDGER_LABEL}'. Default: 20.00.",
+        help=f"Hard ceiling on the cost ledger for label '{EMAIL_LEDGER_LABEL}'. Default: 20.00.",
     )
     emails.add_argument(
         "--dead-letter-after",
@@ -387,15 +399,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="When set, events older than 30 days are stamped "
         "processed_at=now() rather than processed_at=received_at. "
-        "Phase 9 migration flips this on once the validator/uncertainty "
-        "layers ship; default keeps backfill quiet for the live worker.",
+        "By default historical events keep processed_at=received_at so "
+        "the live worker does not re-process them.",
     )
     emails.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Stop after N .eml files. Use for dry-runs without burning "
-        "the full cost cap.",
+        help="Stop after N .eml files. Use for dry-runs without burning the full cost cap.",
     )
     emails.add_argument(
         "--concurrency",
@@ -405,7 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(sequential). At N>1 the cost ledger charge() call is "
         "serialized via asyncio.Lock; worst-case overshoot if the "
         "cap is breached mid-flight is bounded by N * max_call_cost. "
-        "See DECISIONS.md for the auditable bound.",
+        "See docs/DECISIONS.md for the auditable bound.",
     )
     emails.add_argument(
         "--reset-cost-ledger",
@@ -420,15 +431,14 @@ def build_parser() -> argparse.ArgumentParser:
         "re-route",
         help=(
             "ONE-TIME migration: re-evaluate routing on every event that "
-            "has no scope set. Idempotent — safe to re-run."
+            "has no scope set. Idempotent: safe to re-run."
         ),
     )
     reroute.add_argument(
         "--sources",
         nargs="*",
         default=None,
-        help="Optional list of event sources to limit the rescan to "
-        "(default: all sources).",
+        help="Optional list of event sources to limit the rescan to (default: all sources).",
     )
     reroute.add_argument("--json", action="store_true")
     reroute.set_defaults(func=_cmd_re_route)
@@ -436,13 +446,23 @@ def build_parser() -> argparse.ArgumentParser:
     materialize = sub.add_parser(
         "materialize-all",
         help=(
-            "Phase 12 bootstrap: render every property / building / "
-            "liegenschaft and store the markdown in the matching "
-            "*_files cache table. Idempotent."
+            "Render every property / building / liegenschaft and store "
+            "the markdown in the matching *_files cache table. Run once "
+            "after a bulk load that bypassed the applier. Idempotent."
         ),
     )
     materialize.add_argument("--json", action="store_true")
     materialize.set_defaults(func=_cmd_materialize_all)
+
+    sample = sub.add_parser(
+        "load-sample-events",
+        help=(
+            "Insert the synthetic emails in Extracted_demo/sample_events/ and "
+            "process them, so the featured property has a history. Idempotent."
+        ),
+    )
+    sample.add_argument("--json", action="store_true")
+    sample.set_defaults(func=_cmd_load_sample_events)
 
     return parser
 

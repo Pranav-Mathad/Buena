@@ -9,8 +9,8 @@ the same header:
 referenz_id, error_types``
 
 This connector emits :class:`ConnectorEvent` rows the structured
-extractor (Phase 8 Step 3) can convert directly into financial facts —
-no Gemini needed.
+extractor (:mod:`backend.pipeline.structured_extractors`) can convert
+directly into financial facts, so no LLM call is needed.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 import csv
 import hashlib
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -43,7 +43,7 @@ def _stable_source_ref(row: dict[str, str]) -> str:
         f"{row.get('betrag', '')}|"
         f"{row.get('verwendungszweck', '')}|"
         f"{row.get('id', '')}"
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(canonical).hexdigest()[:12]
 
 
@@ -62,7 +62,7 @@ def _parse_date(raw: str | None) -> datetime | None:
     if not raw or not raw.strip():
         return None
     try:
-        return datetime.strptime(raw.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return datetime.strptime(raw.strip(), "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -83,7 +83,7 @@ def parse_row(row: dict[str, str]) -> ConnectorEvent:
         signed_amount = -amount if typ == "DEBIT" else amount
 
     received_at = _parse_date(row.get("datum"))
-    received_at = received_at or datetime.now(timezone.utc)
+    received_at = received_at or datetime.now(UTC)
 
     metadata: dict[str, Any] = {
         "valuta": row.get("datum"),

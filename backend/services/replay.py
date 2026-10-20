@@ -1,13 +1,13 @@
-"""Phase 10 Step 10.2 — sequential replay engine.
+"""Sequential replay engine.
 
 The replay reads existing events for a property and re-streams them
-through the live pipeline at a configurable speed multiplier so the
-demo can show the file building itself in real time. Idempotency is
-guaranteed by the existing ``events.UNIQUE (source, source_ref)``
-constraint plus the optional ``reset_property`` flag — the engine
-isn't generating new events; it's re-running already-ingested ones
-through the worker after deleting the property's facts and
-uncertainty rows.
+through the live pipeline at a configurable speed multiplier so an
+operator can watch the property file rebuild itself event by event in
+real time. Idempotency is guaranteed by the existing
+``events.UNIQUE (source, source_ref)`` constraint plus the optional
+``reset_property`` flag: the engine isn't generating new events; it's
+re-running already-ingested ones through the worker after deleting the
+property's facts and uncertainty rows.
 
 Key design calls:
 
@@ -18,12 +18,12 @@ Key design calls:
 - **scheduled_pauses** is a list of ``{at_seconds, message}`` items.
   When the elapsed seconds since stream start cross a checkpoint the
   engine halts, sets ``status='paused'``, and emits a control event.
-  The operator (or the demo wrapper) calls ``resume_run`` to continue.
+  The operator (or a scripted driver) calls ``resume_run`` to continue.
 - **In-process state** lives in :data:`_RUNS` keyed by run id. Postgres
   carries the *durable* state for the UI; ``_RUNS`` carries the
   asyncio event handles a single process needs to pause/resume.
   Restarting the API server cancels in-flight runs cleanly because
-  the asyncio handles vanish — durable rows then sit at
+  the asyncio handles vanish; durable rows then sit at
   ``status='running'`` until an operator manually flips them to
   ``stopped``.
 - **Live worker reuse.** Each event re-streamed runs through
@@ -53,7 +53,7 @@ log = structlog.get_logger(__name__)
 
 
 # Each ``scheduled_pauses`` entry has this shape; we keep validation
-# loose here so future demo scripts can stuff extra hint fields the UI
+# loose here so future replay scripts can stuff extra hint fields the UI
 # wants to render without a migration.
 _REQUIRED_PAUSE_KEYS = frozenset({"at_seconds", "message"})
 
@@ -139,7 +139,7 @@ async def start_run(
                     "total": total,
                 },
             )
-        ).first()
+        ).one()
         await session.commit()
 
     run_id: UUID = row.id
@@ -183,7 +183,7 @@ async def start_run(
 
 
 async def pause_run(run_id: UUID) -> dict[str, Any]:
-    """Pause a running stream — the worker loop will block until resume."""
+    """Pause a running stream; the worker loop will block until resume."""
     handle = _RUNS.get(run_id)
     if handle is not None:
         handle.pause_event.clear()
@@ -214,7 +214,7 @@ async def stop_run(run_id: UUID) -> dict[str, Any]:
         if handle.task is not None and not handle.task.done():
             try:
                 await asyncio.wait_for(handle.task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 handle.task.cancel()
     await _set_status(run_id, "stopped")
     await _publish_control(run_id, "replay.stopped", {"reason": "operator"})
@@ -411,9 +411,7 @@ async def _set_status(
         await session.commit()
 
 
-async def _publish_control(
-    run_id: UUID, kind: str, payload: dict[str, Any]
-) -> None:
+async def _publish_control(run_id: UUID, kind: str, payload: dict[str, Any]) -> None:
     """Push a control message onto the event bus so SSE subscribers see it.
 
     Replay control events fan out under the property's bus channel
@@ -460,9 +458,7 @@ async def _drive_run(
             while pauses_pending and pauses_pending[0]["at_seconds"] <= elapsed:
                 pause = pauses_pending.pop(0)
                 handle.pause_event.clear()
-                await _set_status(
-                    handle.run_id, "paused", with_paused_at=True
-                )
+                await _set_status(handle.run_id, "paused", with_paused_at=True)
                 await _publish_control(
                     handle.run_id,
                     "replay.scheduled_pause",
@@ -506,17 +502,15 @@ async def _drive_run(
 
             # Pace the stream: target one historical day per real
             # second when speed=10 (i.e. 86,400× faster than wall-clock
-            # would replay the archive). For Buena's data the
+            # would replay the archive). For the sample dataset the
             # inter-event budget collapses to "as fast as the worker
             # runs" because the archive spans months but the Pro
             # extractor takes ~12 s per call. We add a small floor so
             # the SSE stream doesn't flood the client.
             await asyncio.sleep(max(0.02, 1.0 / handle.speed_multiplier))
-    except Exception as exc:  # noqa: BLE001 — surface the failure cleanly
+    except Exception as exc:  # noqa: BLE001 (surface the failure cleanly)
         log.exception("replay.drive.error", run_id=str(handle.run_id))
-        await _set_status(
-            handle.run_id, "failed", last_error=f"{type(exc).__name__}: {exc}"[:500]
-        )
+        await _set_status(handle.run_id, "failed", last_error=f"{type(exc).__name__}: {exc}"[:500])
         await _publish_control(
             handle.run_id,
             "replay.failed",

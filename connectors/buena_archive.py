@@ -1,4 +1,4 @@
-"""Buena composite — the only place that knows Buena's directory shape.
+"""Buena composite: the only place that knows Buena's directory shape.
 
 Wires :mod:`csv_stammdaten`, :mod:`eml_archive`, :mod:`camt_bank`,
 :mod:`pdf_invoice_archive`, and :mod:`pdf_letter_archive` against the
@@ -11,9 +11,9 @@ Layout (verified against the dataset shipped 2026-04-25):
     Extracted/
     ├── stammdaten/
     │   ├── eigentuemer.csv     (35 rows)
-    │   ├── einheiten.csv       (52 rows — units inside buildings)
-    │   ├── mieter.csv          (26 rows — active + closed leases)
-    │   ├── dienstleister.csv   (16 rows — contractors)
+    │   ├── einheiten.csv       (52 rows: units inside buildings)
+    │   ├── mieter.csv          (26 rows: active + closed leases)
+    │   ├── dienstleister.csv   (16 rows: contractors)
     │   └── stammdaten.json     (canonical: liegenschaft + gebaeude
     │                            + einheiten + eigentuemer + mieter
     │                            + dienstleister)
@@ -49,8 +49,8 @@ from typing import Any
 import structlog
 
 from connectors import camt_bank, eml_archive, pdf_invoice_archive, pdf_letter_archive, redact
-from connectors.base import ConnectorEvent, DataMissing
-from connectors.csv_stammdaten import ColumnMap, EntityType, parse_iso_date
+from connectors.base import ConnectorEvent, DataMissingError
+from connectors.csv_stammdaten import ColumnMap, parse_iso_date
 
 log = structlog.get_logger(__name__)
 
@@ -71,15 +71,14 @@ def require_root(env_value: str | None = None) -> Path:
     """Like :func:`get_extracted_root` but raises if the folder is missing."""
     root = get_extracted_root(env_value)
     if not root.is_dir():
-        raise DataMissing(
-            f"Buena dataset not found at {root!s}; set EXTRACTED_ROOT or "
-            "place the folder there."
+        raise DataMissingError(
+            f"Buena dataset not found at {root!s}; set EXTRACTED_ROOT or place the folder there."
         )
     return root
 
 
 # -----------------------------------------------------------------------------
-# Stammdaten — adapt Buena rows onto Phase 0's seed dataclasses
+# Stammdaten: adapt Buena rows onto the seed dataclasses
 # -----------------------------------------------------------------------------
 
 
@@ -88,7 +87,7 @@ class BuenaStammdaten:
     """Concrete Stammdaten payload after redaction + adaptation.
 
     ``liegenschaften`` is the WEG tier (`Wohnungseigentümergemeinschaft`,
-    owners' association) — one Liegenschaft owns N Häuser; per-WEG
+    owners' association): one Liegenschaft owns N Häuser; per-WEG
     events (Hausgeld, Verwaltergebühr, shared contractor fees) attach
     here, not to a single Haus.
     """
@@ -113,33 +112,63 @@ CONTRACTOR_COLUMN_MAP = ColumnMap(
         "bic": "bic",
     },
     metadata_columns=(
-        "strasse", "plz", "ort", "land", "ust_id", "steuernummer",
-        "stil", "sprache", "vertrag_monatlich", "stundensatz",
+        "strasse",
+        "plz",
+        "ort",
+        "land",
+        "ust_id",
+        "steuernummer",
+        "stil",
+        "sprache",
+        "vertrag_monatlich",
+        "stundensatz",
     ),
     pii_columns=("email", "telefon", "iban"),
 )
 
 OWNER_COLUMN_MAP = ColumnMap(
     required={
-        "id": "id", "anrede": "anrede", "vorname": "vorname",
-        "nachname": "nachname", "firma": "firma",
-        "email": "email", "telefon": "telefon", "iban": "iban", "bic": "bic",
+        "id": "id",
+        "anrede": "anrede",
+        "vorname": "vorname",
+        "nachname": "nachname",
+        "firma": "firma",
+        "email": "email",
+        "telefon": "telefon",
+        "iban": "iban",
+        "bic": "bic",
     },
     metadata_columns=(
-        "strasse", "plz", "ort", "land", "einheit_ids",
-        "selbstnutzer", "sev_mandat", "beirat", "sprache",
+        "strasse",
+        "plz",
+        "ort",
+        "land",
+        "einheit_ids",
+        "selbstnutzer",
+        "sev_mandat",
+        "beirat",
+        "sprache",
     ),
     pii_columns=("email", "telefon", "iban"),
 )
 
 TENANT_COLUMN_MAP = ColumnMap(
     required={
-        "id": "id", "anrede": "anrede", "vorname": "vorname",
-        "nachname": "nachname", "email": "email", "telefon": "telefon",
-        "einheit_id": "einheit_id", "eigentuemer_id": "eigentuemer_id",
-        "mietbeginn": "mietbeginn", "mietende": "mietende",
-        "kaltmiete": "kaltmiete", "nk_vorauszahlung": "nk_vorauszahlung",
-        "kaution": "kaution", "iban": "iban", "bic": "bic",
+        "id": "id",
+        "anrede": "anrede",
+        "vorname": "vorname",
+        "nachname": "nachname",
+        "email": "email",
+        "telefon": "telefon",
+        "einheit_id": "einheit_id",
+        "eigentuemer_id": "eigentuemer_id",
+        "mietbeginn": "mietbeginn",
+        "mietende": "mietende",
+        "kaltmiete": "kaltmiete",
+        "nk_vorauszahlung": "nk_vorauszahlung",
+        "kaution": "kaution",
+        "iban": "iban",
+        "bic": "bic",
     },
     metadata_columns=("sprache",),
     pii_columns=("email", "telefon", "iban"),
@@ -147,7 +176,7 @@ TENANT_COLUMN_MAP = ColumnMap(
 
 
 def _short_address(strasse: str, hausnr: str) -> str:
-    """e.g. ``"Immanuelkirchstr. 26 · WE 01"``-style — passes through unchanged."""
+    """e.g. ``"Musterstr. 26 · WE 01"``-style; passes through unchanged."""
     if not strasse:
         return hausnr
     if hausnr and hausnr not in strasse:
@@ -160,7 +189,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
     stammdaten_dir = root / "stammdaten"
     json_path = stammdaten_dir / "stammdaten.json"
     if not json_path.is_file():
-        raise DataMissing(f"missing stammdaten.json under {stammdaten_dir!s}")
+        raise DataMissingError(f"missing stammdaten.json under {stammdaten_dir!s}")
 
     payload: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
 
@@ -174,8 +203,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
             {
                 "buena_liegenschaft_id": lie_id,
                 "name": str(
-                    liegenschaft.get("name")
-                    or f"WEG {liegenschaft.get('strasse', '')}".strip()
+                    liegenschaft.get("name") or f"WEG {liegenschaft.get('strasse', '')}".strip()
                 ),
                 "metadata": {
                     "buena_liegenschaft_id": lie_id,
@@ -201,9 +229,13 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         haus_id = str(g.get("id", ""))
         hausnr = str(g.get("hausnr", "") or "")
         building_address = (
-            f"{liegenschaft.get('strasse', '')} {hausnr}, "
-            f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
-        ).strip(", ").strip()
+            (
+                f"{liegenschaft.get('strasse', '')} {hausnr}, "
+                f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
+            )
+            .strip(", ")
+            .strip()
+        )
         buildings.append(
             {
                 "buena_haus_id": haus_id,
@@ -266,10 +298,12 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
         lage = str(u.get("lage") or "")
         addr_short = _short_address(
             str(liegenschaft.get("strasse", "")),
-            str(next(
-                (g["hausnr"] for g in gebaeude_list if str(g.get("id")) == haus_id),
-                "",
-            )),
+            str(
+                next(
+                    (g["hausnr"] for g in gebaeude_list if str(g.get("id")) == haus_id),
+                    "",
+                )
+            ),
         )
         prop_name = (
             f"{liegenschaft.get('strasse', '').strip()} {einheit_nr}".strip()
@@ -295,7 +329,9 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
                 "address": (
                     f"{liegenschaft.get('strasse', '')} {einheit_nr}, "
                     f"{liegenschaft.get('plz', '')} {liegenschaft.get('ort', '')}"
-                ).strip(", ").strip(),
+                )
+                .strip(", ")
+                .strip(),
                 "aliases": aliases,
                 "metadata": {
                     "buena_eh_id": eh_id,
@@ -313,9 +349,10 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
     # ---- Tenants (PII redacted; only active or recently active) ----
     tenants: list[dict[str, Any]] = []
     for m in mieter_list:
-        full_name = " ".join(
-            part for part in (m.get("vorname"), m.get("nachname")) if part
-        ).strip() or "Mieter"
+        full_name = (
+            " ".join(part for part in (m.get("vorname"), m.get("nachname")) if part).strip()
+            or "Mieter"
+        )
         eh_id = str(m.get("einheit_id", ""))
         mietbeginn: date | None = parse_iso_date(m.get("mietbeginn"))
         mietende: date | None = parse_iso_date(m.get("mietende"))
@@ -330,12 +367,8 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
                 "metadata": {
                     "buena_mie_id": m.get("id"),
                     "buena_eh_id": eh_id,
-                    "mietbeginn": (
-                        mietbeginn.isoformat() if mietbeginn else None
-                    ),
-                    "mietende": (
-                        mietende.isoformat() if mietende else None
-                    ),
+                    "mietbeginn": (mietbeginn.isoformat() if mietbeginn else None),
+                    "mietende": (mietende.isoformat() if mietende else None),
                     "kaltmiete": m.get("kaltmiete"),
                     "nk_vorauszahlung": m.get("nk_vorauszahlung"),
                     "kaution": m.get("kaution"),
@@ -391,7 +424,7 @@ def load_stammdaten(root: Path) -> BuenaStammdaten:
 
 
 # -----------------------------------------------------------------------------
-# Event composers — these are what the CLI actually calls
+# Event composers: these are what the CLI actually calls
 # -----------------------------------------------------------------------------
 
 

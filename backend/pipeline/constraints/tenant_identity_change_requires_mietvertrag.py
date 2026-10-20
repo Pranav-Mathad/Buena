@@ -1,6 +1,6 @@
 """Tenant identity changes require a Mietvertrag PDF.
 
-A new tenant moving in is a binding legal change — Buena's stammdaten
+A new tenant moving in is a binding legal change; Buena's stammdaten
 records ``current_tenant`` per unit, and free-text events are not
 sufficient evidence to mutate it. An incoming Mietvertrag PDF
 (``document_type=lease``) routes through the validator with

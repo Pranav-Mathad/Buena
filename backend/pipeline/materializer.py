@@ -1,12 +1,12 @@
 """Materialize rendered markdown into the per-scope file tables.
 
-Phase 12 — every fact write fans out to update the file rows for the
+Every fact write fans out to update the file rows for the
 fact's scope plus all dependent scopes. A property fact regenerates
 the property's file. A building fact regenerates the building's file
 plus every property file under that building. A liegenschaft fact
 cascades through buildings and their properties. The materialize step
 runs in the same transaction as the fact write, so file rows are
-never stale relative to facts (KEYSTONE Part XIV invariant).
+never stale relative to facts.
 
 LLM-free by design: the renderer is deterministic markdown. Keeping
 LLM calls out of this layer guarantees the materialize step burns no
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
 from uuid import UUID
 
 import structlog
@@ -89,7 +88,7 @@ async def materialize_property(
 ) -> int:
     """Render and upsert the property's markdown + content_index row.
 
-    Phase 12+ — calls :func:`render_property_full` so the materialized
+    Calls :func:`render_property_full` so the materialized
     row carries both ``content_md`` (human/agent reading) and
     ``content_index`` (typed JSON for programmatic consumers). Returns
     1 on write, 0 if the property doesn't exist.
@@ -260,7 +259,8 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
     """Bootstrap every property/building/liegenschaft file row.
 
     Used by ``connectors.cli materialize-all`` after the migration runs
-    (and by Cloud Run's startup script) to fill the cache up front.
+    (and by ``POST /admin/materialize-all`` in deployments without CLI
+    access) to fill the cache up front.
     Caller commits the surrounding transaction.
     """
     properties_written = 0
@@ -273,7 +273,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     rows = (await session.execute(text("SELECT id FROM buildings"))).all()
@@ -282,7 +282,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     rows = (await session.execute(text("SELECT id FROM liegenschaften"))).all()
@@ -291,7 +291,7 @@ async def materialize_all(session: AsyncSession) -> dict[str, int]:
             session,
             UUID(str(r.id)),
             trigger_scope="bootstrap",
-            trigger_summary="Initial materialization (Phase 12 backfill)",
+            trigger_summary="Initial materialization",
         )
 
     log.info(
@@ -318,10 +318,11 @@ async def propagate_after_fact_write(
 ) -> dict[str, int]:
     """Fan out materialization for a single fact write.
 
-    Operates inside the caller's transaction — no session creation, no
-    commit. The Phase 12 invariant (KEYSTONE Part XIV) is that the
-    fact write and every dependent file row update share one
-    transaction, so an exception here rolls the whole write back.
+    Operates inside the caller's transaction: no session creation, no
+    commit. The invariant is that file rows are never stale relative
+    to facts, so the fact write and every dependent file row update
+    share one transaction and an exception here rolls the whole write
+    back.
 
     Cascade rules:
       - ``property_id`` set → property's file refreshed.
@@ -330,10 +331,10 @@ async def propagate_after_fact_write(
       - ``liegenschaft_id`` set → WEG's file refreshed AND every
         building + property under it gets ``trigger_scope='liegenschaft'``.
 
-    Scaling note: a single liegenschaft fact in Buena's data
-    propagates to ~52 property files. Acceptable for Buena volume;
+    Scaling note: a single liegenschaft fact in the sample dataset
+    propagates to ~52 property files. Acceptable at that volume;
     the renderer is deterministic and fast (median 2 KB markdown).
-    Documented as the scaling boundary in DECISIONS.md.
+    Documented as the scaling boundary in docs/DECISIONS.md.
     """
     counts: dict[str, int] = {"properties": 0, "buildings": 0, "liegenschaften": 0}
 

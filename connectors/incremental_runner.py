@@ -1,4 +1,4 @@
-"""Step 7 — Buena ``incremental/`` snapshots as an admin-controlled live feed.
+"""Replay Buena ``incremental/`` snapshots as an admin-controlled live feed.
 
 Buena ships 10 days of synthetic deltas (``day-01`` … ``day-10``) under
 ``Extracted/incremental/``. Each day contains a small batch (~4 emails
@@ -12,17 +12,17 @@ WEG. The runner:
   same routers the live worker uses, and await
   :func:`backend.signals.evaluator.evaluate_all` so any signals fire
   in the same tick.
-- After day-10 returns ``{"exhausted": True}`` so the demo UI can
+- After day-10 returns ``{"exhausted": True}`` so the admin UI can
   surface the "no more days" state.
 
-The latency budget is **< 3 s per call** — the day batch is tiny and
+The latency budget is **< 3 s per call**: the day batch is tiny and
 ``evaluate_all`` is cheap on Buena-scale data. If a future customer
 has heavier days we can split the response (return immediately, run
 ``evaluate_all`` on a background task) without changing the API
 contract.
 
 Email events go through Gemini via the same extractor the live worker
-uses; the cost ledger label is ``step7_incremental`` with a small
+uses; it charges the ``LEDGER_LABEL`` cost-ledger row with a small
 default cap (``$2.00``) so ten days cost at most a few cents above
 the empty-feed floor.
 """
@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -129,7 +130,7 @@ async def _write_cursor(session: AsyncSession, day: int) -> None:
 
 
 async def get_cursor_status() -> dict[str, Any]:
-    """Read-only — returns the current day + exhausted flag for the UI."""
+    """Read-only: returns the current day + exhausted flag for the UI."""
     factory = get_sessionmaker()
     async with factory() as session:
         day = await _read_cursor(session)
@@ -142,7 +143,7 @@ async def get_cursor_status() -> dict[str, Any]:
 
 
 async def reset_cursor() -> dict[str, Any]:
-    """Reset the cursor to ``0``. Used by the admin demo-reset path."""
+    """Reset the cursor to ``0``. Used by ``POST /admin/buena/reset_cursor``."""
     factory = get_sessionmaker()
     async with factory() as session:
         await _write_cursor(session, 0)
@@ -154,9 +155,7 @@ async def reset_cursor() -> dict[str, Any]:
 # --- Per-event ingestion ----------------------------------------------------
 
 
-async def _process_event(
-    factory: Any, ev: ConnectorEvent, *, summary: AdvanceResult
-) -> None:
+async def _process_event(factory: Any, ev: ConnectorEvent, *, summary: AdvanceResult) -> None:
     """Insert one ConnectorEvent and run the matching extractor.
 
     Email events go through the Gemini extractor (fact-write via
@@ -178,16 +177,14 @@ async def _process_event(
             return
         summary.events_inserted += 1
 
-    # Route — text router for emails, structured router otherwise.
+    # Route: text router for emails, structured router otherwise.
     async with factory() as session:
         if ev.source == "email":
             route: StructuredRoute = await route_text_event(
                 session, ev.raw_content, metadata=ev.metadata
             )
         else:
-            route = await route_structured(
-                session, ev.metadata, event_source=ev.source
-            )
+            route = await route_structured(session, ev.metadata, event_source=ev.source)
     if route.property_id is not None:
         summary.routed_property += 1
     elif route.building_id is not None:
@@ -230,7 +227,7 @@ async def _process_event(
                     )
                 ) or 0
                 await session.commit()
-    except Exception as exc:  # noqa: BLE001 — keep one bad event from breaking the day
+    except Exception as exc:  # noqa: BLE001 (keep one bad event from breaking the day)
         if len(summary.error_samples) < 3:
             summary.error_samples.append(f"{type(exc).__name__}: {exc}"[:300])
         log.exception("incremental.event_error", source_ref=ev.source_ref)
@@ -312,7 +309,7 @@ async def advance_one_day(*, root: Path | None = None) -> AdvanceResult:
     for ev in buena_archive.iter_incremental_day(extracted_root, next_day):
         await _process_event(factory, ev, summary=summary)
 
-    # Signals — same evaluator the live worker tick runs.
+    # Signals: same evaluator the live worker tick runs.
     try:
         async with factory() as session:
             summary.signals_fired = int(await evaluate_all(session) or 0)
@@ -320,9 +317,7 @@ async def advance_one_day(*, root: Path | None = None) -> AdvanceResult:
     except Exception as exc:  # noqa: BLE001
         log.exception("incremental.signals_error")
         if len(summary.error_samples) < 3:
-            summary.error_samples.append(
-                f"signals: {type(exc).__name__}: {exc}"[:300]
-            )
+            summary.error_samples.append(f"signals: {type(exc).__name__}: {exc}"[:300])
 
     # Persist the cursor *after* the day's work lands so a crash mid-day
     # leaves the cursor pointing at the same day for retry.

@@ -1,10 +1,10 @@
 """Buildings + Liegenschaften (WEG) read API.
 
-Phase 8.1 surfaced the two new ownership tiers introduced in
-``connectors.migrations`` 0002. Both endpoints render the same
+Serves the two ownership tiers above properties (buildings and
+Liegenschaften), introduced in ``connectors.migrations`` 0002. Both endpoints render the same
 markdown shape the property view uses, with cross-tier context blocks.
 
-Phase 12 — markdown reads now hit the materialized ``building_files``
+Markdown reads hit the materialized ``building_files``
 and ``liegenschaft_files`` cache first (populated by the applier hook
 in :mod:`backend.pipeline.materializer`); live rendering remains as
 the fallback path. Per-tier ``/file`` endpoints expose the full row
@@ -77,8 +77,7 @@ async def building_markdown(
     cached = (
         await session.execute(
             text(
-                "SELECT content_md, last_rendered_at FROM building_files "
-                "WHERE building_id = :bid"
+                "SELECT content_md, last_rendered_at FROM building_files WHERE building_id = :bid"
             ),
             {"bid": building_id},
         )
@@ -135,17 +134,13 @@ async def building_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="building file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="building file not materialized yet")
     return BuildingFileRow(
         building_id=UUID(str(row.building_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),
@@ -229,17 +224,13 @@ async def liegenschaft_file(
         )
     ).first()
     if row is None:
-        raise HTTPException(
-            status_code=404, detail="liegenschaft file not materialized yet"
-        )
+        raise HTTPException(status_code=404, detail="liegenschaft file not materialized yet")
     return LiegenschaftFileRow(
         liegenschaft_id=UUID(str(row.liegenschaft_id)),
         content_md=row.content_md,
         fact_count=int(row.fact_count or 0),
         last_rendered_at=row.last_rendered_at,
-        trigger_event_id=(
-            UUID(str(row.trigger_event_id)) if row.trigger_event_id else None
-        ),
+        trigger_event_id=(UUID(str(row.trigger_event_id)) if row.trigger_event_id else None),
         trigger_scope=row.trigger_scope,
         trigger_summary=row.trigger_summary,
         generation_version=int(row.generation_version or 1),

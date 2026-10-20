@@ -1,4 +1,4 @@
-"""Phase 9 Step 9.2 — constraint definitions.
+"""Constraint definitions for the rule-based validator.
 
 Importing this package registers every constraint into
 :data:`backend.pipeline.validator.REGISTRY`. The validator looks up
@@ -18,7 +18,7 @@ Add a new constraint:
 
 from __future__ import annotations
 
-from backend.pipeline.constraints import (  # noqa: F401 — import for side-effect
+from backend.pipeline.constraints import (  # noqa: F401 (import for side-effect)
     building_address_immutable,
     building_floor_count_immutable,
     building_year_built_immutable,

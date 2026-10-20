@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
-# Start Keystone backend (FastAPI) + frontend (Vite) together.
-# Ctrl-C stops both. Output is interleaved on stdout.
+# Start the Keystone backend (FastAPI, --reload) and frontend (Vite) together
+# without Docker. Ctrl-C stops both. Output is interleaved on stdout.
 #
-# Defaults assume sibling repos:
-#   /Users/<you>/Desktop/hackathon         (this repo)
-#   /Users/<you>/Desktop/keystone-insight  (frontend repo)
+# Expects Postgres to be reachable at DATABASE_URL (e.g. `docker compose up
+# postgres`) and a Python venv at ./.venv.
 #
 # Override via env vars:
-#   FRONTEND_DIR=/path/to/keystone-insight ./scripts/dev.sh
 #   BACKEND_PORT=8000 FRONTEND_PORT=8080 ./scripts/dev.sh
+#   VITE_API_BASE_URL=http://localhost:8000 ./scripts/dev.sh
+#   FRONTEND_DIR=/path/to/frontend ./scripts/dev.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$BACKEND_DIR/.." && pwd)/keystone-insight}"
+FRONTEND_DIR="${FRONTEND_DIR:-$BACKEND_DIR/frontend}"
 
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-8080}"
+export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://localhost:$BACKEND_PORT}"
 
 # Sanity checks ---------------------------------------------------------------
 
@@ -64,7 +65,7 @@ BACKEND_PID=$!
 echo "→ frontend  http://localhost:$FRONTEND_PORT  (vite)"
 (
   cd "$FRONTEND_DIR"
-  exec npm run dev
+  exec npm run dev -- --port "$FRONTEND_PORT"
 ) &
 FRONTEND_PID=$!
 

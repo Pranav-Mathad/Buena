@@ -1,10 +1,13 @@
-"""Keystone MCP server — stdio transport.
+"""Keystone MCP server over the stdio transport.
 
-Registers the five canonical tools from KEYSTONE Part VIII against a
-``FastMCP`` instance. The tools are thin adapters over
-:mod:`mcp_server.tools`, which in turn hit the Keystone REST backend.
+Registers five tools (property context, portfolio search, pending
+signals, recent activity, and action proposals) against a ``FastMCP``
+instance. None of them writes facts directly: ``propose_action`` only
+creates a pending signal that a human approves. The tools are thin
+adapters over :mod:`mcp_server.tools`, which in turn hit the Keystone
+REST backend.
 
-Run directly for Claude Desktop (``python -m mcp_server.main``) — the
+Run directly for Claude Desktop (``python -m mcp_server.main``); the
 script speaks the MCP stdio protocol. Override the backend origin via
 ``KEYSTONE_BASE_URL`` if the server is on another host.
 """
@@ -65,9 +68,7 @@ async def list_signals(
 
 
 @mcp.tool()
-async def get_activity(
-    property_id: str, since: str | None = None
-) -> list[dict[str, Any]]:
+async def get_activity(property_id: str, since: str | None = None) -> list[dict[str, Any]]:
     """Return recent events + extraction summaries for a property.
 
     Args:
@@ -79,9 +80,7 @@ async def get_activity(
 
 
 @mcp.tool()
-async def propose_action(
-    property_id: str | None, action: dict[str, Any]
-) -> dict[str, Any]:
+async def propose_action(property_id: str | None, action: dict[str, Any]) -> dict[str, Any]:
     """Propose an action for a property. Creates a pending signal a human approves.
 
     Args:

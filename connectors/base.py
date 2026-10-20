@@ -1,12 +1,12 @@
-"""Connector Protocol — common shape every customer integration honors.
+"""Connector Protocol: the common shape every customer integration honors.
 
 A connector exposes two iterators:
 
-- :meth:`Connector.pull` — full backfill. Yields events from oldest to
+- :meth:`Connector.pull`: full backfill. Yields events from oldest to
   newest. Idempotent: re-running on the same input produces the same
   ``(source, source_ref)`` tuples and is absorbed by the events
   ``UNIQUE (source, source_ref)`` constraint.
-- :meth:`Connector.stream` — incremental updates only. Used by the
+- :meth:`Connector.stream`: incremental updates only. Used by the
   scheduler / admin-driven "advance one day" path.
 
 Both iterators yield :class:`ConnectorEvent` dataclasses whose fields
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -50,7 +50,7 @@ class ConnectorEvent:
         metadata: Structured context (parsed headers, currency amounts,
             classifier outputs, …). PII redacted.
         property_id: Optional pre-routed property UUID. ``None`` means
-            "let the router decide" — the worker / structured extractor
+            "let the router decide"; the worker / structured extractor
             will route on ingest.
         received_at: When the event happened from the customer's
             perspective. Defaults to ingestion time but should be the
@@ -58,7 +58,9 @@ class ConnectorEvent:
             bank Valuta, invoice Datum, …).
         document_type: For PDF-derived events, the classified type
             (lease, invoice, mahnung, …). ``None`` for non-PDF sources.
-            Phase 9 constraints read this field.
+            Source-type constraints (e.g. owner changes require a
+            ``kaufvertrag``, floor-count changes a ``structural_permit``)
+            read this field to decide whether a PDF is authoritative.
     """
 
     source: str
@@ -66,7 +68,7 @@ class ConnectorEvent:
     raw_content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     property_id: UUID | None = None
-    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     document_type: str | None = None
 
 
@@ -109,5 +111,5 @@ class ConnectorError(RuntimeError):
     """Recoverable connector error. Message is safe to surface to the user."""
 
 
-class DataMissing(ConnectorError):
+class DataMissingError(ConnectorError):
     """The customer dataset is not present at the configured path."""
