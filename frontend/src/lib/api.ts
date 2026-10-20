@@ -120,6 +120,8 @@ export async function fetchProperties(): Promise<Property[]> {
     status: "active" as const,
     openIssues: r.open_issues,
     isHero: r.is_hero,
+    owner: r.owner_name,
+    yearBuilt: r.building_year_built,
   }));
 }
 

@@ -8,6 +8,8 @@ export type Property = {
   status: "active";
   openIssues: number;
   isHero?: boolean;
+  owner?: string | null;
+  yearBuilt?: number | null;
 };
 
 export type Fact = {
