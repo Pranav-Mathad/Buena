@@ -2,7 +2,7 @@
 
 React client for the Keystone API: portfolio overview, per-property file
 with sources, Ask panel, an inbox for signals and items awaiting review,
-reply drafting and a side-by-side comparison view.
+inbox search and reply drafting.
 
 ## Stack
 
@@ -25,9 +25,11 @@ shadcn/ui), Vitest and Testing Library.
 
 ## Environment
 
-| Variable            | Purpose                                                           |
-| ------------------- | ----------------------------------------------------------------- |
-| `VITE_API_BASE_URL` | Base URL of the Keystone API, for example `http://localhost:8000` |
+| Variable            | Purpose                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `VITE_API_BASE_URL` | Base URL of the Keystone API, for example `http://localhost:8000`                                   |
+| `VITE_REPO_URL`     | Optional. Source repository; the header and footer link to it when set                              |
+| `VITE_PUBLIC_URL`   | Optional. Public URL of this frontend; when set, the build adds absolute `og:image` / `og:url` tags |
 
 Copy `.env.example` to `.env.local`. Env files other than the example are
 gitignored. The backend must list the frontend's origin in
@@ -40,20 +42,21 @@ gitignored. The backend must list the frontend's origin in
 src/
 ├── main.tsx, App.tsx       entry point, providers, routes
 ├── pages/                  one component per route
-│   ├── Portfolio.tsx         /                  property grid and recent activity
+│   ├── Portfolio.tsx         /                  live stats, property grid and activity rail
 │   ├── PropertyDetail.tsx    /properties/:id    property file, sources, Ask panel
 │   ├── Inbox.tsx             /inbox             pending signals, uncertainties, rejected updates
 │   ├── DraftReply.tsx        /draft-reply       reply drafting
-│   ├── Compare.tsx           /compare           raw inbox next to Ask
+│   ├── Search.tsx            /search            inbox keyword search next to Ask
 │   └── NotFound.tsx
-├── components/             app components (AskPanel, SourceModal, Layout, ...)
+├── components/             app components (Layout, PortfolioStats, AskPanel, ...)
+│   ├── ui-bits.tsx         shared primitives: brand mark, cards, buttons, pills, select
 │   └── ui/                 generated Radix wrappers, only the ones in use
 ├── providers/              NotificationProvider (server-sent events)
 ├── lib/
 │   ├── api.ts              API client and DTO mapping
 │   ├── text.ts             markdown and briefing text helpers
 │   ├── types.ts            shared domain types
-│   ├── constants.ts        static UI copy (suggested questions, sample messages)
+│   ├── constants.ts        static UI copy (suggested questions)
 │   ├── config.ts           VITE_API_BASE_URL, required at startup
 │   ├── ask.ts              adapts Ask API results for the panel
 │   └── utils.ts            className helper
