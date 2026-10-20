@@ -110,7 +110,7 @@ def render_coverage_block(report: CoverageReport, *, lang: str = "en") -> list[s
     Empty areas are skipped so the block stays tight.
     """
     title = "Abdeckung" if lang == "de" else "Coverage"
-    stamm_label = "Stammdaten"
+    stamm_label = "Stammdaten" if lang == "de" else "Master data"
 
     lines: list[str] = [f"## {title}", ""]
 

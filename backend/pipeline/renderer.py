@@ -83,7 +83,7 @@ CONTEXT_LABELS: dict[str, dict[str, str]] = {
         "open_building": "Open building view",
         "open_weg": "Open WEG view",
         "needs_review": "Needs Review",
-        "stammdaten": "Stammdaten",
+        "stammdaten": "Master data",
         "stammdaten_subtitle": "Master record from the lease/owner registry",
         "unit": "Unit",
         "tenant": "Current tenant",
