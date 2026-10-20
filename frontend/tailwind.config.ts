@@ -3,12 +3,7 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: [
-    "./pages/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-    "./app/**/*.{ts,tsx}",
-    "./src/**/*.{ts,tsx}",
-  ],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
   prefix: "",
   theme: {
     container: {
@@ -55,6 +50,10 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        brand: {
+          DEFAULT: "hsl(var(--brand))",
+          foreground: "hsl(var(--brand-foreground))",
+        },
         subtle: "hsl(var(--subtle-text))",
         tan: "hsl(var(--tan))",
         swatch: "hsl(var(--swatch))",
@@ -70,6 +69,7 @@ export default {
       },
       boxShadow: {
         card: "var(--shadow-card)",
+        pop: "var(--shadow-pop)",
       },
       keyframes: {
         "accordion-down": {
@@ -85,6 +85,14 @@ export default {
           from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "slide-down": {
+          from: { opacity: "0", transform: "translateY(-6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        shimmer: {
+          from: { backgroundPosition: "200% 0" },
+          to: { backgroundPosition: "-200% 0" },
+        },
         "pulse-soft": { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0.5" } },
         "pulse-subtle": { "0%, 100%": { opacity: "0.85" }, "50%": { opacity: "1" } },
       },
@@ -93,6 +101,8 @@ export default {
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 200ms ease-out",
         "fade-in-up": "fade-in-up 300ms ease-out",
+        "slide-down": "slide-down 160ms ease-out",
+        shimmer: "shimmer 1.8s linear infinite",
         "pulse-soft": "pulse-soft 1.6s ease-in-out infinite",
         "pulse-subtle": "pulse-subtle 4s ease-in-out infinite",
       },
