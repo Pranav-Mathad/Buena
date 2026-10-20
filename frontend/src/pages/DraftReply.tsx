@@ -1,56 +1,70 @@
-import { useState } from "react";
-import { useFeaturedProperty, useProperties } from "@/hooks/queries";
-import { fetchDraftReply, llmFailureKind, type DraftReplyContext } from "@/lib/api";
-import { sampleInboundMessages, type SampleInboundMessage } from "@/lib/constants";
-import { Card, PrimaryButton, SecondaryButton } from "@/components/ui-bits";
-import { Copy, Pencil } from "lucide-react";
-
-const GENERIC_BODY = `Sehr geehrte/r Bewohner/in,
-
-vielen Dank für Ihre Nachricht. Wir prüfen das Anliegen und melden uns zeitnah zurück.
-
-Mit freundlichen Grüßen,
-Hausverwaltung`;
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Check, Copy, Mail, Pencil } from "lucide-react";
+import { useFeaturedProperty, useProperties, usePropertyInbox } from "@/hooks/queries";
+import { useDocumentTitle } from "@/hooks/use-document-title";
+import {
+  fetchDraftReply,
+  fetchEventRaw,
+  llmFailureKind,
+  type DraftReplyContext,
+  type InboxRow,
+} from "@/lib/api";
+import { parseRawMessage } from "@/lib/message";
+import { cn } from "@/lib/utils";
+import { Card, Eyebrow, PrimaryButton, SecondaryButton, Select } from "@/components/ui-bits";
 
 type DraftedReply = {
   subject: string;
   body: string;
   context: DraftReplyContext[];
-  knows_about_incident: boolean;
-  elapsed_ms: number;
+  knowsAboutIncident: boolean;
+  elapsedMs: number;
 };
 
 const DraftReply = () => {
-  const [example, setExample] = useState<SampleInboundMessage | null>(null);
+  useDocumentTitle("Draft a reply");
+  const { data: properties } = useProperties();
+  const featured = useFeaturedProperty();
+  const [propertyId, setPropertyId] = useState("");
+  const selectedId = propertyId || featured?.id || properties?.[0]?.id || "";
+  const selected = properties?.find((p) => p.id === selectedId);
+
   const [form, setForm] = useState({
-    property: "",
     channel: "Email" as "Email" | "Slack",
     tone: "Neutral",
     subject: "",
     body: "",
   });
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+  const [loadedMessage, setLoadedMessage] = useState<string | null>(null);
   const [drafted, setDrafted] = useState<DraftedReply | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
-  // The property list fills the selector and maps the chosen name back to
-  // its id for the API call. Until the user picks one, the featured
-  // property is selected.
-  const { data: properties } = useProperties();
-  const featured = useFeaturedProperty();
-  const selectedProperty = form.property || featured?.name || "";
+  // The property's most recent messages, so a reply can start from one of them.
+  const inbox = usePropertyInbox(selectedId || undefined, undefined);
+  const recent = (inbox.data?.rows ?? []).slice(0, 5);
 
-  const loadExample = (ex: SampleInboundMessage) => {
-    setExample(ex);
-    setForm({
-      property: selectedProperty,
-      channel: ex.channel,
-      tone: ex.tone,
-      subject: ex.subject,
-      body: ex.body,
-    });
-    setDrafted(null);
-    setDraftError(null);
+  const loadMessage = async (row: InboxRow) => {
+    if (loadingMessage) return;
+    setLoadingMessage(row.eventId);
+    try {
+      const parsed = parseRawMessage(await fetchEventRaw(row.eventId));
+      setForm((f) => ({
+        ...f,
+        channel: "Email",
+        subject: parsed.subject || row.subject,
+        body: parsed.body,
+      }));
+      setLoadedMessage(row.eventId);
+      setDrafted(null);
+      setDraftError(null);
+    } catch {
+      toast.error("The message could not be loaded");
+    } finally {
+      setLoadingMessage(null);
+    }
   };
 
   const generate = async () => {
@@ -58,10 +72,9 @@ const DraftReply = () => {
     setDrafting(true);
     setDraftError(null);
     try {
-      const matched = properties?.find((p) => p.name === selectedProperty);
       const result = await fetchDraftReply({
-        propertyId: matched?.id,
-        propertyName: selectedProperty,
+        propertyId: selected?.id,
+        propertyName: selected?.name,
         channel: form.channel,
         tone: form.tone,
         subject: form.subject,
@@ -70,110 +83,118 @@ const DraftReply = () => {
       setDrafted({
         subject: result.subject,
         body: result.body,
-        context: result.context.map((c) => ({
-          id: c.id,
-          channel: c.channel,
-          time: c.time,
-          snippet: c.snippet,
-          whyRelevant: c.whyRelevant,
-        })),
-        knows_about_incident: result.knowsAboutIncident,
-        elapsed_ms: result.elapsedMs,
+        context: result.context,
+        knowsAboutIncident: result.knowsAboutIncident,
+        elapsedMs: result.elapsedMs,
       });
     } catch (e) {
-      // No canned fallback: a failed request is shown as a failure, never
-      // replaced by a reply the model did not write.
+      // A failed request is shown as a failure, never replaced by a reply the
+      // model did not write.
       setDrafted(null);
       const kind = llmFailureKind(e);
       const title =
         kind === "no-key"
-          ? "Reply drafting needs an LLM provider key"
+          ? "Reply drafting needs a language model"
           : kind === "failed"
-            ? "Drafting request failed"
-            : "Drafting service unreachable";
+            ? "The reply could not be drafted"
+            : "Reply drafting could not be reached";
       setDraftError(e instanceof Error ? `${title}: ${e.message}` : `${title}.`);
     } finally {
       setDrafting(false);
     }
   };
 
-  const showSplit = !!drafted && drafted.knows_about_incident;
-
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-12 animate-fade-in">
-      <div className="mb-10 max-w-3xl">
-        <h1 className="display text-[40px] tracking-tight">Draft reply</h1>
+    <div className="max-w-[1400px] mx-auto px-5 sm:px-6 lg:px-10 py-10 lg:py-12 animate-fade-in">
+      <div className="mb-8 lg:mb-10 max-w-3xl">
+        <Eyebrow>Replies</Eyebrow>
+        <h1 className="display mt-3 text-[clamp(30px,4vw,40px)]">Draft a reply</h1>
         <p className="text-muted-foreground mt-3 text-[15px] leading-relaxed">
-          A drafted answer that already knows what happened.
+          Reply to a tenant or owner with the property's history taken into account.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Incoming */}
         <Card className="p-6">
           <h2 className="text-[22px] font-semibold tracking-tight">Incoming message</h2>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <span className="text-[13px] text-muted-foreground mr-1 self-center">
-              load example:
-            </span>
-            {sampleInboundMessages.map((ex) => (
-              <button
-                key={ex.key}
-                onClick={() => loadExample(ex)}
-                className={`pill text-[12px] hover:border-foreground/30 transition-colors ${
-                  example?.key === ex.key ? "border-foreground/40 bg-foreground/[0.03]" : "bg-card"
-                }`}
+
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="Property">
+              <Select
+                value={selectedId}
+                onChange={(e) => {
+                  setPropertyId(e.target.value);
+                  setLoadedMessage(null);
+                }}
+                className="w-full"
               >
-                {ex.label}
-              </button>
-            ))}
+                {(properties ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Channel">
+              <Select
+                value={form.channel}
+                onChange={(e) => setForm({ ...form, channel: e.target.value as "Email" | "Slack" })}
+                className="w-full"
+              >
+                <option>Email</option>
+                <option>Slack</option>
+              </Select>
+            </Field>
+            <Field label="Tone">
+              <Select
+                value={form.tone}
+                onChange={(e) => setForm({ ...form, tone: e.target.value })}
+                className="w-full"
+              >
+                <option>Warm</option>
+                <option>Neutral</option>
+                <option>Formal</option>
+              </Select>
+            </Field>
           </div>
 
-          <div className="mt-6 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Property">
-                <select
-                  value={selectedProperty}
-                  onChange={(e) => setForm({ ...form, property: e.target.value })}
-                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
-                >
-                  {(properties ?? []).map((p) => (
-                    <option key={p.id} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Channel">
-                <select
-                  value={form.channel}
-                  onChange={(e) =>
-                    setForm({ ...form, channel: e.target.value as "Email" | "Slack" })
-                  }
-                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
-                >
-                  <option>Email</option>
-                  <option>Slack</option>
-                </select>
-              </Field>
-              <Field label="Tone">
-                <select
-                  value={form.tone}
-                  onChange={(e) => setForm({ ...form, tone: e.target.value })}
-                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
-                >
-                  <option>Warm</option>
-                  <option>Neutral</option>
-                  <option>Formal</option>
-                </select>
-              </Field>
+          {recent.length > 0 && (
+            <div className="mt-5">
+              <span className="eyebrow">Recent messages</span>
+              <ul className="mt-2 rounded-xl border border-border divide-y divide-border overflow-hidden">
+                {recent.map((row) => (
+                  <li key={row.eventId}>
+                    <button
+                      type="button"
+                      onClick={() => loadMessage(row)}
+                      disabled={loadingMessage !== null}
+                      className={cn(
+                        "w-full text-left px-3.5 py-2.5 flex items-center gap-3 transition-colors hover:bg-foreground/[0.03] disabled:cursor-wait",
+                        loadedMessage === row.eventId && "bg-brand/[0.06]",
+                      )}
+                    >
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-[13.5px]">
+                        {row.subject || "(no subject)"}
+                        <span className="text-muted-foreground"> · {row.sender}</span>
+                      </span>
+                      <span className="font-mono text-[11px] text-muted-foreground shrink-0">
+                        {loadingMessage === row.eventId ? "loading…" : row.date}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
+          )}
+
+          <div className="mt-5 space-y-4">
             {form.channel === "Email" && (
               <Field label="Subject">
                 <input
                   value={form.subject}
                   onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[14px] outline-none focus:border-foreground/40"
+                  className="field"
                 />
               </Field>
             )}
@@ -182,7 +203,8 @@ const DraftReply = () => {
                 rows={10}
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
-                className="w-full bg-card border border-border rounded-lg px-3 py-3 text-[14px] outline-none focus:border-foreground/40 resize-none leading-relaxed"
+                placeholder="Paste the message or pick one above"
+                className="field resize-none leading-relaxed"
               />
             </Field>
             <div className="flex justify-end items-center gap-3">
@@ -199,7 +221,7 @@ const DraftReply = () => {
                 {drafting ? (
                   <>
                     <span className="dot bg-primary-foreground animate-pulse-soft" />
-                    Drafting...
+                    Drafting…
                   </>
                 ) : (
                   "Draft reply"
@@ -209,166 +231,124 @@ const DraftReply = () => {
           </div>
         </Card>
 
-        {/* Drafted */}
-        <div>
-          {!drafted && (
-            <Card className="p-6">
-              <h2 className="text-[22px] font-semibold tracking-tight">Drafted reply</h2>
-              <p className="mt-6 text-muted-foreground italic text-[14px]">
-                Submit a message on the left to see the drafted reply.
-              </p>
-            </Card>
+        <Card className="p-6 self-start">
+          <h2 className="text-[22px] font-semibold tracking-tight">Drafted reply</h2>
+          {drafted ? (
+            <DraftedContent drafted={drafted} />
+          ) : (
+            <p className="mt-6 text-muted-foreground text-[14px]">
+              The drafted reply appears here, with the events it drew on.
+            </p>
           )}
-
-          {drafted && !showSplit && (
-            <Card className="p-6">
-              <h2 className="text-[22px] font-semibold tracking-tight">Drafted reply</h2>
-              <SingleDraftedContent drafted={drafted} />
-            </Card>
-          )}
-
-          {drafted && showSplit && (
-            <div className="animate-fade-in">
-              <h3 className="text-[18px] font-semibold tracking-tight mb-6">
-                What changes when the system has context?
-              </h3>
-              <div className="relative grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12">
-                {/* Left: without Keystone */}
-                <div>
-                  <div className="text-[12px] uppercase tracking-wider text-muted-foreground font-medium">
-                    Without Keystone: generic reply
-                  </div>
-                  <div className="mt-5 space-y-4 font-sans text-foreground/80">
-                    <div>
-                      <div className="text-[12px] text-muted-foreground mb-1">Subject</div>
-                      <p className="text-[14px]">Re: {form.subject || "(no subject)"}</p>
-                    </div>
-                    <div>
-                      <div className="text-[12px] text-muted-foreground mb-1">Body</div>
-                      <p className="text-[14px] leading-relaxed whitespace-pre-line">
-                        {GENERIC_BODY}
-                      </p>
-                    </div>
-                    <div className="font-mono text-[11px] text-muted-foreground pt-2">
-                      no context · drafted in 0.3s
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: with Keystone */}
-                <div>
-                  <div className="text-[12px] uppercase tracking-wider text-muted-foreground font-medium">
-                    With Keystone: context-aware reply
-                  </div>
-                  <div className="mt-5">
-                    <SingleDraftedContent
-                      drafted={drafted}
-                      footerOverride={`${drafted.context.length} related event${
-                        drafted.context.length === 1 ? "" : "s"
-                      } · drafted in ${(drafted.elapsed_ms / 1000).toFixed(1)}s`}
-                    />
-                  </div>
-                </div>
-
-                {/* Centered divider with label */}
-                <div className="hidden md:flex absolute inset-y-0 left-1/2 -translate-x-1/2 items-center justify-center pointer-events-none">
-                  <div className="absolute inset-y-0 w-px bg-border" />
-                  <div className="relative bg-background px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-                    Same input. Different memory.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        </Card>
       </div>
     </div>
   );
 };
 
-const SingleDraftedContent = ({
-  drafted,
-  footerOverride,
-}: {
-  drafted: DraftedReply;
-  footerOverride?: string;
-}) => (
-  <div className="space-y-5 animate-fade-in">
-    <div className="space-y-2">
-      <div className="rounded-2xl border border-border bg-card px-4 py-3 flex items-start gap-3 animate-fade-in-up">
+const DraftedContent = ({ drafted }: { drafted: DraftedReply }) => {
+  // The body can be touched up in place before it is copied out.
+  const [body, setBody] = useState(drafted.body);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    setBody(drafted.body);
+    setEditing(false);
+  }, [drafted.body]);
+
+  const copy = async () => {
+    const text = drafted.subject ? `${drafted.subject}\n\n${body}` : body;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Reply copied to the clipboard");
+    } catch {
+      toast.error("Could not access the clipboard");
+    }
+  };
+
+  const related = drafted.context.length;
+  const status = drafted.knowsAboutIncident
+    ? related > 0
+      ? `Based on ${related} related event${related === 1 ? "" : "s"} in the property file`
+      : "Based on related history in the property file"
+    : "No related events in the property file";
+
+  return (
+    <div className="mt-6 space-y-5 animate-fade-in">
+      <div className="rounded-xl border border-border bg-subdued px-4 py-3 flex items-center gap-3">
         <span
-          className={`dot mt-1.5 shrink-0 ${
-            drafted.knows_about_incident ? "bg-success" : "bg-muted-foreground/50"
-          }`}
-        />
-        <div>
-          <p className="text-[15px] font-medium">
-            {drafted.knows_about_incident
-              ? "Keystone already knows about this incident"
-              : "First report: drafting a holding reply"}
-          </p>
-          {drafted.knows_about_incident && drafted.context.length > 0 && (
-            <p className="text-[13px] text-muted-foreground mt-0.5">
-              {drafted.context.length} related event
-              {drafted.context.length === 1 ? "" : "s"} found in the last 24h
-            </p>
+          className={cn(
+            "dot shrink-0",
+            drafted.knowsAboutIncident ? "bg-success" : "bg-muted-foreground/50",
           )}
-        </div>
+        />
+        <p className="text-[14px] font-medium">{status}</p>
       </div>
-      <p className="text-[13px] italic text-muted-foreground">
-        {drafted.knows_about_incident
-          ? "Drafting a reply that references prior context"
-          : "No prior context found for this issue"}
-      </p>
-    </div>
-    {drafted.subject && (
-      <div>
-        <div className="text-[13px] text-muted-foreground mb-1">Subject</div>
-        <p className="text-[15px] font-medium">{drafted.subject}</p>
-      </div>
-    )}
-    <div>
-      <div className="text-[13px] text-muted-foreground mb-1">Body</div>
-      <p className="text-[15px] leading-relaxed whitespace-pre-line">{drafted.body}</p>
-    </div>
-    {drafted.context.length > 0 && (
-      <>
-        <hr className="border-border" />
+      {drafted.subject && (
         <div>
-          <div className="text-[13px] text-muted-foreground mb-3">Context used</div>
-          <div className="space-y-3">
-            {drafted.context.map((c) => (
-              <div key={c.id} className="border border-border rounded-xl p-4">
-                <div className="font-mono text-[12px] text-muted-foreground">
-                  {c.id} · {c.channel} · {c.time}
-                </div>
-                <p className="text-[14px] mt-2">{c.snippet}</p>
-                <p className="text-[12px] italic text-muted-foreground mt-2">{c.whyRelevant}</p>
-              </div>
-            ))}
-          </div>
+          <div className="text-[13px] text-muted-foreground mb-1">Subject</div>
+          <p className="text-[15px] font-medium">{drafted.subject}</p>
         </div>
-      </>
-    )}
-    <div className="font-mono text-[12px] text-muted-foreground">
-      {footerOverride ?? `Drafted in ${(drafted.elapsed_ms / 1000).toFixed(1)}s`}
+      )}
+      <div>
+        <div className="text-[13px] text-muted-foreground mb-1">Body</div>
+        {editing ? (
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={Math.max(6, body.split("\n").length + 1)}
+            autoFocus
+            aria-label="Reply body"
+            className="field text-[15px] leading-relaxed resize-y"
+          />
+        ) : (
+          <p className="text-[15px] leading-relaxed whitespace-pre-line">{body}</p>
+        )}
+      </div>
+      {related > 0 && (
+        <>
+          <hr className="border-border" />
+          <div>
+            <div className="text-[13px] text-muted-foreground mb-3">Context used</div>
+            <div className="space-y-3">
+              {drafted.context.map((c) => (
+                <div key={c.id} className="border border-border rounded-xl p-4">
+                  <div className="font-mono text-[12px] text-muted-foreground">
+                    {c.channel} · {c.time}
+                  </div>
+                  <p className="text-[14px] mt-2">{c.snippet}</p>
+                  <p className="text-[12px] italic text-muted-foreground mt-2">{c.whyRelevant}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+      <div className="font-mono text-[12px] text-muted-foreground">
+        Drafted in {(drafted.elapsedMs / 1000).toFixed(1)}s
+      </div>
+      <div className="flex gap-2">
+        <SecondaryButton onClick={copy}>
+          <Copy className="w-3.5 h-3.5" /> Copy
+        </SecondaryButton>
+        <SecondaryButton onClick={() => setEditing((v) => !v)}>
+          {editing ? (
+            <>
+              <Check className="w-3.5 h-3.5" /> Done
+            </>
+          ) : (
+            <>
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </>
+          )}
+        </SecondaryButton>
+      </div>
     </div>
-    <div className="flex gap-2">
-      <SecondaryButton>
-        <Copy className="w-3.5 h-3.5" /> Copy
-      </SecondaryButton>
-      <SecondaryButton>
-        <Pencil className="w-3.5 h-3.5" /> Edit
-      </SecondaryButton>
-    </div>
-  </div>
-);
+  );
+};
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label className="block">
-    <span className="text-[12px] text-muted-foreground uppercase tracking-wider font-medium">
-      {label}
-    </span>
+    <span className="eyebrow">{label}</span>
     <div className="mt-1.5">{children}</div>
   </label>
 );
