@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useProperties, usePropertyFile, queryKeys } from "@/hooks/queries";
 import { useBriefing } from "@/hooks/use-briefing";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useLivePropertyUpdates } from "@/hooks/use-live-property-updates";
 import { Card } from "@/components/ui-bits";
 import { AskPanel } from "@/components/AskPanel";
@@ -35,21 +36,21 @@ const PropertyDetail = () => {
   const { data: liveFile, isError: fileError } = usePropertyFile(id);
 
   const propertyMeta = properties.find((p) => p.id === id);
-  const heroProperty = properties.find((p) => p.isHero);
+  useDocumentTitle(propertyMeta?.name ?? "Property");
 
   // An empty file (no sections) means extraction has not written any facts
   // for this property yet; the panel says so instead of showing other data.
   const sections = liveFile && liveFile.sections.length > 0 ? liveFile.sections : null;
 
   // Briefing and Ask are offered for any property with at least one event:
-  // with sparse context the model answers "I don't know", which is more
-  // useful than hiding the feature.
+  // with sparse context the answer says so, which is more useful than hiding
+  // the feature.
   const hasContent = (propertyMeta?.stats?.events ?? 0) > 0;
 
   if (!propertyMeta) {
     const loading = livePropertiesRaw === undefined;
     return (
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-12 animate-fade-in">
+      <div className="max-w-[1400px] mx-auto px-5 sm:px-6 lg:px-10 py-12 animate-fade-in">
         <Link
           to="/"
           className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
@@ -73,7 +74,7 @@ const PropertyDetail = () => {
   }
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10 animate-fade-in">
+    <div className="max-w-[1400px] mx-auto px-5 sm:px-6 lg:px-10 py-8 lg:py-10 animate-fade-in">
       <Link
         to="/"
         className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
@@ -116,14 +117,13 @@ const PropertyDetail = () => {
         ))}
       </div>
 
-      <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-10">
+      <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-10 xl:gap-14">
         {/* Property file: 60% on desktop */}
         <div className={`lg:col-span-3 ${activeTab === "ask" ? "hidden lg:block" : ""}`}>
           <PropertyFilePanel
             fileError={fileError}
             sections={sections}
             property={propertyMeta}
-            featured={heroProperty}
             onOpenSource={setOpenSource}
             onEdit={(fact, section) => setEditing({ fact, section })}
           />

@@ -28,7 +28,7 @@ export const NotificationsBell = () => {
       <PopoverTrigger asChild>
         <button
           aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-          className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04] transition-colors"
+          className="relative w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
         >
           <Bell className="w-4 h-4" />
           {unreadCount > 0 && (
@@ -41,7 +41,7 @@ export const NotificationsBell = () => {
       <PopoverContent
         align="end"
         sideOffset={10}
-        className="w-[400px] max-w-[calc(100vw-2rem)] p-0 rounded-2xl border border-border bg-card shadow-card overflow-hidden"
+        className="w-[400px] max-w-[calc(100vw-2rem)] p-0 rounded-2xl border border-border bg-card shadow-pop overflow-hidden"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
@@ -144,8 +144,7 @@ const EmptyState = () => (
     </div>
     <p className="mt-3 text-[13px] text-foreground">No notifications yet</p>
     <p className="mt-1 text-[12px] text-muted-foreground max-w-[280px] leading-relaxed">
-      Anything the pipeline ingests will pop here: emails, invoices, bank events, simulator
-      advances.
+      New events for any property appear here as they are processed.
     </p>
   </div>
 );

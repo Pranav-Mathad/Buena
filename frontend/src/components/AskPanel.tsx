@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useFeaturedProperty } from "@/hooks/queries";
 import { fetchAsk, llmFailureKind } from "@/lib/api";
 import { adaptAskResult, type AskResponse } from "@/lib/ask";
@@ -11,8 +10,8 @@ import { SourceModal, type SourceModalSource } from "./SourceModal";
 /** Heading for a failed Ask request; the error message below it has the detail. */
 function describeError(e: unknown): string {
   const kind = llmFailureKind(e);
-  if (kind === "no-key") return "Ask needs an LLM provider key";
-  return kind === "failed" ? "Q&A request failed" : "Q&A service unreachable";
+  if (kind === "no-key") return "Ask needs a language model";
+  return kind === "failed" ? "The question could not be answered" : "Ask is unavailable";
 }
 
 const SourceCard = ({
@@ -24,7 +23,7 @@ const SourceCard = ({
   label?: string;
   onOpenSource: (s: SourceModalSource) => void;
 }) => (
-  <div className="border border-border rounded-xl p-4 bg-card">
+  <div className="border border-border rounded-xl p-4 bg-card shadow-card">
     <div className="font-mono text-[12px] text-muted-foreground">
       {s.channel} · {s.date}
     </div>
@@ -51,8 +50,7 @@ export const AskPanel = ({
   presetQuestion?: string;
   compact?: boolean;
   unavailable?: boolean;
-  // When omitted, the panel asks about the featured property (Compare
-  // asks its questions without choosing a property).
+  // When omitted, the panel asks about the property the API lists first.
   propertyId?: string;
 }) => {
   const [input, setInput] = useState(presetQuestion ?? "");
@@ -67,7 +65,7 @@ export const AskPanel = ({
 
   const targetPropertyId = propertyId ?? heroProperty?.id;
 
-  // Sync when the preset changes (Compare view).
+  // Sync when the preset changes (search page).
   useEffect(() => {
     if (presetQuestion !== undefined) {
       setInput(presetQuestion);
@@ -75,9 +73,8 @@ export const AskPanel = ({
     }
   }, [presetQuestion]);
 
-  // Fetch on submit. No mock fallback: if the backend errors we
-  // surface the failure honestly so the user knows the answer they
-  // see is real or not at all.
+  // Fetch on submit. A failed request is shown as a failure, never
+  // replaced by a canned answer.
   useEffect(() => {
     if (!submitted || unavailable || !targetPropertyId) {
       setResponse(null);
@@ -96,7 +93,7 @@ export const AskPanel = ({
         if (cancelled) return;
         setResponse(null);
         setErrorTitle(describeError(e));
-        setErrorMsg(e instanceof Error ? e.message : "Q&A service unreachable");
+        setErrorMsg(e instanceof Error ? e.message : "Ask is unavailable");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -116,22 +113,31 @@ export const AskPanel = ({
       {!compact && (
         <>
           <div>
-            <h2 className="text-[22px] font-semibold tracking-tight">Ask anything</h2>
+            <h2 className="text-[22px] font-semibold tracking-tight">Ask the file</h2>
             <p className="text-[13px] text-muted-foreground mt-2 leading-relaxed">
-              We answer from this property's events, facts, and parent-tier context. We say "I don't
-              know" when we don't have enough.
+              Answers come from this property's events and facts, each with its source. When the
+              file does not cover a question, the answer says so.
             </p>
           </div>
 
           <div className="space-y-3">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              disabled={loading}
-              placeholder="ask anything about this property"
-              className="w-full h-14 rounded-xl border border-border bg-card px-4 text-[16px] outline-none focus:border-foreground/40 transition-colors placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
-            />
+            <div className="relative">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                disabled={loading}
+                placeholder="Ask a question about this property"
+                className="field h-12 pl-4 pr-24 text-[15px]"
+              />
+              <PrimaryButton
+                onClick={submit}
+                disabled={!input.trim() || loading}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-4 py-0 text-[13px]"
+              >
+                {loading ? "Answering…" : "Ask"}
+              </PrimaryButton>
+            </div>
             <div className="flex flex-wrap gap-2">
               {suggestedQuestions.map((q) => (
                 <button
@@ -142,20 +148,11 @@ export const AskPanel = ({
                     setInput(q);
                     setSubmitted(q);
                   }}
-                  className="pill bg-card hover:border-foreground/30 text-[12px] transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border"
+                  className="pill bg-card font-normal hover:border-foreground/30 text-[12px] transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border"
                 >
                   {q}
                 </button>
               ))}
-            </div>
-            <div className="flex justify-end">
-              <PrimaryButton
-                onClick={submit}
-                disabled={!input.trim() || loading}
-                className="px-6 py-2.5"
-              >
-                {loading ? "Thinking…" : "Ask"}
-              </PrimaryButton>
             </div>
           </div>
         </>
@@ -164,7 +161,7 @@ export const AskPanel = ({
       {loading && submitted && !unavailable && (
         <div className="animate-fade-in flex items-center gap-3 text-muted-foreground">
           <span className="dot bg-foreground/60 animate-pulse-soft" />
-          <span className="text-[14px]">Thinking…</span>
+          <span className="text-[14px]">Answering…</span>
         </div>
       )}
 
@@ -211,8 +208,8 @@ export const AskPanel = ({
             <>
               <div className="flex items-center justify-between">
                 <span className="pill bg-card">
-                  <HelpCircle className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.75} />I
-                  don't know
+                  <HelpCircle className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.75} />
+                  Not enough information
                 </span>
                 <span className="font-mono text-[12px] text-muted-foreground">
                   confidence: {response.confidence}
@@ -220,7 +217,7 @@ export const AskPanel = ({
               </div>
               <div className="bg-subdued border border-border rounded-2xl p-6 space-y-6">
                 <p className="text-[15px]">
-                  I don't have enough information to answer that confidently.
+                  The property file does not hold enough information to answer this.
                 </p>
                 <p className="text-[13px] text-muted-foreground">
                   <em>
@@ -233,14 +230,14 @@ export const AskPanel = ({
                   <hr className="border-border" />
                   <div>
                     <div className="text-[14px] font-semibold text-foreground mb-3">
-                      Here's what I do know about this topic
+                      Related context
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {response.partial_context.map((s) => (
                         <SourceCard
                           key={s.id}
                           s={s}
-                          label="partial context, not an answer"
+                          label="related, not an answer"
                           onOpenSource={setOpenSource}
                         />
                       ))}
@@ -268,9 +265,8 @@ export const AskPanel = ({
               </div>
               <Card className="p-5">
                 <p className="text-[15px]">
-                  That information lives in the ERP, not in the context layer. Try{" "}
-                  <a className="underline">[link to ERP]</a> or check the lease/owner records
-                  directly.
+                  This information is not kept in the property file. Check the ERP or the lease and
+                  owner records.
                 </p>
                 <p className="text-[13px] italic text-muted-foreground mt-2">
                   {response.reasoning}
@@ -285,19 +281,7 @@ export const AskPanel = ({
       )}
       {submitted && unavailable && (
         <div className="animate-fade-in bg-subdued border border-border rounded-2xl p-6 space-y-3">
-          <p className="text-[15px]">Q&amp;A is available once the property file is populated.</p>
-          {heroProperty && (
-            <p className="text-[13px] text-muted-foreground">
-              Try{" "}
-              <Link
-                to={`/properties/${heroProperty.id}`}
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                {heroProperty.name}
-              </Link>{" "}
-              in the meantime.
-            </p>
-          )}
+          <p className="text-[15px]">Ask is available once this property has events.</p>
         </div>
       )}
       <SourceModal source={openSource} onOpenChange={(open) => !open && setOpenSource(null)} />

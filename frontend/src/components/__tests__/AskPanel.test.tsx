@@ -59,7 +59,7 @@ describe("AskPanel", () => {
       partial_context: [source],
     });
 
-    expect(await screen.findByText("I don't know")).toBeInTheDocument();
+    expect(await screen.findByText("Not enough information")).toBeInTheDocument();
     expect(screen.getByText("No message mentions a renewal.")).toBeInTheDocument();
     expect(screen.getByText("Wasser läuft seit gestern")).toBeInTheDocument();
   });
@@ -89,8 +89,8 @@ describe("AskPanel", () => {
     await userEvent.type(screen.getByRole("textbox"), "What is going on?");
     await userEvent.click(screen.getByRole("button", { name: "Ask" }));
 
-    expect(await screen.findByText("Ask needs an LLM provider key")).toBeInTheDocument();
+    expect(await screen.findByText("Ask needs a language model")).toBeInTheDocument();
     expect(screen.getByText(/No LLM provider is configured/)).toBeInTheDocument();
-    expect(screen.queryByText("Q&A service unreachable")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ask is unavailable")).not.toBeInTheDocument();
   });
 });

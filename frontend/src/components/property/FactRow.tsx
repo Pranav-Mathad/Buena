@@ -3,6 +3,7 @@ import { ChevronDown, ExternalLink, Pencil } from "lucide-react";
 import { relativeTime } from "@/lib/api";
 import type { Fact } from "@/lib/types";
 import type { SourceModalSource } from "@/components/SourceModal";
+import { cn } from "@/lib/utils";
 
 const Tooltip = ({ children, label }: { children: React.ReactNode; label: string }) => (
   <span className="relative group/tt">
@@ -34,21 +35,23 @@ export const FactRow = ({
 
   return (
     <div
-      className={`group relative py-4 px-4 -mx-4 rounded-xl border-b border-border last:border-0 transition-colors hover:bg-foreground/[0.015] ${
-        isUrgent ? "bg-warning/[0.04]" : ""
-      }`}
+      className={cn(
+        "group relative py-3.5 px-4 -mx-4 rounded-xl border-b border-border last:border-0 transition-colors hover:bg-foreground/[0.02]",
+        isUrgent && "bg-warning/[0.05]",
+      )}
     >
       {isUrgent && (
-        <span className="absolute left-0 top-5 bottom-5 w-[3px] rounded-full bg-warning" />
+        <span className="absolute left-0 top-4 bottom-4 w-[3px] rounded-full bg-warning" />
       )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <span
-            className={`font-mono text-[10.5px] uppercase tracking-[0.12em] px-2 py-0.5 rounded-full border ${
+            className={cn(
+              "font-mono text-[10px] uppercase tracking-[0.12em] px-1.5 py-[3px] rounded-md leading-none",
               isOperatorEdit
-                ? "border-success/40 bg-success/10 text-success"
-                : "border-border bg-card text-muted-foreground/80"
-            }`}
+                ? "bg-success/10 text-success ring-1 ring-success/30"
+                : "bg-foreground/[0.05] text-muted-foreground",
+            )}
           >
             {fact.source}
           </span>
@@ -58,7 +61,7 @@ export const FactRow = ({
             </span>
           </Tooltip>
           {isUrgent && (
-            <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-warning px-2 py-0.5 rounded-full bg-warning/10 ring-1 ring-warning/30">
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-warning px-1.5 py-[3px] rounded-md bg-warning/10 ring-1 ring-warning/30 leading-none">
               urgent
             </span>
           )}
@@ -76,7 +79,7 @@ export const FactRow = ({
               <button
                 type="button"
                 onClick={() => onEdit?.(fact)}
-                className="inline-flex items-center gap-1 text-[11.5px] font-mono text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                className="inline-flex items-center gap-1 text-[11.5px] font-mono text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               >
                 <Pencil className="w-3 h-3" />
                 edit
@@ -104,9 +107,10 @@ export const FactRow = ({
       </div>
 
       <p
-        className={`mt-2 text-[14px] leading-snug whitespace-pre-line ${
-          !expanded && isLong ? "line-clamp-3" : ""
-        }`}
+        className={cn(
+          "mt-2 text-[14.5px] leading-relaxed whitespace-pre-line",
+          !expanded && isLong && "line-clamp-3",
+        )}
       >
         {fact.value}
       </p>
@@ -118,7 +122,7 @@ export const FactRow = ({
           className="mt-2 inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
         >
           {expanded ? "Show less" : "Read more"}
-          <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          <ChevronDown className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")} />
         </button>
       )}
 

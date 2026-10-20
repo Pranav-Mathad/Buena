@@ -44,8 +44,8 @@ export const EditFactModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="absolute inset-0 bg-foreground/30 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-2xl max-w-xl w-full p-7 shadow-card">
+      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-2xl max-w-xl w-full p-6 sm:p-7 shadow-pop">
         <div className="flex items-start justify-between mb-1">
           <div className="flex items-center gap-3">
             <Swatch Icon={Pencil} />
@@ -58,7 +58,8 @@ export const EditFactModal = ({
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04]"
+            aria-label="Close"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -73,7 +74,7 @@ export const EditFactModal = ({
           onChange={(e) => setValue(e.target.value)}
           autoFocus
           rows={5}
-          className="mt-4 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[14px] leading-snug focus:outline-none focus:ring-2 focus:ring-foreground/20 resize-y"
+          className="field mt-4 leading-snug resize-y"
         />
         {error && (
           <p className="mt-3 text-[12.5px] font-mono text-warning leading-relaxed">{error}</p>

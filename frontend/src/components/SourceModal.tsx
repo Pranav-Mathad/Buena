@@ -58,7 +58,7 @@ export const SourceModal = ({
               <>
                 <p className="text-[15px] leading-relaxed whitespace-pre-line">{source.snippet}</p>
                 <p className="text-[12px] italic text-muted-foreground border-t border-border pt-4">
-                  In production, this would link to the original email, PDF, or bank record.
+                  Imported from master data. There is no source document to open.
                 </p>
               </>
             )}

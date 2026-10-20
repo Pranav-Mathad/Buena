@@ -42,8 +42,8 @@ export const MarkdownModal = ({ propertyId, propertyName, open, onClose }: Markd
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="absolute inset-0 bg-foreground/30 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-card">
+      <div className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-pop">
         <div className="flex items-start justify-between p-6 pb-4 border-b border-border">
           <div className="flex items-center gap-3 min-w-0">
             <Swatch Icon={FileText} />
@@ -56,7 +56,8 @@ export const MarkdownModal = ({ propertyId, propertyName, open, onClose }: Markd
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-foreground/[0.04] shrink-0"
+            aria-label="Close"
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>

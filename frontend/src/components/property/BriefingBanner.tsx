@@ -14,12 +14,9 @@ export const BriefingBanner = ({
       <div className="flex items-start gap-4 min-w-0">
         <Swatch Icon={Lightbulb} className="mt-0.5" />
         <div className="min-w-0">
-          <h2 className="text-[18px] font-semibold tracking-tight">
-            60-second briefing for a new property manager
-          </h2>
+          <h2 className="text-[18px] font-semibold tracking-tight">Briefing</h2>
           <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">
-            Reads the property file, surfaces what's urgent, what's stable, and what's missing, in
-            the manager's language.
+            What is urgent, what is stable and what is missing, summarised from the property file.
           </p>
         </div>
       </div>
@@ -27,7 +24,7 @@ export const BriefingBanner = ({
         {generating ? (
           <>
             <span className="dot bg-primary-foreground animate-pulse-soft" />
-            Generating...
+            Generating…
           </>
         ) : (
           "Generate briefing"
