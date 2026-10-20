@@ -3,28 +3,49 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Keystone · Operations brain for property management</title>
+    <title>Keystone</title>
     <meta
       name="description"
-      content="Every email, invoice, and bank record turned into a living, sourced file per property. Ask anything."
+      content="One current, sourced file per property, built from email, invoices, bank records and master data."
     />
     <meta name="author" content="Keystone" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F5F2EC" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#110F0E" />
 
     <meta property="og:type" content="website" />
-
-    <meta name="twitter:card" content="summary_large_image" />
-
-    <meta property="og:title" content="Keystone · Operations brain for property management" />
-    <meta name="twitter:title" content="Keystone · Operations brain for property management" />
+    <meta property="og:title" content="Keystone" />
     <meta
       property="og:description"
-      content="Every email, invoice, and bank record turned into a living, sourced file per property. Ask anything."
+      content="One current, sourced file per property, built from email, invoices, bank records and master data."
     />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Keystone" />
     <meta
       name="twitter:description"
-      content="Every email, invoice, and bank record turned into a living, sourced file per property. Ask anything."
+      content="One current, sourced file per property, built from email, invoices, bank records and master data."
     />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <script>
+      // Apply the stored theme before first paint so dark mode never flashes light.
+      (function () {
+        try {
+          var stored = localStorage.getItem("keystone-theme");
+          var dark = stored
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {
+          /* storage unavailable: the app falls back to light */
+        }
+      })();
+    </script>
   </head>
 
   <body>

@@ -14,3 +14,6 @@ export const CONFIG_ERROR: string | null =
 
 /** Base URL of the Keystone API, without a trailing slash. */
 export const API_BASE_URL: string = (raw ?? "").trim().replace(/\/+$/, "");
+
+/** Optional. The source repository; the header shows a GitHub link when set. */
+export const REPO_URL: string = (import.meta.env.VITE_REPO_URL ?? "").trim();
