@@ -7,17 +7,28 @@ import {
   usePendingSignals,
   useSignalDecision,
 } from "@/hooks/queries";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   relativeTime,
   type InboxRejection,
   type InboxSignal,
   type InboxUncertainty,
 } from "@/lib/api";
-import { Card, PrimaryButton, SecondaryButton, StatusPill } from "@/components/ui-bits";
+import { cn } from "@/lib/utils";
+import {
+  Card,
+  Eyebrow,
+  PrimaryButton,
+  SecondaryButton,
+  Skeleton,
+  StatusPill,
+  Swatch,
+} from "@/components/ui-bits";
 
 type Tab = "signals" | "uncertainty" | "rejected";
 
 const Inbox = () => {
+  useDocumentTitle("Inbox");
   const [tab, setTab] = useState<Tab>("signals");
 
   const signalsQuery = usePendingSignals();
@@ -29,19 +40,20 @@ const Inbox = () => {
   const rejectionCount = rejectionsQuery.data?.length ?? 0;
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-12 animate-fade-in">
+    <div className="max-w-[1400px] mx-auto px-5 sm:px-6 lg:px-10 py-10 lg:py-12 animate-fade-in">
       <div className="mb-8 max-w-3xl">
-        <div className="flex items-center gap-3">
-          <InboxIcon className="w-6 h-6" />
-          <h1 className="display text-[40px] tracking-tight">Inbox</h1>
+        <Eyebrow>Review</Eyebrow>
+        <div className="mt-3 flex items-center gap-3">
+          <Swatch Icon={InboxIcon} className="!w-10 !h-10 rounded-xl" />
+          <h1 className="display text-[clamp(30px,4vw,40px)]">Inbox</h1>
         </div>
-        <p className="text-muted-foreground mt-3 text-[15px] leading-relaxed">
-          Three trust-layer surfaces. Signals are proposed actions waiting on a human. Uncertainty
-          is what we noticed but couldn't commit to. Rejections are writes the validator refused.
+        <p className="text-muted-foreground mt-4 text-[15px] leading-relaxed">
+          Signals are proposed actions waiting for a decision. Uncertainties are observations the
+          extractor could not confirm. Rejected updates are writes the validator refused.
         </p>
       </div>
 
-      <div className="border-b border-border mb-8 flex gap-1">
+      <div className="border-b border-border mb-6 flex gap-1 overflow-x-auto">
         <TabButton
           active={tab === "signals"}
           icon={<AlertTriangle className="w-3.5 h-3.5" />}
@@ -65,27 +77,29 @@ const Inbox = () => {
         />
       </div>
 
-      {tab === "signals" && (
-        <SignalsList
-          loading={signalsQuery.isLoading}
-          error={signalsQuery.isError}
-          rows={signalsQuery.data ?? []}
-        />
-      )}
-      {tab === "uncertainty" && (
-        <UncertaintyList
-          loading={uncertaintiesQuery.isLoading}
-          error={uncertaintiesQuery.isError}
-          rows={uncertaintiesQuery.data ?? []}
-        />
-      )}
-      {tab === "rejected" && (
-        <RejectionsList
-          loading={rejectionsQuery.isLoading}
-          error={rejectionsQuery.isError}
-          rows={rejectionsQuery.data ?? []}
-        />
-      )}
+      <div className="max-w-4xl">
+        {tab === "signals" && (
+          <SignalsList
+            loading={signalsQuery.isLoading}
+            error={signalsQuery.isError}
+            rows={signalsQuery.data ?? []}
+          />
+        )}
+        {tab === "uncertainty" && (
+          <UncertaintyList
+            loading={uncertaintiesQuery.isLoading}
+            error={uncertaintiesQuery.isError}
+            rows={uncertaintiesQuery.data ?? []}
+          />
+        )}
+        {tab === "rejected" && (
+          <RejectionsList
+            loading={rejectionsQuery.isLoading}
+            error={rejectionsQuery.isError}
+            rows={rejectionsQuery.data ?? []}
+          />
+        )}
+      </div>
     </div>
   );
 };
@@ -105,18 +119,21 @@ const TabButton = ({
 }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-2 px-4 py-2.5 text-[14px] border-b-2 -mb-px transition-colors ${
+    aria-pressed={active}
+    className={cn(
+      "flex items-center gap-2 px-3.5 py-2.5 text-[14px] border-b-2 -mb-px whitespace-nowrap transition-colors",
       active
-        ? "border-foreground text-foreground"
-        : "border-transparent text-muted-foreground hover:text-foreground"
-    }`}
+        ? "border-foreground text-foreground font-medium"
+        : "border-transparent text-muted-foreground hover:text-foreground",
+    )}
   >
     {icon}
     {label}
     <span
-      className={`font-mono text-[11px] px-1.5 py-0.5 rounded ${
-        active ? "bg-foreground text-background" : "bg-card border border-border"
-      }`}
+      className={cn(
+        "font-mono text-[11px] min-w-[20px] px-1.5 py-0.5 rounded-full text-center",
+        active ? "bg-foreground text-background" : "bg-card border border-border",
+      )}
     >
       {count}
     </span>
@@ -130,15 +147,18 @@ const EmptyState = ({ children }: { children: React.ReactNode }) => (
 );
 
 const ErrorState = () => (
-  <Card className="p-10 text-center">
-    <p className="text-warning text-[14px]">Backend unreachable. Try again in a moment.</p>
+  <Card className="p-10 text-center border-warning/40">
+    <p className="text-warning text-[14px] font-medium">
+      Backend unreachable. Try again in a moment.
+    </p>
   </Card>
 );
 
 const LoadingState = () => (
-  <Card className="p-10 text-center">
-    <p className="text-muted-foreground text-[14px]">Loading…</p>
-  </Card>
+  <div className="space-y-3">
+    <Skeleton className="h-[150px] rounded-2xl" />
+    <Skeleton className="h-[150px] rounded-2xl" />
+  </div>
 );
 
 const PropertyChip = ({
@@ -149,12 +169,12 @@ const PropertyChip = ({
   propertyName: string | null;
 }) => {
   if (!propertyId || !propertyName) {
-    return <span className="pill bg-card text-[12px]">portfolio-level</span>;
+    return <span className="pill bg-card font-normal">portfolio-level</span>;
   }
   return (
     <Link
       to={`/properties/${propertyId}`}
-      className="pill bg-card text-[12px] hover:border-foreground/30"
+      className="pill bg-card font-normal hover:border-foreground/30 transition-colors"
     >
       {propertyName}
     </Link>
@@ -187,43 +207,41 @@ const SignalCard = ({ signal: s }: { signal: InboxSignal }) => {
   const decision = useSignalDecision();
   const busy = decision.isPending;
   return (
-    <Card className="p-5">
-      <div className="flex items-start gap-4">
-        <SeverityDot severity={s.severity} />
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <h3 className="text-[15px] font-semibold">{s.type.replace(/_/g, " ")}</h3>
-            <StatusPill variant={severityVariant(s.severity)}>{s.severity}</StatusPill>
-            <span className="font-mono text-[12px] text-muted-foreground">
-              {relativeTime(s.createdAt)}
-            </span>
-          </div>
-          <p className="text-[14px] mt-2 leading-relaxed">{s.message}</p>
-          <div className="mt-3">
-            <PropertyChip propertyId={s.propertyId} propertyName={s.propertyName} />
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <PrimaryButton
-              className="px-4 py-2 text-[13px]"
-              disabled={busy}
-              onClick={() => decision.mutate({ id: s.id, decision: "approve" })}
-            >
-              Approve
-            </PrimaryButton>
-            <SecondaryButton
-              className="px-4 py-2 text-[13px]"
-              disabled={busy}
-              onClick={() => decision.mutate({ id: s.id, decision: "reject" })}
-            >
-              Reject
-            </SecondaryButton>
-            {decision.isError && (
-              <span role="alert" className="text-[13px] text-destructive">
-                {decision.error.message}
-              </span>
-            )}
-          </div>
-        </div>
+    <Card className="relative overflow-hidden p-5 sm:p-6">
+      <span className={cn("absolute left-0 inset-y-0 w-[3px]", severityBar(s.severity))} />
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-[15px] font-semibold first-letter:uppercase">
+          {s.type.replace(/_/g, " ")}
+        </h3>
+        <StatusPill variant={severityVariant(s.severity)}>{s.severity}</StatusPill>
+        <span className="font-mono text-[12px] text-muted-foreground">
+          {relativeTime(s.createdAt)}
+        </span>
+      </div>
+      <p className="text-[14.5px] mt-2.5 leading-relaxed">{s.message}</p>
+      <div className="mt-3">
+        <PropertyChip propertyId={s.propertyId} propertyName={s.propertyName} />
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <PrimaryButton
+          className="px-4 py-2 text-[13px]"
+          disabled={busy}
+          onClick={() => decision.mutate({ id: s.id, decision: "approve" })}
+        >
+          Approve
+        </PrimaryButton>
+        <SecondaryButton
+          className="px-4 py-2 text-[13px]"
+          disabled={busy}
+          onClick={() => decision.mutate({ id: s.id, decision: "reject" })}
+        >
+          Reject
+        </SecondaryButton>
+        {decision.isError && (
+          <span role="alert" className="text-[13px] text-destructive">
+            {decision.error.message}
+          </span>
+        )}
       </div>
     </Card>
   );
@@ -243,34 +261,34 @@ const UncertaintyList = ({
   if (rows.length === 0)
     return (
       <EmptyState>
-        No open uncertainties. The extractor was confident enough on every recent event to commit a
-        fact.
+        No open uncertainties. Every recent extraction was committed as a fact.
       </EmptyState>
     );
   return (
     <div className="space-y-3">
       {rows.map((u) => (
-        <Card key={u.uncertaintyId} className="p-5">
+        <Card key={u.uncertaintyId} className="p-5 sm:p-6">
           <div className="flex items-start gap-4">
             <HelpCircle className="w-5 h-5 text-muted-foreground mt-0.5" strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <h3 className="text-[15px] font-semibold">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[15px] font-semibold first-letter:uppercase">
                   {u.relevantSection?.replace(/_/g, " ") ?? "(unsectioned)"}
                 </h3>
-                <span className="pill bg-card text-[12px]">via {u.source}</span>
+                <span className="pill bg-card font-normal">via {u.source}</span>
                 <span className="font-mono text-[12px] text-muted-foreground">
                   {relativeTime(u.createdAt)}
                 </span>
               </div>
-              <p className="text-[14px] mt-2 leading-relaxed">{u.observation}</p>
+              <p className="text-[14.5px] mt-2.5 leading-relaxed">{u.observation}</p>
               {u.hypothesis && (
                 <p className="text-[13px] italic text-muted-foreground mt-1">
                   hypothesis: {u.hypothesis}
                 </p>
               )}
-              <p className="text-[12px] text-muted-foreground mt-2">
-                <strong>why uncertain:</strong> {u.reasonUncertain}
+              <p className="text-[12.5px] text-muted-foreground mt-2">
+                <strong className="font-medium text-foreground">why uncertain:</strong>{" "}
+                {u.reasonUncertain}
               </p>
               <div className="mt-3">
                 <PropertyChip propertyId={u.propertyId} propertyName={u.propertyName} />
@@ -301,27 +319,27 @@ const RejectionsList = ({
   return (
     <div className="space-y-3">
       {rows.map((r) => (
-        <Card key={r.rejectionId} className="p-5">
+        <Card key={r.rejectionId} className="p-5 sm:p-6">
           <div className="flex items-start gap-4">
             <ShieldAlert className="w-5 h-5 text-warning mt-0.5" strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <h3 className="text-[15px] font-semibold">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[15px] font-semibold font-mono">
                   {r.proposedSection}.{r.proposedField}
                 </h3>
-                <span className="pill bg-card text-[12px]">
+                <span className="pill bg-card font-normal">
                   {r.constraintName.replace(/_/g, " ")}
                 </span>
                 <span className="font-mono text-[12px] text-muted-foreground">
                   {relativeTime(r.createdAt)}
                 </span>
               </div>
-              <p className="text-[14px] mt-2 leading-relaxed">
+              <p className="text-[14.5px] mt-2.5 leading-relaxed">
                 <span className="text-muted-foreground">proposed:</span> {r.proposedValue}
               </p>
               <p className="text-[13px] italic text-warning mt-1">rejected: {r.reason}</p>
               {r.snippet && (
-                <p className="text-[12px] text-muted-foreground mt-2 whitespace-pre-line border-l-2 border-border pl-3">
+                <p className="text-[12.5px] text-muted-foreground mt-2 whitespace-pre-line border-l-2 border-border pl-3">
                   {r.snippet}
                 </p>
               )}
@@ -336,17 +354,12 @@ const RejectionsList = ({
   );
 };
 
-const SeverityDot = ({ severity }: { severity: string }) => {
-  const color =
-    severity === "urgent"
-      ? "bg-warning"
-      : severity === "high"
-        ? "bg-warning/70"
-        : severity === "medium"
-          ? "bg-foreground/50"
-          : "bg-muted-foreground/40";
-  return <span className={`dot mt-1.5 ${color}`} />;
-};
+function severityBar(severity: string) {
+  if (severity === "urgent") return "bg-warning";
+  if (severity === "high") return "bg-warning/60";
+  if (severity === "medium") return "bg-foreground/30";
+  return "bg-border";
+}
 
 function severityVariant(severity: string) {
   if (severity === "urgent" || severity === "high") return "warning";
